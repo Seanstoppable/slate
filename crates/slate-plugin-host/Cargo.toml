@@ -1,0 +1,16 @@
+[package]
+name = "slate-plugin-host"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+slate-plugin-sdk = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+extism = { workspace = true }
+mlua = { workspace = true }
+reqwest = { workspace = true }

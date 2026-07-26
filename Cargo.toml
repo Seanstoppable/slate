@@ -1,0 +1,40 @@
+[workspace]
+members = [
+    "crates/slate-core",
+    "crates/slate-plugin-host",
+    "crates/slate-plugin-sdk",
+    "crates/slate-plugin-manager",
+    "crates/slate-cli",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/Seanstoppable/slate"
+
+[workspace.dependencies]
+slate-core = { path = "crates/slate-core" }
+slate-plugin-host = { path = "crates/slate-plugin-host" }
+slate-plugin-sdk = { path = "crates/slate-plugin-sdk" }
+slate-plugin-manager = { path = "crates/slate-plugin-manager" }
+
+# Shared dependencies
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+anyhow = "1"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+crossterm = "0.28"
+ratatui = "0.29"
+clap = { version = "4", features = ["derive"] }
+reqwest = { version = "0.12", features = ["json"] }
+extism = "1"
+mlua = { version = "0.10", features = ["luau", "serialize"] }
+semver = "1"
+sha2 = "0.10"
+dirs = "6"

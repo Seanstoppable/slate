@@ -1,0 +1,34 @@
+# Example Slate configuration
+# Copy to ~/.config/slate/slate.toml
+
+[global]
+refresh_interval = 300
+
+[layout]
+rows = 2
+cols = 2
+
+[[widget]]
+type = "builtin:clock"
+position = { row = 0, col = 0 }
+
+[[widget]]
+type = "builtin:resource_usage"
+position = { row = 0, col = 1 }
+
+# Example: GitHub plugin (install first with `slate install`)
+# [[widget]]
+# type = "github.com/slate-community/slate-github"
+# position = { row = 1, col = 0 }
+# token = "${GITHUB_TOKEN}"
+# repos = ["myorg/myrepo"]
+
+# Example: Lua script widget
+# [[widget]]
+# type = "lua:~/.config/slate/scripts/greeting.lua"
+# position = { row = 1, col = 1 }
+
+[updates]
+check_interval = "daily"
+notify = true
+auto_update = false
