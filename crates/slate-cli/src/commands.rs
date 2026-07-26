@@ -365,13 +365,15 @@ impl slate_plugin_sdk::Widget for WelcomeWidget {
 
 struct ResourceUsageWidget {
     sys: sysinfo::System,
+    components: sysinfo::Components,
 }
 
 impl ResourceUsageWidget {
     fn new(_config: WidgetConfig) -> Self {
         let mut sys = sysinfo::System::new_all();
         sys.refresh_all();
-        Self { sys }
+        let components = sysinfo::Components::new_with_refreshed_list();
+        Self { sys, components }
     }
 }
 
@@ -390,6 +392,7 @@ impl slate_plugin_sdk::Widget for ResourceUsageWidget {
 
     fn refresh(&mut self) -> WidgetContent {
         self.sys.refresh_all();
+        self.components.refresh(true);
 
         let cpu_usage = self.sys.global_cpu_usage();
 
@@ -424,22 +427,49 @@ impl slate_plugin_sdk::Widget for ResourceUsageWidget {
             slate_plugin_sdk::Color::Green
         };
 
-        WidgetContent::KeyValue {
-            pairs: vec![
-                ("CPU".to_string(), slate_plugin_sdk::Cell::colored(
-                    format!("{:.1}%", cpu_usage), cpu_color
-                )),
-                ("Memory".to_string(), slate_plugin_sdk::Cell::colored(
-                    format!("{:.1}/{:.1} GB ({:.0}%)", used_mem_gb, total_mem_gb, mem_pct), mem_color
-                )),
-                ("Swap".to_string(), slate_plugin_sdk::Cell::plain(
-                    format!("{:.1}/{:.1} GB", used_swap_gb, total_swap_gb)
-                )),
-                ("CPUs".to_string(), slate_plugin_sdk::Cell::plain(
-                    format!("{} cores", self.sys.cpus().len())
-                )),
-            ],
+        let mut pairs = vec![
+            ("CPU".to_string(), slate_plugin_sdk::Cell::colored(
+                format!("{:.1}%", cpu_usage), cpu_color
+            )),
+            ("Memory".to_string(), slate_plugin_sdk::Cell::colored(
+                format!("{:.1}/{:.1} GB ({:.0}%)", used_mem_gb, total_mem_gb, mem_pct), mem_color
+            )),
+            ("Swap".to_string(), slate_plugin_sdk::Cell::plain(
+                format!("{:.1}/{:.1} GB", used_swap_gb, total_swap_gb)
+            )),
+            ("CPUs".to_string(), slate_plugin_sdk::Cell::plain(
+                format!("{} cores", self.sys.cpus().len())
+            )),
+        ];
+
+        // Add temperature readings if available
+        let temps: Vec<_> = self
+            .components
+            .iter()
+            .filter_map(|component| component.temperature().map(|temp| (component, temp)))
+            .filter(|(_, temp)| *temp > 0.0)
+            .collect();
+        if !temps.is_empty() {
+            // Show hottest component
+            if let Some((hottest, temp)) = temps.iter().max_by(|a, b| {
+                a.1.partial_cmp(&b.1)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            }) {
+                let temp = *temp;
+                let temp_color = if temp > 80.0 {
+                    slate_plugin_sdk::Color::Red
+                } else if temp > 60.0 {
+                    slate_plugin_sdk::Color::Yellow
+                } else {
+                    slate_plugin_sdk::Color::Green
+                };
+                pairs.push(("Temp".to_string(), slate_plugin_sdk::Cell::colored(
+                    format!("{:.0}°C ({})", temp, hottest.label()), temp_color
+                )));
+            }
         }
+
+        WidgetContent::KeyValue { pairs }
     }
 }
 
@@ -461,5 +491,69 @@ fn toml_to_json(value: &toml::Value) -> serde_json::Value {
             serde_json::Value::Object(map)
         }
         toml::Value::Datetime(dt) => serde_json::Value::String(dt.to_string()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use slate_plugin_sdk::Widget;
+
+    #[test]
+    fn toml_to_json_converts_all_supported_value_types() {
+        let datetime = "2024-01-02T03:04:05Z"
+            .parse::<toml::value::Datetime>()
+            .unwrap();
+        let array = toml::Value::Array(vec![
+            toml::Value::Integer(1),
+            toml::Value::String("two".to_string()),
+        ]);
+        let table = toml::Value::Table(toml::map::Map::from_iter([
+            ("enabled".to_string(), toml::Value::Boolean(true)),
+            ("count".to_string(), toml::Value::Integer(3)),
+        ]));
+
+        assert_eq!(
+            toml_to_json(&toml::Value::String("value".to_string())),
+            serde_json::json!("value")
+        );
+        assert_eq!(toml_to_json(&toml::Value::Integer(7)), serde_json::json!(7));
+        assert_eq!(toml_to_json(&toml::Value::Float(2.5)), serde_json::json!(2.5));
+        assert_eq!(
+            toml_to_json(&toml::Value::Boolean(false)),
+            serde_json::json!(false)
+        );
+        assert_eq!(toml_to_json(&array), serde_json::json!([1, "two"]));
+        assert_eq!(
+            toml_to_json(&table),
+            serde_json::json!({"enabled": true, "count": 3})
+        );
+        assert_eq!(
+            toml_to_json(&toml::Value::Datetime(datetime)),
+            serde_json::json!("2024-01-02T03:04:05Z")
+        );
+    }
+
+    #[test]
+    fn resource_usage_widget_returns_expected_key_value_content() {
+        let mut widget = ResourceUsageWidget::new(WidgetConfig {
+            position: slate_plugin_sdk::Position {
+                row: 0,
+                col: 0,
+                row_span: 1,
+                col_span: 1,
+            },
+            settings: Default::default(),
+            refresh_interval: None,
+        });
+
+        match widget.refresh() {
+            WidgetContent::KeyValue { pairs } => {
+                let keys: Vec<&str> = pairs.iter().map(|(key, _)| key.as_str()).collect();
+                assert_eq!(keys, vec!["CPU", "Memory", "Swap", "CPUs"]);
+                assert!(pairs.iter().all(|(_, cell)| !cell.text.is_empty()));
+            }
+            other => panic!("expected key-value content, got {other:?}"),
+        }
     }
 }

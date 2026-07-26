@@ -132,4 +132,36 @@ mod tests {
         focus.move_prev(2, 2); // (1,1) -> (1,0)
         assert_eq!((focus.row, focus.col), (1, 0));
     }
+
+    #[test]
+    fn compute_grid_returns_expected_number_of_cells() {
+        let area = Rect::new(0, 0, 120, 40);
+        let grid = compute_grid(area, 2, 3);
+
+        assert_eq!(grid.len(), 2);
+        assert!(grid.iter().all(|row| row.len() == 3));
+        assert_eq!(grid.iter().flatten().count(), 6);
+    }
+
+    #[test]
+    fn compute_grid_handles_single_cell_grid() {
+        let area = Rect::new(5, 10, 20, 8);
+        let grid = compute_grid(area, 1, 1);
+
+        assert_eq!(grid.len(), 1);
+        assert_eq!(grid[0].len(), 1);
+        assert_eq!(grid[0][0], area);
+    }
+
+    #[test]
+    fn compute_grid_handles_three_by_three_grid() {
+        let area = Rect::new(0, 0, 90, 30);
+        let grid = compute_grid(area, 3, 3);
+
+        assert_eq!(grid.len(), 3);
+        assert!(grid.iter().all(|row| row.len() == 3));
+        assert_eq!(grid[0][0], Rect::new(0, 0, 30, 10));
+        assert_eq!(grid[1][1], Rect::new(30, 10, 30, 10));
+        assert_eq!(grid[2][2], Rect::new(60, 20, 30, 10));
+    }
 }

@@ -22,10 +22,11 @@ impl PluginInstaller {
         let (owner, repo) = parse_github_source(source)?;
 
         // Determine version to install
-        let version = match version {
-            Some(v) => v.to_string(),
-            None => self.fetch_latest_version(&owner, &repo).await?,
+        let latest_version = match version {
+            Some(_) => None,
+            None => Some(self.fetch_latest_version(&owner, &repo).await?),
         };
+        let version = resolve_version(version, latest_version.as_deref())?;
 
         // Download release asset (WASM file)
         let download_url = format!(
@@ -140,6 +141,15 @@ fn parse_github_source(source: &str) -> Result<(String, String)> {
     Ok((parts[0].to_string(), parts[1].to_string()))
 }
 
+fn resolve_version(requested: Option<&str>, latest: Option<&str>) -> Result<String> {
+    match requested {
+        Some(version) => Ok(version.to_string()),
+        None => latest
+            .map(str::to_string)
+            .context("No latest version available"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -157,5 +167,22 @@ mod tests {
             parse_github_source("https://github.com/user/plugin").unwrap();
         assert_eq!(owner, "user");
         assert_eq!(repo, "plugin");
+    }
+
+    #[test]
+    fn test_resolve_version_prefers_requested_version() {
+        let resolved = resolve_version(Some("1.2.3"), Some("9.9.9")).unwrap();
+        assert_eq!(resolved, "1.2.3");
+    }
+
+    #[test]
+    fn test_resolve_version_falls_back_to_latest_version() {
+        let resolved = resolve_version(None, Some("2.0.0")).unwrap();
+        assert_eq!(resolved, "2.0.0");
+    }
+
+    #[test]
+    fn test_resolve_version_errors_without_requested_or_latest_version() {
+        assert!(resolve_version(None, None).is_err());
     }
 }

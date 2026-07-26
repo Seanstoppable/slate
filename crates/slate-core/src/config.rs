@@ -245,4 +245,99 @@ value = "${SLATE_TEST_VAR}"
         assert_eq!(val.as_str().unwrap(), "hello");
         std::env::remove_var("SLATE_TEST_VAR");
     }
+
+    #[test]
+    fn test_invalid_toml_returns_error() {
+        let err = SlateConfig::parse("[global\nrefresh_interval = 60").unwrap_err();
+        assert!(err.to_string().contains("Failed to parse slate.toml"));
+    }
+
+    #[test]
+    fn test_missing_required_widget_fields_return_error() {
+        let missing_type = r#"
+[[widget]]
+position = { row = 0, col = 0 }
+"#;
+        assert!(SlateConfig::parse(missing_type).is_err());
+
+        let missing_position = r#"
+[[widget]]
+type = "builtin:resource_usage"
+"#;
+        assert!(SlateConfig::parse(missing_position).is_err());
+    }
+
+    #[test]
+    fn test_position_parsing_uses_explicit_and_default_spans() {
+        let toml = r#"
+[[widget]]
+type = "builtin:resource_usage"
+position = { row = 1, col = 2, row_span = 3, col_span = 4 }
+
+[[widget]]
+type = "builtin:resource_usage"
+position = { row = 0, col = 1 }
+"#;
+        let config = SlateConfig::parse(toml).unwrap();
+
+        assert_eq!(config.widget[0].position.row, 1);
+        assert_eq!(config.widget[0].position.col, 2);
+        assert_eq!(config.widget[0].position.row_span, 3);
+        assert_eq!(config.widget[0].position.col_span, 4);
+
+        assert_eq!(config.widget[1].position.row_span, 1);
+        assert_eq!(config.widget[1].position.col_span, 1);
+    }
+
+    #[test]
+    fn test_widget_settings_collect_extra_keys() {
+        let toml = r#"
+[[widget]]
+type = "builtin:resource_usage"
+position = { row = 0, col = 0 }
+title = "Resources"
+show_swap = true
+thresholds = [50, 80]
+nested = { color = "green", compact = false }
+"#;
+        let config = SlateConfig::parse(toml).unwrap();
+        let settings = &config.widget[0].settings;
+
+        assert_eq!(settings.get("title").and_then(toml::Value::as_str), Some("Resources"));
+        assert_eq!(settings.get("show_swap").and_then(toml::Value::as_bool), Some(true));
+        assert_eq!(
+            settings.get("thresholds").and_then(toml::Value::as_array).map(Vec::len),
+            Some(2)
+        );
+        assert_eq!(
+            settings
+                .get("nested")
+                .and_then(toml::Value::as_table)
+                .and_then(|table| table.get("color"))
+                .and_then(toml::Value::as_str),
+            Some("green")
+        );
+    }
+
+    #[test]
+    fn test_widget_refresh_interval_override_is_parsed() {
+        let toml = r#"
+[global]
+refresh_interval = 300
+
+[[widget]]
+type = "builtin:resource_usage"
+position = { row = 0, col = 0 }
+refresh_interval = 30
+
+[[widget]]
+type = "builtin:resource_usage"
+position = { row = 0, col = 1 }
+"#;
+        let config = SlateConfig::parse(toml).unwrap();
+
+        assert_eq!(config.global.refresh_interval, 300);
+        assert_eq!(config.widget[0].refresh_interval, Some(30));
+        assert_eq!(config.widget[1].refresh_interval, None);
+    }
 }

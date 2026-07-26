@@ -125,4 +125,88 @@ mod tests {
         let guard = PermissionGuard::new(perms);
         assert!(guard.check_storage().is_ok());
     }
+
+    #[test]
+    fn test_exec_permission() {
+        let guard = PermissionGuard::new(Permissions {
+            exec: vec!["git".to_string(), "cargo".to_string()],
+            ..Default::default()
+        });
+
+        assert!(guard.check_exec("git").is_ok());
+        assert!(matches!(
+            guard.check_exec("bash"),
+            Err(PermissionError::ExecDenied(cmd)) if cmd == "bash"
+        ));
+    }
+
+    #[test]
+    fn test_filesystem_read_permission() {
+        let guard = PermissionGuard::new(Permissions {
+            filesystem_read: vec!["C:\\allowed".to_string()],
+            ..Default::default()
+        });
+
+        assert!(guard.check_filesystem_read("C:\\allowed\\file.txt").is_ok());
+        assert!(matches!(
+            guard.check_filesystem_read("C:\\blocked\\file.txt"),
+            Err(PermissionError::FilesystemDenied(path)) if path == "C:\\blocked\\file.txt"
+        ));
+    }
+
+    #[test]
+    fn test_secret_permission() {
+        let guard = PermissionGuard::new(Permissions {
+            secrets: vec!["GITHUB_TOKEN".to_string()],
+            ..Default::default()
+        });
+
+        assert!(guard.check_secret("GITHUB_TOKEN").is_ok());
+        assert!(matches!(
+            guard.check_secret("API_KEY"),
+            Err(PermissionError::SecretDenied(name)) if name == "API_KEY"
+        ));
+    }
+
+    #[test]
+    fn test_raw_network_permission() {
+        let denied = PermissionGuard::new(Permissions::default());
+        assert!(matches!(
+            denied.check_raw_network(),
+            Err(PermissionError::RawNetworkDenied)
+        ));
+
+        let allowed = PermissionGuard::new(Permissions {
+            raw_network: true,
+            ..Default::default()
+        });
+        assert!(allowed.check_raw_network().is_ok());
+    }
+
+    #[test]
+    fn test_allowed_and_denied_hosts() {
+        let guard = PermissionGuard::new(Permissions {
+            network: vec!["github.com".to_string(), "api.internal".to_string()],
+            ..Default::default()
+        });
+
+        assert!(guard.check_network("github.com").is_ok());
+        assert!(guard.check_network("api.internal.example").is_ok());
+        assert!(matches!(
+            guard.check_network("gitlab.com"),
+            Err(PermissionError::NetworkDenied(host)) if host == "gitlab.com"
+        ));
+    }
+
+    #[test]
+    fn test_empty_permissions_deny_all_restricted_access() {
+        let guard = PermissionGuard::new(Permissions::default());
+
+        assert!(guard.check_network("example.com").is_err());
+        assert!(guard.check_exec("git").is_err());
+        assert!(guard.check_filesystem_read("C:\\file.txt").is_err());
+        assert!(guard.check_secret("TOKEN").is_err());
+        assert!(guard.check_raw_network().is_err());
+        assert!(guard.check_storage().is_err());
+    }
 }

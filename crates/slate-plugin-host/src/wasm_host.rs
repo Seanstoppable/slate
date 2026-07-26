@@ -231,3 +231,153 @@ impl slate_plugin_sdk::Widget for WasmPlugin {
     fn on_focus(&mut self) {}
     fn on_blur(&mut self) {}
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_widget_content_handles_text_content() {
+        let content = parse_widget_content(
+            r#"{"type":"text","content":"hello","scrollable":true,"wrap":false}"#,
+        );
+
+        match content {
+            WidgetContent::Text {
+                content,
+                scrollable,
+                wrap,
+            } => {
+                assert_eq!(content, "hello");
+                assert!(scrollable);
+                assert!(!wrap);
+            }
+            other => panic!("expected text content, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_widget_content_handles_key_value_content() {
+        let content = parse_widget_content(
+            r#"{"type":"key_value","pairs":[{"key":"CPU","value":"12%"},{"key":"Memory","value":"4 GB"}]}"#,
+        );
+
+        match content {
+            WidgetContent::KeyValue { pairs } => {
+                assert_eq!(pairs.len(), 2);
+                assert_eq!(pairs[0].0, "CPU");
+                assert_eq!(pairs[0].1.text, "12%");
+                assert_eq!(pairs[1].0, "Memory");
+                assert_eq!(pairs[1].1.text, "4 GB");
+            }
+            other => panic!("expected key_value content, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_widget_content_handles_list_content() {
+        let content = parse_widget_content(
+            r#"{"type":"list","selectable":true,"items":[{"id":"1","title":"Issue 1","subtitle":"open","icon":"!"},{"id":"2","text":"Fallback title","secondary":"secondary"}]}"#,
+        );
+
+        match content {
+            WidgetContent::List {
+                items,
+                selectable,
+                actions,
+            } => {
+                assert!(selectable);
+                assert!(actions.is_empty());
+                assert_eq!(items.len(), 2);
+                assert_eq!(items[0].id, "1");
+                assert_eq!(items[0].title, "Issue 1");
+                assert_eq!(items[0].subtitle.as_deref(), Some("open"));
+                assert_eq!(items[0].icon.as_deref(), Some("!"));
+                assert_eq!(items[1].title, "Fallback title");
+                assert_eq!(items[1].subtitle.as_deref(), Some("secondary"));
+            }
+            other => panic!("expected list content, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_widget_content_handles_unknown_content_type() {
+        let content = parse_widget_content(r#"{"type":"custom","content":"raw value"}"#);
+
+        match content {
+            WidgetContent::Text {
+                content,
+                scrollable,
+                wrap,
+            } => {
+                assert_eq!(content, "raw value");
+                assert!(!scrollable);
+                assert!(wrap);
+            }
+            other => panic!("expected text fallback, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_widget_content_handles_empty_json() {
+        let content = parse_widget_content("{}");
+
+        match content {
+            WidgetContent::Text {
+                content,
+                scrollable,
+                wrap,
+            } => {
+                assert_eq!(content, "");
+                assert!(!scrollable);
+                assert!(wrap);
+            }
+            other => panic!("expected empty text fallback, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_widget_content_handles_malformed_json() {
+        let content = parse_widget_content("not valid json");
+
+        match content {
+            WidgetContent::Text {
+                content,
+                scrollable,
+                wrap,
+            } => {
+                assert_eq!(content, "not valid json");
+                assert!(!scrollable);
+                assert!(wrap);
+            }
+            other => panic!("expected raw text fallback, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_widget_content_handles_missing_fields() {
+        let key_value = parse_widget_content(r#"{"type":"key_value"}"#);
+        match key_value {
+            WidgetContent::KeyValue { pairs } => assert!(pairs.is_empty()),
+            other => panic!("expected key_value content, got {other:?}"),
+        }
+
+        let list = parse_widget_content(r#"{"type":"list","items":[{}]}"#);
+        match list {
+            WidgetContent::List {
+                items,
+                selectable,
+                actions,
+            } => {
+                assert_eq!(items.len(), 1);
+                assert_eq!(items[0].id, "");
+                assert_eq!(items[0].title, "");
+                assert_eq!(items[0].subtitle, None);
+                assert_eq!(items[0].icon, None);
+                assert!(!selectable);
+                assert!(actions.is_empty());
+            }
+            other => panic!("expected list content, got {other:?}"),
+        }
+    }
+}

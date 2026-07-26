@@ -75,3 +75,49 @@ impl Lockfile {
         Ok(config_dir.join("slate").join("slate-lock.toml"))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lockfile_serializes_and_deserializes() {
+        let mut lockfile = Lockfile::default();
+        lockfile.lock(
+            "slate-github",
+            LockedPlugin {
+                source: "github.com/slate-community/slate-github".to_string(),
+                version: "1.2.3".to_string(),
+                sha256: "deadbeef".to_string(),
+                permissions_hash: Some("abc123".to_string()),
+            },
+        );
+
+        let serialized = toml::to_string(&lockfile).unwrap();
+        let deserialized: Lockfile = toml::from_str(&serialized).unwrap();
+
+        let plugin = deserialized.get("slate-github").unwrap();
+        assert_eq!(plugin.source, "github.com/slate-community/slate-github");
+        assert_eq!(plugin.version, "1.2.3");
+        assert_eq!(plugin.sha256, "deadbeef");
+        assert_eq!(plugin.permissions_hash.as_deref(), Some("abc123"));
+    }
+
+    #[test]
+    fn lock_and_unlock_manage_entries() {
+        let mut lockfile = Lockfile::default();
+        lockfile.lock(
+            "plugin",
+            LockedPlugin {
+                source: "github.com/user/plugin".to_string(),
+                version: "0.1.0".to_string(),
+                sha256: "hash".to_string(),
+                permissions_hash: None,
+            },
+        );
+        assert!(lockfile.get("plugin").is_some());
+
+        lockfile.unlock("plugin");
+        assert!(lockfile.get("plugin").is_none());
+    }
+}
