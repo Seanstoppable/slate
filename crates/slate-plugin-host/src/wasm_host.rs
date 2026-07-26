@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use extism::{Manifest, Plugin, Wasm};
+use extism::{Function, Manifest, Plugin, UserData, Val, Wasm, PTR};
 use slate_plugin_sdk::{
     Permissions, WidgetConfig, WidgetContent, WidgetMetadata,
 };
@@ -16,6 +16,65 @@ pub struct WasmPlugin {
     config: Option<WidgetConfig>,
 }
 
+/// Create the exec_command host function for WASM plugins.
+/// Plugins call this with a JSON string: {"cmd": "...", "args": ["..."]}
+/// Returns JSON: {"stdout": "...", "stderr": "...", "exit_code": 0}
+fn make_exec_function() -> Function {
+    Function::new(
+        "exec_command",
+        [PTR],
+        [PTR],
+        UserData::new(()),
+        |plugin: &mut extism::CurrentPlugin, inputs: &[Val], outputs: &mut [Val], _user_data| {
+            let input: String = plugin.memory_get_val(&inputs[0])?;
+            let request: serde_json::Value = serde_json::from_str(&input)
+                .map_err(|e| extism::Error::msg(format!("Invalid exec request JSON: {}", e)))?;
+
+            let cmd = request["cmd"].as_str().unwrap_or("");
+            let args: Vec<&str> = request["args"]
+                .as_array()
+                .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect())
+                .unwrap_or_default();
+
+            if cmd.is_empty() {
+                let result = serde_json::json!({
+                    "stdout": "",
+                    "stderr": "exec_command: 'cmd' field is required",
+                    "exit_code": 1
+                });
+                let handle = plugin.memory_new(result.to_string())?;
+                outputs[0] = plugin.memory_to_val(handle);
+                return Ok(());
+            }
+
+            let output = std::process::Command::new(cmd)
+                .args(&args)
+                .output();
+
+            let result = match output {
+                Ok(out) => {
+                    serde_json::json!({
+                        "stdout": String::from_utf8_lossy(&out.stdout).to_string(),
+                        "stderr": String::from_utf8_lossy(&out.stderr).to_string(),
+                        "exit_code": out.status.code().unwrap_or(-1)
+                    })
+                }
+                Err(e) => {
+                    serde_json::json!({
+                        "stdout": "",
+                        "stderr": format!("Failed to execute '{}': {}", cmd, e),
+                        "exit_code": -1
+                    })
+                }
+            };
+
+            let handle = plugin.memory_new(result.to_string())?;
+            outputs[0] = plugin.memory_to_val(handle);
+            Ok(())
+        },
+    )
+}
+
 impl WasmPlugin {
     /// Load a WASM plugin from a file path.
     pub fn from_file(path: &Path, permissions: Permissions) -> Result<Self> {
@@ -30,7 +89,9 @@ impl WasmPlugin {
 
         let wasm = Wasm::data(wasm_bytes);
         let manifest = Manifest::new([wasm]).with_allowed_hosts(["*".to_string()].into_iter());
-        let mut plugin = Plugin::new(&manifest, [], true)
+
+        let host_functions = [make_exec_function()];
+        let mut plugin = Plugin::new(&manifest, host_functions, true)
             .with_context(|| format!("Failed to create WASM plugin: {}", path.display()))?;
 
         // Try to get metadata from the plugin
@@ -67,7 +128,8 @@ impl WasmPlugin {
     ) -> Result<Self> {
         let wasm = Wasm::data(bytes);
         let manifest = Manifest::new([wasm]).with_allowed_hosts(["*".to_string()].into_iter());
-        let plugin = Plugin::new(&manifest, [], true)?;
+        let host_functions = [make_exec_function()];
+        let plugin = Plugin::new(&manifest, host_functions, true)?;
 
         Ok(Self {
             metadata,

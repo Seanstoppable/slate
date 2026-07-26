@@ -1,0 +1,9 @@
+[plugin]
+name = "status-pages"
+description = "Monitor service status pages (Atlassian Statuspage, custom APIs)"
+version = "0.1.0"
+author = "Slate Community"
+language = "typescript"
+
+[permissions]
+network = ["www.githubstatus.com", "status.slack.com"]

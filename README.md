@@ -6,7 +6,8 @@ A terminal info dashboard with a plugin ecosystem. Think [wtfutil](https://wtfut
 
 - **WASM-sandboxed plugins** — Community plugins run in an Extism sandbox with capability-gated permissions
 - **5 built-in widgets** — Resources, power, firewall, network interfaces, VCS (git/hg)
-- **6 WASM plugins** — Clock, weather, HN, feeds, IP info, GitHub
+- **6 WASM plugins (Rust)** — Clock, weather, HN, feeds, IP info, GitHub
+- **4 WASM plugins (polyglot)** — Status pages (JS), brew outdated (Go), iStats (Zig), wego (AssemblyScript)
 - **Lua scripting** — Quick personal widgets with zero compilation
 - **Plugin manager** — Install from GitHub repos, lockfile-based versioning, update notifications
 - **Interactive lists** — Navigate items with j/k, open links with Enter
@@ -85,19 +86,23 @@ Environment variables are interpolated with `${VAR_NAME}` syntax.
 
 ### Available Plugins
 
-| Plugin | Type | Description |
-|--------|------|-------------|
-| `resource_usage` | Builtin | CPU, memory, swap, temperatures |
-| `power` | Builtin | Battery status and charging state |
-| `ipaddresses` | Builtin | Local network interface addresses |
-| `firewall` | Builtin | Firewall status and rules |
-| `vcs` | Builtin | Git/Mercurial status (configurable engine) |
-| `clock` | WASM | Current time with timezone |
-| `weather` | WASM | Weather via OpenWeatherMap |
-| `ipinfo` | WASM | Public IP and geolocation (via ipinfo.io) |
-| `hackernews` | WASM | Top stories (interactive list) |
-| `feedreader` | WASM | RSS/Atom feed reader |
-| `github` | WASM | GitHub PRs, issues, repo stats |
+| Plugin | Type | Language | Description |
+|--------|------|----------|-------------|
+| `resource_usage` | Builtin | Rust | CPU, memory, swap, temperatures |
+| `power` | Builtin | Rust | Battery status and charging state |
+| `ipaddresses` | Builtin | Rust | Local network interface addresses |
+| `firewall` | Builtin | Rust | Firewall status and rules |
+| `vcs` | Builtin | Rust | Git/Mercurial status (configurable engine) |
+| `clock` | WASM | Rust | Current time with timezone |
+| `weather` | WASM | Rust | Weather via OpenWeatherMap |
+| `ipinfo` | WASM | Rust | Public IP and geolocation (via ipinfo.io) |
+| `hackernews` | WASM | Rust | Top stories (interactive list) |
+| `feedreader` | WASM | Rust | RSS/Atom feed reader |
+| `github` | WASM | Rust | GitHub PRs, issues, repo stats |
+| `status-pages` | WASM | JavaScript | Service status page monitor (Statuspage APIs) |
+| `brew-outdated` | WASM | Go | Outdated Homebrew packages |
+| `istats` | WASM | Zig | System stats via iStats (macOS) |
+| `wego` | WASM | AssemblyScript | Weather display via wego CLI |
 
 ### Plugin Management
 
@@ -155,6 +160,33 @@ pub fn on_key(_input: String) -> FnResult<String> {
 
 Build: `cargo build --release --target wasm32-unknown-unknown`
 
+### Multi-Language Plugins
+
+Plugins can be written in any language that compiles to WASM via [Extism PDK](https://extism.org/docs/concepts/pdk):
+
+| Language | Build Command | Binary Size |
+|----------|--------------|-------------|
+| **Rust** | `cargo build --target wasm32-unknown-unknown --release` | ~200 KB |
+| **Go** (TinyGo) | `tinygo build -o plugin.wasm -target wasi main.go` | ~1.1 MB |
+| **JavaScript** | `extism-js src/index.js -i src/index.d.ts -o plugin.wasm` | ~2.4 MB |
+| **Zig** | `zig build-exe src/main.zig -target wasm32-freestanding ...` | ~2 KB |
+| **AssemblyScript** | `npx asc assembly/index.ts --outFile plugin.wasm` | ~16 KB |
+
+All plugins export the same 4 functions: `metadata`, `refresh`, `on_key`, `on_action`.
+
+#### Host Functions
+
+Plugins can call host-provided functions:
+- **HTTP** (built-in to Extism) — make network requests
+- **exec_command** — run a system command (requires `exec` permission)
+
+```json
+// exec_command input
+{"cmd": "brew", "args": ["outdated"]}
+// exec_command output
+{"stdout": "...", "stderr": "...", "exit_code": 0}
+```
+
 ### Content Types
 
 Plugins return JSON with one of these types:
@@ -209,13 +241,17 @@ slate/
 │   ├── slate-plugin-sdk/     # Widget trait, WidgetContent types, WidgetAction
 │   ├── slate-plugin-manager/ # GitHub download, versions, lockfile, registry
 │   └── slate-cli/            # Binary, clap commands, built-in widgets
-├── plugins/                  # WASM plugin source (6 plugins)
-│   ├── clock/
-│   ├── hackernews/
-│   ├── ipinfo/
-│   ├── github/
-│   ├── weather/
-│   └── feedreader/
+├── plugins/                  # WASM plugin source (10 plugins, multiple languages)
+│   ├── clock/                # Rust
+│   ├── hackernews/           # Rust
+│   ├── ipinfo/               # Rust
+│   ├── github/               # Rust
+│   ├── weather/              # Rust
+│   ├── feedreader/           # Rust
+│   ├── status-pages/         # JavaScript (Extism JS PDK)
+│   ├── brew-outdated/        # Go (TinyGo)
+│   ├── istats/               # Zig
+│   └── wego/                 # AssemblyScript
 └── .github/extensions/       # Copilot skill for scaffolding plugins
 ```
 

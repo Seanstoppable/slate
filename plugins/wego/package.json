@@ -1,0 +1,13 @@
+{
+  "name": "slate-wego",
+  "version": "0.1.0",
+  "description": "Weather display via wego CLI",
+  "private": true,
+  "scripts": {
+    "build": "npx asc assembly/index.ts --target release --exportRuntime --outFile plugin.wasm"
+  },
+  "devDependencies": {
+    "assemblyscript": "^0.27",
+    "@assemblyscript/loader": "^0.27"
+  }
+}

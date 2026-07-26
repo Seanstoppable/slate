@@ -1,0 +1,12 @@
+{
+  "name": "slate-status-pages",
+  "version": "0.1.0",
+  "description": "Monitor service status pages (Atlassian Statuspage, custom APIs)",
+  "private": true,
+  "scripts": {
+    "build": "npx @extism/js-pdk plugin.wasm -i src/index.ts"
+  },
+  "devDependencies": {
+    "@extism/js-pdk": "^1"
+  }
+}

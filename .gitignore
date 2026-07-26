@@ -1,3 +1,6 @@
 /target
 **/target
 Cargo.lock
+node_modules/
+plugins/*/plugin.wasm
+plugins/brew-outdated/go.sum

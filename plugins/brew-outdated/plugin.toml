@@ -1,0 +1,9 @@
+[plugin]
+name = "brew-outdated"
+description = "Shows outdated Homebrew packages"
+version = "0.1.0"
+author = "Slate Community"
+language = "go"
+
+[permissions]
+exec = ["brew"]
