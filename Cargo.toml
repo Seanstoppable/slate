@@ -6,6 +6,12 @@ members = [
     "crates/slate-plugin-manager",
     "crates/slate-cli",
 ]
+exclude = [
+    "plugins/clock",
+    "plugins/ipinfo",
+    "plugins/hackernews",
+    "plugins/github",
+]
 resolver = "2"
 
 [workspace.package]

@@ -1,0 +1,8 @@
+[metadata]
+name = "ipinfo"
+description = "Shows your public IP and geolocation info"
+version = "0.1.0"
+author = "Slate Community"
+
+[permissions]
+network = ["ipinfo.io"]

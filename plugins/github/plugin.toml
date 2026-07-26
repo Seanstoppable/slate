@@ -1,0 +1,10 @@
+[metadata]
+name = "github"
+description = "GitHub PRs, issues, and repo stats"
+version = "0.1.0"
+author = "Slate Community"
+
+[permissions]
+network = ["api.github.com"]
+secrets = ["token"]
+storage = true

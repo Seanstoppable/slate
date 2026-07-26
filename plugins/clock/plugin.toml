@@ -1,0 +1,8 @@
+[metadata]
+name = "clock"
+description = "Displays the current time"
+version = "0.1.0"
+author = "Slate Community"
+
+[permissions]
+# No permissions needed - pure computation
