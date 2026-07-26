@@ -127,3 +127,18 @@ pub enum ChartType {
     Line,
     Sparkline,
 }
+
+impl WidgetContent {
+    /// Returns true if this is a selectable list.
+    pub fn is_selectable_list(&self) -> bool {
+        matches!(self, WidgetContent::List { selectable: true, .. })
+    }
+
+    /// Returns the number of items in a list, or 0 if not a list.
+    pub fn list_len(&self) -> usize {
+        match self {
+            WidgetContent::List { items, .. } => items.len(),
+            _ => 0,
+        }
+    }
+}

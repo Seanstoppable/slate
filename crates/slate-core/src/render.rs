@@ -2,7 +2,7 @@ use ratatui::{
     layout::Rect,
     style::{Color as RatColor, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, Paragraph, Row, Table, Wrap},
+    widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Row, Table, Wrap},
     Frame,
 };
 use slate_plugin_sdk::{Color, WidgetContent, WidgetMetadata};
@@ -16,6 +16,7 @@ pub fn render_widget(
     content: &WidgetContent,
     metadata: &WidgetMetadata,
     focused: bool,
+    selected: Option<usize>,
 ) {
     let border_style = if focused {
         Style::default().fg(RatColor::Cyan)
@@ -87,7 +88,7 @@ pub fn render_widget(
             let paragraph = Paragraph::new(lines);
             frame.render_widget(paragraph, inner);
         }
-        WidgetContent::List { items, .. } => {
+        WidgetContent::List { items, selectable, .. } => {
             let list_items: Vec<ListItem> = items
                 .iter()
                 .map(|item| {
@@ -106,8 +107,21 @@ pub fn render_widget(
                     ListItem::new(content)
                 })
                 .collect();
-            let list = List::new(list_items);
-            frame.render_widget(list, inner);
+            let list = List::new(list_items)
+                .highlight_style(
+                    Style::default()
+                        .fg(RatColor::Black)
+                        .bg(RatColor::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                )
+                .highlight_symbol("▶ ");
+
+            if *selectable && selected.is_some() {
+                let mut state = ListState::default().with_selected(selected);
+                frame.render_stateful_widget(list, inner, &mut state);
+            } else {
+                frame.render_widget(list, inner);
+            }
         }
         WidgetContent::Chart { data, .. } => {
             // Simple sparkline-style bar rendering

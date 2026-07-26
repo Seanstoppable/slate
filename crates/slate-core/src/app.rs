@@ -24,6 +24,8 @@ struct WidgetInstance {
     col: u16,
     last_refresh: Instant,
     refresh_interval: Duration,
+    /// Selected index for list widgets
+    selected: Option<usize>,
 }
 
 /// The main Slate application.
@@ -52,6 +54,7 @@ impl App {
         let metadata = widget.metadata();
         let interval = refresh_interval.unwrap_or(self.config.global.refresh_interval);
         let content = widget.refresh();
+        let selected = if content.is_selectable_list() { Some(0) } else { None };
         self.widgets.push(WidgetInstance {
             widget,
             metadata,
@@ -60,6 +63,7 @@ impl App {
             col,
             last_refresh: Instant::now(),
             refresh_interval: Duration::from_secs(interval),
+            selected,
         });
     }
 
@@ -117,7 +121,7 @@ impl App {
                     if row < grid.len() && col < grid[row].len() {
                         let area = grid[row][col];
                         let focused = self.focus.row == instance.row && self.focus.col == instance.col;
-                        render_widget(frame, area, &instance.content, &instance.metadata, focused);
+                        render_widget(frame, area, &instance.content, &instance.metadata, focused, instance.selected);
                     }
                 }
 
@@ -136,17 +140,23 @@ impl App {
     }
 
     fn handle_key(&mut self, key: KeyEvent) {
+        // Check if focused widget is a selectable list
+        let focused_is_list = self.focused_widget()
+            .map(|w| w.content.is_selectable_list())
+            .unwrap_or(false);
+
         match key.code {
             KeyCode::Char('q') => self.running = false,
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.running = false;
             }
             KeyCode::Tab => {
-                // Move focus to next widget
-                self.focus.move_right(self.config.layout.cols);
-                if self.focus.col == 0 {
-                    self.focus.move_down(self.config.layout.rows);
-                }
+                // Move focus to next widget in reading order
+                self.focus.move_next(self.config.layout.rows, self.config.layout.cols);
+            }
+            KeyCode::BackTab => {
+                // Move focus to previous widget
+                self.focus.move_prev(self.config.layout.rows, self.config.layout.cols);
             }
             KeyCode::Left | KeyCode::Char('h') => {
                 self.focus.move_left(self.config.layout.cols);
@@ -155,14 +165,40 @@ impl App {
                 self.focus.move_right(self.config.layout.cols);
             }
             KeyCode::Up | KeyCode::Char('k') => {
-                self.focus.move_up(self.config.layout.rows);
+                if focused_is_list {
+                    if let Some(instance) = self.focused_widget_mut() {
+                        if let Some(sel) = &mut instance.selected {
+                            if *sel > 0 {
+                                *sel -= 1;
+                            }
+                        }
+                    }
+                } else {
+                    self.focus.move_up(self.config.layout.rows);
+                }
             }
             KeyCode::Down | KeyCode::Char('j') => {
-                self.focus.move_down(self.config.layout.rows);
+                if focused_is_list {
+                    if let Some(instance) = self.focused_widget_mut() {
+                        let max = instance.content.list_len().saturating_sub(1);
+                        if let Some(sel) = &mut instance.selected {
+                            if *sel < max {
+                                *sel += 1;
+                            }
+                        }
+                    }
+                } else {
+                    self.focus.move_down(self.config.layout.rows);
+                }
             }
             KeyCode::Enter => {
-                // Forward to focused widget
+                // Forward to focused widget with selected item
                 if let Some(instance) = self.focused_widget_mut() {
+                    if let (Some(sel), WidgetContent::List { items, .. }) = (instance.selected, &instance.content) {
+                        if let Some(item) = items.get(sel) {
+                            instance.widget.on_action("select", &item.id);
+                        }
+                    }
                     instance.widget.on_key("enter", "select");
                     instance.content = instance.widget.refresh();
                 }
@@ -172,6 +208,10 @@ impl App {
                 if let Some(instance) = self.focused_widget_mut() {
                     instance.content = instance.widget.refresh();
                     instance.last_refresh = Instant::now();
+                    // Reset selection if list changed
+                    if instance.content.is_selectable_list() {
+                        instance.selected = Some(0);
+                    }
                 }
             }
             _ => {
@@ -182,6 +222,12 @@ impl App {
                 }
             }
         }
+    }
+
+    fn focused_widget(&self) -> Option<&WidgetInstance> {
+        self.widgets
+            .iter()
+            .find(|w| w.row == self.focus.row && w.col == self.focus.col)
     }
 
     fn focused_widget_mut(&mut self) -> Option<&mut WidgetInstance> {
