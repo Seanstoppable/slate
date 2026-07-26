@@ -40,11 +40,24 @@ pub async fn run(config_path: Option<&str>) -> Result<()> {
             let mut widget = LuaPlugin::from_file(Path::new(path.as_ref()))?;
             slate_plugin_sdk::Widget::init(&mut widget, widget_config);
             app.add_widget(Box::new(widget), entry.position.row, entry.position.col, entry.refresh_interval);
+        } else if entry.widget_type.starts_with("wasm:") {
+            // Local WASM file path
+            let path = entry.widget_type.trim_start_matches("wasm:");
+            let path = shellexpand::tilde(path);
+            let wasm_path = std::path::PathBuf::from(path.as_ref());
+
+            if wasm_path.exists() {
+                let mut widget = WasmPlugin::from_file(&wasm_path, Permissions::default())?;
+                slate_plugin_sdk::Widget::init(&mut widget, widget_config);
+                app.add_widget(Box::new(widget), entry.position.row, entry.position.col, entry.refresh_interval);
+            } else {
+                eprintln!(
+                    "Warning: WASM plugin not found at '{}'. Build it first.",
+                    wasm_path.display()
+                );
+            }
         } else {
             // GitHub-sourced WASM plugin
-            let _installer = PluginInstaller::new(PluginInstaller::default_dir()?);
-            let _lockfile = Lockfile::load_default()?;
-            // Look for installed WASM file
             let plugin_name = entry
                 .widget_type
                 .split('/')
@@ -314,7 +327,6 @@ pub async fn migrate(path: &str) -> Result<()> {
 fn create_builtin(name: &str, config: WidgetConfig) -> Result<Box<dyn slate_plugin_sdk::Widget>> {
     match name {
         "resource_usage" => Ok(Box::new(ResourceUsageWidget::new(config))),
-        "clock" => Ok(Box::new(ClockWidget)),
         _ => anyhow::bail!("Unknown builtin widget: {}", name),
     }
 }
@@ -340,7 +352,7 @@ impl slate_plugin_sdk::Widget for WelcomeWidget {
         WidgetContent::Text {
             content: concat!(
                 "Welcome to Slate!\n\n",
-                "Edit ~/.config/slate/slate.toml to add widgets.\n",
+                "Edit %APPDATA%\\slate\\slate.toml to add widgets.\n",
                 "Run `slate search` to find plugins.\n",
                 "Run `slate install` to install declared plugins.\n\n",
                 "Press 'q' to quit."
@@ -351,45 +363,15 @@ impl slate_plugin_sdk::Widget for WelcomeWidget {
     }
 }
 
-struct ClockWidget;
-
-impl slate_plugin_sdk::Widget for ClockWidget {
-    fn metadata(&self) -> WidgetMetadata {
-        WidgetMetadata {
-            name: "Clock".to_string(),
-            description: "Current time".to_string(),
-            version: "0.1.0".to_string(),
-            author: None,
-            homepage: None,
-        }
-    }
-
-    fn init(&mut self, _config: WidgetConfig) {}
-
-    fn refresh(&mut self) -> WidgetContent {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
-        // Simple time formatting (hours:minutes:seconds)
-        let hours = (now % 86400) / 3600;
-        let minutes = (now % 3600) / 60;
-        let seconds = now % 60;
-        WidgetContent::Text {
-            content: format!("{:02}:{:02}:{:02} UTC", hours, minutes, seconds),
-            scrollable: false,
-            wrap: false,
-        }
-    }
-}
-
 struct ResourceUsageWidget {
-    _config: WidgetConfig,
+    sys: sysinfo::System,
 }
 
 impl ResourceUsageWidget {
-    fn new(config: WidgetConfig) -> Self {
-        Self { _config: config }
+    fn new(_config: WidgetConfig) -> Self {
+        let mut sys = sysinfo::System::new_all();
+        sys.refresh_all();
+        Self { sys }
     }
 }
 
@@ -407,16 +389,60 @@ impl slate_plugin_sdk::Widget for ResourceUsageWidget {
     fn init(&mut self, _config: WidgetConfig) {}
 
     fn refresh(&mut self) -> WidgetContent {
-        // Placeholder - real implementation would use sysinfo crate
+        self.sys.refresh_all();
+
+        let cpu_usage = self.sys.global_cpu_usage();
+
+        let total_mem = self.sys.total_memory();
+        let used_mem = self.sys.used_memory();
+        let mem_pct = if total_mem > 0 {
+            (used_mem as f64 / total_mem as f64) * 100.0
+        } else {
+            0.0
+        };
+        let total_mem_gb = total_mem as f64 / 1_073_741_824.0;
+        let used_mem_gb = used_mem as f64 / 1_073_741_824.0;
+
+        let total_swap = self.sys.total_swap();
+        let used_swap = self.sys.used_swap();
+        let total_swap_gb = total_swap as f64 / 1_073_741_824.0;
+        let used_swap_gb = used_swap as f64 / 1_073_741_824.0;
+
+        let cpu_color = if cpu_usage > 80.0 {
+            slate_plugin_sdk::Color::Red
+        } else if cpu_usage > 50.0 {
+            slate_plugin_sdk::Color::Yellow
+        } else {
+            slate_plugin_sdk::Color::Green
+        };
+
+        let mem_color = if mem_pct > 80.0 {
+            slate_plugin_sdk::Color::Red
+        } else if mem_pct > 50.0 {
+            slate_plugin_sdk::Color::Yellow
+        } else {
+            slate_plugin_sdk::Color::Green
+        };
+
         WidgetContent::KeyValue {
             pairs: vec![
-                ("CPU".to_string(), slate_plugin_sdk::Cell::plain("---%")),
-                ("Memory".to_string(), slate_plugin_sdk::Cell::plain("---/--- MB")),
-                ("Disk".to_string(), slate_plugin_sdk::Cell::plain("---/--- GB")),
+                ("CPU".to_string(), slate_plugin_sdk::Cell::colored(
+                    format!("{:.1}%", cpu_usage), cpu_color
+                )),
+                ("Memory".to_string(), slate_plugin_sdk::Cell::colored(
+                    format!("{:.1}/{:.1} GB ({:.0}%)", used_mem_gb, total_mem_gb, mem_pct), mem_color
+                )),
+                ("Swap".to_string(), slate_plugin_sdk::Cell::plain(
+                    format!("{:.1}/{:.1} GB", used_swap_gb, total_swap_gb)
+                )),
+                ("CPUs".to_string(), slate_plugin_sdk::Cell::plain(
+                    format!("{} cores", self.sys.cpus().len())
+                )),
             ],
         }
     }
 }
+
 
 fn toml_to_json(value: &toml::Value) -> serde_json::Value {
     match value {

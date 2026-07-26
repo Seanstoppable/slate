@@ -14,3 +14,4 @@ tracing = { workspace = true }
 extism = { workspace = true }
 mlua = { workspace = true }
 reqwest = { workspace = true }
+chrono = "0.4"

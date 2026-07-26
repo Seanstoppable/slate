@@ -44,3 +44,4 @@ mlua = { version = "0.10", features = ["luau", "serialize", "send"] }
 semver = "1"
 sha2 = "0.10"
 dirs = "6"
+sysinfo = "0.34"

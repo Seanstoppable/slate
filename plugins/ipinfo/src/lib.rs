@@ -43,10 +43,10 @@ pub fn refresh(_input: String) -> FnResult<String> {
             json!({
                 "type": "key_value",
                 "pairs": [
-                    ["IP", {"text": info.ip}],
-                    ["Location", {"text": format!("{}, {}, {}", info.city, info.region, info.country)}],
-                    ["Org", {"text": info.org}],
-                    ["Timezone", {"text": info.timezone}]
+                    {"key": "IP", "value": info.ip},
+                    {"key": "Location", "value": format!("{}, {}, {}", info.city, info.region, info.country)},
+                    {"key": "Org", "value": info.org},
+                    {"key": "Timezone", "value": info.timezone}
                 ]
             })
         }

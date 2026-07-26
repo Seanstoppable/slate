@@ -6,7 +6,7 @@ use serde_json::json;
 pub fn metadata(_input: String) -> FnResult<String> {
     let meta = json!({
         "name": "Clock",
-        "description": "Displays the current UTC time",
+        "description": "Displays current time with timezone",
         "version": env!("CARGO_PKG_VERSION"),
         "author": "Slate Community"
     });
@@ -15,22 +15,23 @@ pub fn metadata(_input: String) -> FnResult<String> {
 
 /// Render current time as text content.
 #[plugin_fn]
-pub fn refresh(_input: String) -> FnResult<String> {
-    // Get current time from host via config (plugins are sandboxed)
-    // For now, use a simple epoch-based approach
-    let config_time = config::get("current_time").ok().flatten();
+pub fn refresh(input: String) -> FnResult<String> {
+    // Host passes current_time and timezone in the input JSON
+    let settings: serde_json::Value = serde_json::from_str(&input).unwrap_or_default();
 
-    let display = match config_time {
-        Some(t) => t,
-        None => {
-            // Fallback: show a static message prompting host integration
-            "Clock plugin loaded - awaiting host time".to_string()
-        }
-    };
+    let time_display = settings["current_time"]
+        .as_str()
+        .unwrap_or("--:--:--");
+    let date_display = settings["current_date"]
+        .as_str()
+        .unwrap_or("---");
+    let tz_display = settings["timezone"]
+        .as_str()
+        .unwrap_or("UTC");
 
     let content = json!({
         "type": "text",
-        "content": format!("🕐 {}", display),
+        "content": format!("\n  🕐  {}\n\n  {}\n  {}", time_display, date_display, tz_display),
         "scrollable": false,
         "wrap": false
     });
