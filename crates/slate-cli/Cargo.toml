@@ -22,3 +22,4 @@ tracing-subscriber = { workspace = true }
 shellexpand = "3"
 sysinfo = "0.34"
 crossterm = { workspace = true }
+wasmparser = { workspace = true }

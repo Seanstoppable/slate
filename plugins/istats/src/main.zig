@@ -1,41 +1,40 @@
 // iStats plugin — displays system stats (temperature, fans, battery) via iStats CLI.
-// Language: Zig (compiled to wasm32-freestanding, using raw Extism ABI)
+// Language: Zig (compiled to wasm32-freestanding, using Extism ABI)
 
-// Extism kernel ABI imports (provided by the linked Extism kernel module)
-extern "env" fn extism_input_length() u64;
-extern "env" fn extism_input_load_u8(offset: u64) u8;
-extern "env" fn extism_alloc(size: u64) u64;
-extern "env" fn extism_store_u8(offset: u64, value: u8) void;
-extern "env" fn extism_output_set(offset: u64, length: u64) void;
-extern "env" fn extism_length(offset: u64) u64;
-extern "env" fn extism_load_u8(offset: u64) u8;
+// Extism kernel imports (namespace: "extism:host/env", short names as per SDK convention)
+extern "extism:host/env" fn alloc(size: u64) u64;
+extern "extism:host/env" fn store_u8(offset: u64, value: u8) void;
+extern "extism:host/env" fn output_set(offset: u64, length: u64) void;
+extern "extism:host/env" fn length(offset: u64) u64;
+extern "extism:host/env" fn load_u8(offset: u64) u8;
+extern "extism:host/env" fn input_length() u64;
 
 // Custom host function
 extern "extism:host/user" fn exec_command(offset: u64) u64;
 
 fn output(s: []const u8) void {
     const len: u64 = @intCast(s.len);
-    const offset = extism_alloc(len);
+    const offset = alloc(len);
     for (0..s.len) |i| {
-        extism_store_u8(offset + @as(u64, @intCast(i)), s[i]);
+        store_u8(offset + @as(u64, @intCast(i)), s[i]);
     }
-    extism_output_set(offset, len);
+    output_set(offset, len);
 }
 
 fn allocStr(s: []const u8) u64 {
     const len: u64 = @intCast(s.len);
-    const offset = extism_alloc(len);
+    const offset = alloc(len);
     for (0..s.len) |i| {
-        extism_store_u8(offset + @as(u64, @intCast(i)), s[i]);
+        store_u8(offset + @as(u64, @intCast(i)), s[i]);
     }
     return offset;
 }
 
 fn readMem(offset: u64, buf: []u8) usize {
-    const len = extism_length(offset);
+    const len = length(offset);
     const to_read: usize = @intCast(@min(len, @as(u64, @intCast(buf.len))));
     for (0..to_read) |i| {
-        buf[i] = extism_load_u8(offset + @as(u64, @intCast(i)));
+        buf[i] = load_u8(offset + @as(u64, @intCast(i)));
     }
     return to_read;
 }

@@ -5,26 +5,26 @@
 @external("extism:host/user", "exec_command")
 declare function exec_command(offset: u64): u64;
 
-// Extism PDK memory helpers
-@external("env", "extism_alloc")
+// Extism PDK memory helpers (namespace: extism:host/env, short names)
+@external("extism:host/env", "alloc")
 declare function extism_alloc(size: u64): u64;
 
-@external("env", "extism_length")
+@external("extism:host/env", "length")
 declare function extism_length(offset: u64): u64;
 
-@external("env", "extism_load_u8")
+@external("extism:host/env", "load_u8")
 declare function extism_load_u8(offset: u64): u8;
 
-@external("env", "extism_store_u8")
+@external("extism:host/env", "store_u8")
 declare function extism_store_u8(offset: u64, value: u8): void;
 
-@external("env", "extism_input_length")
+@external("extism:host/env", "input_length")
 declare function extism_input_length(): u64;
 
-@external("env", "extism_input_load_u8")
+@external("extism:host/env", "input_load_u8")
 declare function extism_input_load_u8(offset: u64): u8;
 
-@external("env", "extism_output_set")
+@external("extism:host/env", "output_set")
 declare function extism_output_set(offset: u64, length: u64): void;
 
 function readInput(): string {

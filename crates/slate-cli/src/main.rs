@@ -48,6 +48,12 @@ enum Commands {
         /// Path to wtfutil YAML config
         path: String,
     },
+    /// Validate config and all plugins without launching the dashboard
+    Check {
+        /// Path to config file
+        #[arg(short, long)]
+        config: Option<String>,
+    },
 }
 
 #[tokio::main]
@@ -86,5 +92,6 @@ async fn main() -> Result<()> {
         Some(Commands::Create { name }) => commands::create(&name).await,
         Some(Commands::Search { query }) => commands::search(&query).await,
         Some(Commands::Migrate { path }) => commands::migrate(&path).await,
+        Some(Commands::Check { config }) => commands::check(config.as_deref()).await,
     }
 }

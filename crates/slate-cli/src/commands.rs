@@ -7,6 +7,102 @@ use slate_plugin_host::{LuaPlugin, WasmPlugin};
 use slate_plugin_manager::{Lockfile, PluginInstaller, Registry};
 use slate_plugin_sdk::{Permissions, WidgetConfig, WidgetMetadata, WidgetContent};
 
+/// A placeholder widget shown when a plugin fails to load.
+struct ErrorWidget {
+    name: String,
+    error: String,
+}
+
+impl slate_plugin_sdk::Widget for ErrorWidget {
+    fn metadata(&self) -> WidgetMetadata {
+        WidgetMetadata {
+            name: self.name.clone(),
+            description: "Failed to load".to_string(),
+            version: "0.0.0".to_string(),
+            author: None,
+            homepage: None,
+        }
+    }
+
+    fn init(&mut self, _config: WidgetConfig) {}
+
+    fn refresh(&mut self) -> WidgetContent {
+        WidgetContent::Text {
+            content: format!("⚠ Plugin load error:\n\n{}", self.error),
+            scrollable: true,
+            wrap: true,
+        }
+    }
+}
+
+/// Try to load a widget, returning an ErrorWidget on failure instead of crashing.
+fn load_widget_or_error(
+    entry: &slate_core::config::WidgetEntry,
+    widget_config: WidgetConfig,
+) -> Box<dyn slate_plugin_sdk::Widget> {
+    match try_load_widget(entry, widget_config.clone()) {
+        Ok(widget) => widget,
+        Err(e) => {
+            let name = entry.widget_type.split('/').last()
+                .or_else(|| entry.widget_type.split(':').last())
+                .unwrap_or(&entry.widget_type)
+                .to_string();
+            eprintln!("Warning: Failed to load '{}': {}", entry.widget_type, e);
+            Box::new(ErrorWidget {
+                name,
+                error: format!("{:#}", e),
+            })
+        }
+    }
+}
+
+/// Attempt to load a single widget from a config entry.
+fn try_load_widget(
+    entry: &slate_core::config::WidgetEntry,
+    widget_config: WidgetConfig,
+) -> Result<Box<dyn slate_plugin_sdk::Widget>> {
+    if entry.widget_type.starts_with("builtin:") {
+        let name = entry.widget_type.trim_start_matches("builtin:");
+        create_builtin(name, widget_config)
+    } else if entry.widget_type.starts_with("lua:") {
+        let path = entry.widget_type.trim_start_matches("lua:");
+        let path = shellexpand::tilde(path);
+        let mut widget = LuaPlugin::from_file(Path::new(path.as_ref()))?;
+        slate_plugin_sdk::Widget::init(&mut widget, widget_config);
+        Ok(Box::new(widget))
+    } else if entry.widget_type.starts_with("wasm:") {
+        let path = entry.widget_type.trim_start_matches("wasm:");
+        let path = shellexpand::tilde(path);
+        let wasm_path = std::path::PathBuf::from(path.as_ref());
+
+        if wasm_path.exists() {
+            let mut widget = WasmPlugin::from_file(&wasm_path, Permissions::default())?;
+            slate_plugin_sdk::Widget::init(&mut widget, widget_config);
+            Ok(Box::new(widget))
+        } else {
+            anyhow::bail!("WASM file not found: '{}'. Build it first.", wasm_path.display())
+        }
+    } else {
+        // GitHub-sourced WASM plugin
+        let plugin_name = entry
+            .widget_type
+            .split('/')
+            .last()
+            .unwrap_or(&entry.widget_type);
+
+        let plugins_dir = PluginInstaller::default_dir()?;
+        let wasm_path = plugins_dir.join(plugin_name).join(format!("{}.wasm", plugin_name));
+
+        if wasm_path.exists() {
+            let mut widget = WasmPlugin::from_file(&wasm_path, Permissions::default())?;
+            slate_plugin_sdk::Widget::init(&mut widget, widget_config);
+            Ok(Box::new(widget))
+        } else {
+            anyhow::bail!("Plugin '{}' not installed. Run `slate install` first.", entry.widget_type)
+        }
+    }
+}
+
 /// Run the dashboard.
 pub async fn run(config_path: Option<&str>) -> Result<()> {
     let config = match config_path {
@@ -16,7 +112,7 @@ pub async fn run(config_path: Option<&str>) -> Result<()> {
 
     let mut app = App::new(config.clone());
 
-    // Load widgets based on config
+    // Load widgets based on config — failures are shown in-cell, not fatal
     for entry in &config.widget {
         let widget_config = WidgetConfig {
             position: entry.position.clone(),
@@ -31,54 +127,8 @@ pub async fn run(config_path: Option<&str>) -> Result<()> {
             refresh_interval: entry.refresh_interval,
         };
 
-        if entry.widget_type.starts_with("builtin:") {
-            let name = entry.widget_type.trim_start_matches("builtin:");
-            let widget = create_builtin(name, widget_config)?;
-            app.add_widget(widget, entry.position.row, entry.position.col, entry.refresh_interval);
-        } else if entry.widget_type.starts_with("lua:") {
-            let path = entry.widget_type.trim_start_matches("lua:");
-            let path = shellexpand::tilde(path);
-            let mut widget = LuaPlugin::from_file(Path::new(path.as_ref()))?;
-            slate_plugin_sdk::Widget::init(&mut widget, widget_config);
-            app.add_widget(Box::new(widget), entry.position.row, entry.position.col, entry.refresh_interval);
-        } else if entry.widget_type.starts_with("wasm:") {
-            // Local WASM file path
-            let path = entry.widget_type.trim_start_matches("wasm:");
-            let path = shellexpand::tilde(path);
-            let wasm_path = std::path::PathBuf::from(path.as_ref());
-
-            if wasm_path.exists() {
-                let mut widget = WasmPlugin::from_file(&wasm_path, Permissions::default())?;
-                slate_plugin_sdk::Widget::init(&mut widget, widget_config);
-                app.add_widget(Box::new(widget), entry.position.row, entry.position.col, entry.refresh_interval);
-            } else {
-                eprintln!(
-                    "Warning: WASM plugin not found at '{}'. Build it first.",
-                    wasm_path.display()
-                );
-            }
-        } else {
-            // GitHub-sourced WASM plugin
-            let plugin_name = entry
-                .widget_type
-                .split('/')
-                .last()
-                .unwrap_or(&entry.widget_type);
-
-            let plugins_dir = PluginInstaller::default_dir()?;
-            let wasm_path = plugins_dir.join(plugin_name).join(format!("{}.wasm", plugin_name));
-
-            if wasm_path.exists() {
-                let mut widget = WasmPlugin::from_file(&wasm_path, Permissions::default())?;
-                slate_plugin_sdk::Widget::init(&mut widget, widget_config);
-                app.add_widget(Box::new(widget), entry.position.row, entry.position.col, entry.refresh_interval);
-            } else {
-                eprintln!(
-                    "Warning: Plugin '{}' not installed. Run `slate install` first.",
-                    entry.widget_type
-                );
-            }
-        }
+        let widget = load_widget_or_error(entry, widget_config);
+        app.add_widget(widget, entry.position.row, entry.position.col, entry.refresh_interval);
     }
 
     // If no widgets configured, show a welcome message
@@ -321,6 +371,215 @@ pub async fn migrate(path: &str) -> Result<()> {
     println!("Migration from wtfutil configs is not yet implemented.");
     println!("Input: {}", path);
     println!("This will convert YAML widget configs to Slate TOML format.");
+    Ok(())
+}
+
+/// Required WASM exports for a valid Slate plugin.
+const REQUIRED_EXPORTS: &[&str] = &["metadata", "refresh"];
+const OPTIONAL_EXPORTS: &[&str] = &["on_key", "on_action"];
+
+/// Validate a WASM binary's exports without instantiating it.
+fn validate_wasm_binary(path: &std::path::Path) -> Vec<String> {
+    let mut issues = Vec::new();
+    let bytes = match std::fs::read(path) {
+        Ok(b) => b,
+        Err(e) => {
+            issues.push(format!("Cannot read file: {}", e));
+            return issues;
+        }
+    };
+
+    let parser = wasmparser::Parser::new(0);
+    let mut found_exports: Vec<String> = Vec::new();
+    let mut bad_imports: Vec<String> = Vec::new();
+
+    for payload in parser.parse_all(&bytes) {
+        match payload {
+            Ok(wasmparser::Payload::ExportSection(reader)) => {
+                for export in reader {
+                    if let Ok(export) = export {
+                        found_exports.push(export.name.to_string());
+                    }
+                }
+            }
+            Ok(wasmparser::Payload::ImportSection(reader)) => {
+                for import in reader {
+                    if let Ok(import) = import {
+                        // Flag imports from unknown namespaces that Extism won't provide
+                        let module = import.module;
+                        let known_modules = [
+                            "extism:host/env",
+                            "extism:host/user",
+                            "env",
+                            "wasi_snapshot_preview1",
+                            "wasi_unstable",
+                        ];
+                        if !known_modules.contains(&module) {
+                            bad_imports.push(format!(
+                                "{}::{} (unknown module '{}')",
+                                module, import.name, module
+                            ));
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                issues.push(format!("Invalid WASM binary: {}", e));
+                return issues;
+            }
+            _ => {}
+        }
+    }
+
+    for required in REQUIRED_EXPORTS {
+        if !found_exports.iter().any(|e| e == required) {
+            issues.push(format!("Missing required export: '{}'", required));
+        }
+    }
+
+    if !bad_imports.is_empty() {
+        for imp in &bad_imports {
+            issues.push(format!("Unresolvable import: {}", imp));
+        }
+    }
+
+    let mut info_missing: Vec<&&str> = Vec::new();
+    for opt in OPTIONAL_EXPORTS {
+        if !found_exports.iter().any(|e| e == opt) {
+            info_missing.push(opt);
+        }
+    }
+    if !info_missing.is_empty() {
+        issues.push(format!(
+            "Optional exports not found (plugin may have limited interactivity): {}",
+            info_missing.iter().map(|s| format!("'{}'", s)).collect::<Vec<_>>().join(", ")
+        ));
+    }
+
+    issues
+}
+
+/// Resolve the WASM path for a widget entry (same logic as try_load_widget).
+fn resolve_wasm_path(widget_type: &str) -> Result<std::path::PathBuf> {
+    if widget_type.starts_with("wasm:") {
+        let path = widget_type.trim_start_matches("wasm:");
+        let path = shellexpand::tilde(path);
+        Ok(std::path::PathBuf::from(path.as_ref()))
+    } else {
+        let plugin_name = widget_type
+            .split('/')
+            .last()
+            .unwrap_or(widget_type);
+        let plugins_dir = PluginInstaller::default_dir()?;
+        Ok(plugins_dir.join(plugin_name).join(format!("{}.wasm", plugin_name)))
+    }
+}
+
+/// Validate config and all plugins without launching the dashboard.
+pub async fn check(config_path: Option<&str>) -> Result<()> {
+    // 1. Validate config
+    print!("Checking config... ");
+    let config = match config_path {
+        Some(path) => SlateConfig::load_from(Path::new(path)),
+        None => SlateConfig::load_default(),
+    };
+    let config = match config {
+        Ok(c) => {
+            println!("✓ ({} widgets configured)", c.widget.len());
+            c
+        }
+        Err(e) => {
+            println!("✗ Config error: {:#}", e);
+            return Ok(());
+        }
+    };
+
+    let mut errors = 0u32;
+    let mut warnings = 0u32;
+    let mut ok = 0u32;
+
+    for (i, entry) in config.widget.iter().enumerate() {
+        let label = format!(
+            "[{},{}] {}",
+            entry.position.row, entry.position.col, entry.widget_type
+        );
+
+        if entry.widget_type.starts_with("builtin:") {
+            let name = entry.widget_type.trim_start_matches("builtin:");
+            let known = ["resource_usage", "power", "firewall", "ipaddresses", "vcs"];
+            if known.contains(&name) {
+                println!("  {:2}. {} ✓ builtin", i + 1, label);
+                ok += 1;
+            } else {
+                println!("  {:2}. {} ✗ unknown builtin '{}'", i + 1, label, name);
+                errors += 1;
+            }
+        } else if entry.widget_type.starts_with("lua:") {
+            let path = entry.widget_type.trim_start_matches("lua:");
+            let path = shellexpand::tilde(path);
+            if Path::new(path.as_ref()).exists() {
+                println!("  {:2}. {} ✓ lua script exists", i + 1, label);
+                ok += 1;
+            } else {
+                println!("  {:2}. {} ✗ lua script not found", i + 1, label);
+                errors += 1;
+            }
+        } else {
+            // WASM plugin (local or GitHub-sourced)
+            match resolve_wasm_path(&entry.widget_type) {
+                Ok(wasm_path) => {
+                    if !wasm_path.exists() {
+                        println!("  {:2}. {} ✗ WASM file not found: {}", i + 1, label, wasm_path.display());
+                        errors += 1;
+                        continue;
+                    }
+
+                    let issues = validate_wasm_binary(&wasm_path);
+                    let blocking: Vec<&String> = issues
+                        .iter()
+                        .filter(|s| !s.starts_with("Optional"))
+                        .collect();
+
+                    if blocking.is_empty() {
+                        // Try actual Extism instantiation
+                        match WasmPlugin::from_file(&wasm_path, Permissions::default()) {
+                            Ok(_) => {
+                                if issues.is_empty() {
+                                    println!("  {:2}. {} ✓", i + 1, label);
+                                } else {
+                                    for issue in &issues {
+                                        println!("  {:2}. {} ⚠ {}", i + 1, label, issue);
+                                    }
+                                    warnings += 1;
+                                }
+                                ok += 1;
+                            }
+                            Err(e) => {
+                                println!("  {:2}. {} ✗ Extism load failed: {:#}", i + 1, label, e);
+                                errors += 1;
+                            }
+                        }
+                    } else {
+                        for issue in &blocking {
+                            println!("  {:2}. {} ✗ {}", i + 1, label, issue);
+                        }
+                        errors += 1;
+                    }
+                }
+                Err(e) => {
+                    println!("  {:2}. {} ✗ {}", i + 1, label, e);
+                    errors += 1;
+                }
+            }
+        }
+    }
+
+    println!();
+    println!("Results: {} ok, {} warnings, {} errors", ok, warnings, errors);
+    if errors > 0 {
+        println!("Fix errors above before running `slate run`.");
+    }
+
     Ok(())
 }
 
