@@ -95,10 +95,11 @@ impl slate_plugin_sdk::Widget for LuaPlugin {
         }
     }
 
-    fn on_action(&mut self, action_id: &str, item_id: &str) {
+    fn on_action(&mut self, action_id: &str, item_id: &str) -> Option<slate_plugin_sdk::WidgetAction> {
         if let Ok(func) = self.lua.globals().get::<LuaFunction>("on_action") {
             let _ = func.call::<()>((action_id.to_string(), item_id.to_string()));
         }
+        None
     }
 
     fn on_focus(&mut self) {

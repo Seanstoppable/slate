@@ -210,9 +210,22 @@ impl slate_plugin_sdk::Widget for WasmPlugin {
         let _ = self.plugin.call::<&str, String>("on_key", &input);
     }
 
-    fn on_action(&mut self, action_id: &str, item_id: &str) {
+    fn on_action(&mut self, action_id: &str, item_id: &str) -> Option<slate_plugin_sdk::WidgetAction> {
         let input = serde_json::json!({ "action_id": action_id, "item_id": item_id }).to_string();
-        let _ = self.plugin.call::<&str, String>("on_action", &input);
+        match self.plugin.call::<&str, String>("on_action", &input) {
+            Ok(response) => {
+                if let Ok(val) = serde_json::from_str::<serde_json::Value>(&response) {
+                    if let Some(url) = val["open_url"].as_str() {
+                        return Some(slate_plugin_sdk::WidgetAction::OpenUrl(url.to_string()));
+                    }
+                    if let Some(msg) = val["notify"].as_str() {
+                        return Some(slate_plugin_sdk::WidgetAction::Notify(msg.to_string()));
+                    }
+                }
+                None
+            }
+            Err(_) => None,
+        }
     }
 
     fn on_focus(&mut self) {}

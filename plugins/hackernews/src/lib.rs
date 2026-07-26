@@ -93,9 +93,8 @@ pub fn on_action(input: String) -> FnResult<String> {
 
     if let Ok(action) = serde_json::from_str::<ActionInput>(&input) {
         match action.action_id.as_str() {
-            "open" => {
+            "open" | "select" => {
                 let url = format!("https://news.ycombinator.com/item?id={}", action.item_id);
-                // Request host to open URL
                 let result = json!({"open_url": url});
                 return Ok(result.to_string());
             }

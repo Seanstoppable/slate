@@ -8,7 +8,7 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::{backend::CrosstermBackend, layout::Constraint, layout::Direction, layout::Layout, Terminal};
-use slate_plugin_sdk::{BoxedWidget, WidgetContent, WidgetMetadata};
+use slate_plugin_sdk::{BoxedWidget, WidgetAction, WidgetContent, WidgetMetadata};
 
 use crate::config::SlateConfig;
 use crate::layout::{compute_grid, FocusPosition};
@@ -91,12 +91,21 @@ impl App {
 
     fn main_loop(&mut self, terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<()> {
         while self.running {
-            // Refresh widgets that are due
+            // Refresh widgets that are due (skip focused list widgets to avoid disrupting navigation)
             let now = Instant::now();
             for instance in &mut self.widgets {
                 if now.duration_since(instance.last_refresh) >= instance.refresh_interval {
+                    // Don't auto-refresh a focused selectable list (user is navigating)
+                    let is_focused = instance.row == self.focus.row && instance.col == self.focus.col;
+                    if is_focused && instance.content.is_selectable_list() {
+                        continue;
+                    }
                     instance.content = instance.widget.refresh();
                     instance.last_refresh = now;
+                    // Initialize selection for new list content
+                    if instance.content.is_selectable_list() && instance.selected.is_none() {
+                        instance.selected = Some(0);
+                    }
                 }
             }
 
@@ -196,11 +205,12 @@ impl App {
                 if let Some(instance) = self.focused_widget_mut() {
                     if let (Some(sel), WidgetContent::List { items, .. }) = (instance.selected, &instance.content) {
                         if let Some(item) = items.get(sel) {
-                            instance.widget.on_action("select", &item.id);
+                            let item_id = item.id.clone();
+                            if let Some(action) = instance.widget.on_action("select", &item_id) {
+                                Self::handle_widget_action(action);
+                            }
                         }
                     }
-                    instance.widget.on_key("enter", "select");
-                    instance.content = instance.widget.refresh();
                 }
             }
             KeyCode::Char('r') => {
@@ -220,6 +230,24 @@ impl App {
                     let key_str = format!("{:?}", key.code);
                     instance.widget.on_key(&key_str, "");
                 }
+            }
+        }
+    }
+
+    fn handle_widget_action(action: WidgetAction) {
+        match action {
+            WidgetAction::OpenUrl(url) => {
+                // Open URL in system browser
+                #[cfg(target_os = "windows")]
+                { let _ = std::process::Command::new("cmd").args(["/C", "start", &url]).spawn(); }
+                #[cfg(target_os = "macos")]
+                { let _ = std::process::Command::new("open").arg(&url).spawn(); }
+                #[cfg(target_os = "linux")]
+                { let _ = std::process::Command::new("xdg-open").arg(&url).spawn(); }
+            }
+            WidgetAction::Notify(msg) => {
+                // For now, just log it
+                tracing::info!("Widget notification: {}", msg);
             }
         }
     }
