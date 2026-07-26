@@ -19,7 +19,7 @@ impl LuaPlugin {
 
         lua.load(&script)
             .exec()
-            .with_context(|| format!("Failed to execute Lua script: {}", path.display()))?;
+            .map_err(|e| anyhow::anyhow!("Failed to execute Lua script {}: {}", path.display(), e))?;
 
         // Extract metadata from Lua globals
         let name: String = lua

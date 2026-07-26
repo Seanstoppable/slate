@@ -4,7 +4,7 @@ use std::path::Path;
 use slate_core::{App, SlateConfig};
 use slate_plugin_host::{LuaPlugin, WasmPlugin};
 use slate_plugin_manager::{Lockfile, PluginInstaller, Registry};
-use slate_plugin_sdk::{Permissions, WidgetConfig, WidgetMetadata, WidgetContent, Position};
+use slate_plugin_sdk::{Permissions, WidgetConfig, WidgetMetadata, WidgetContent};
 
 /// Run the dashboard.
 pub async fn run(config_path: Option<&str>) -> Result<()> {
@@ -42,8 +42,8 @@ pub async fn run(config_path: Option<&str>) -> Result<()> {
             app.add_widget(Box::new(widget), entry.position.row, entry.position.col, entry.refresh_interval);
         } else {
             // GitHub-sourced WASM plugin
-            let installer = PluginInstaller::new(PluginInstaller::default_dir()?);
-            let lockfile = Lockfile::load_default()?;
+            let _installer = PluginInstaller::new(PluginInstaller::default_dir()?);
+            let _lockfile = Lockfile::load_default()?;
             // Look for installed WASM file
             let plugin_name = entry
                 .widget_type

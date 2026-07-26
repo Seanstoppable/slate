@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use serde::Deserialize;
-use slate_plugin_sdk::{Permissions, Position};
+use slate_plugin_sdk::Position;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -167,8 +167,11 @@ fn interpolate_value(value: &mut toml::Value) {
             }
         }
         toml::Value::Table(table) => {
-            for v in table.values_mut() {
-                interpolate_value(v);
+            let keys: Vec<String> = table.keys().cloned().collect();
+            for key in keys {
+                if let Some(v) = table.get_mut(&key) {
+                    interpolate_value(v);
+                }
             }
         }
         _ => {}

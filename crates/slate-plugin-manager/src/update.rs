@@ -1,5 +1,4 @@
 use anyhow::Result;
-use std::collections::HashMap;
 
 use crate::install::PluginInstaller;
 use crate::lockfile::Lockfile;
