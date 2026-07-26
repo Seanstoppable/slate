@@ -5,8 +5,10 @@
 
 pub mod config;
 pub mod layout;
+pub mod notifications;
 pub mod render;
 pub mod app;
 
 pub use app::App;
 pub use config::SlateConfig;
+pub use notifications::UpdateNotifications;

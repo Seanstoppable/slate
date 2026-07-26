@@ -12,6 +12,7 @@ use slate_plugin_sdk::{BoxedWidget, WidgetContent, WidgetMetadata};
 
 use crate::config::SlateConfig;
 use crate::layout::{compute_grid, FocusPosition};
+use crate::notifications::UpdateNotifications;
 use crate::render::{render_status_bar, render_widget};
 
 /// A running widget instance with its state.
@@ -31,15 +32,18 @@ pub struct App {
     widgets: Vec<WidgetInstance>,
     focus: FocusPosition,
     running: bool,
+    notifications: UpdateNotifications,
 }
 
 impl App {
     pub fn new(config: SlateConfig) -> Self {
+        let notifications = UpdateNotifications::load();
         Self {
             config,
             widgets: Vec::new(),
             focus: FocusPosition::new(0, 0),
             running: true,
+            notifications,
         }
     }
 
@@ -57,6 +61,11 @@ impl App {
             last_refresh: Instant::now(),
             refresh_interval: Duration::from_secs(interval),
         });
+    }
+
+    /// Set update notification state (called before run).
+    pub fn set_notifications(&mut self, notifications: UpdateNotifications) {
+        self.notifications = notifications;
     }
 
     /// Run the main TUI loop.
@@ -112,7 +121,7 @@ impl App {
                     }
                 }
 
-                render_status_bar(frame, status_area, &self.focus, self.widgets.len());
+                render_status_bar(frame, status_area, &self.focus, self.widgets.len(), self.notifications.status_message().as_deref());
             })?;
 
             // Handle input (poll with timeout for refresh)

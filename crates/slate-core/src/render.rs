@@ -142,10 +142,17 @@ pub fn render_widget(
 }
 
 /// Render the status bar at the bottom of the screen.
-pub fn render_status_bar(frame: &mut Frame, area: Rect, focus: &FocusPosition, widget_count: usize) {
+pub fn render_status_bar(
+    frame: &mut Frame,
+    area: Rect,
+    focus: &FocusPosition,
+    widget_count: usize,
+    update_msg: Option<&str>,
+) {
+    let update_part = update_msg.unwrap_or("");
     let status = format!(
-        " Slate │ {} widgets │ Focus: ({},{}) │ q: quit │ Tab: next │ ←↑↓→: navigate ",
-        widget_count, focus.row, focus.col
+        " Slate │ {} widgets │ Focus: ({},{}) {}│ q: quit │ Tab: next │ ←↑↓→: navigate ",
+        widget_count, focus.row, focus.col, update_part
     );
     let paragraph = Paragraph::new(status)
         .style(Style::default().bg(RatColor::DarkGray).fg(RatColor::White));
