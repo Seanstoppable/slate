@@ -1,5 +1,6 @@
 use anyhow::Result;
 use std::path::Path;
+use std::process::Command;
 
 use slate_core::{App, SlateConfig};
 use slate_plugin_host::{LuaPlugin, WasmPlugin};
@@ -327,6 +328,10 @@ pub async fn migrate(path: &str) -> Result<()> {
 fn create_builtin(name: &str, config: WidgetConfig) -> Result<Box<dyn slate_plugin_sdk::Widget>> {
     match name {
         "resource_usage" => Ok(Box::new(ResourceUsageWidget::new(config))),
+        "power" => Ok(Box::new(PowerWidget::new())),
+        "firewall" => Ok(Box::new(FirewallWidget::new())),
+        "ipaddresses" => Ok(Box::new(IpAddressesWidget::new())),
+        "vcs" => Ok(Box::new(VcsWidget::new(config))),
         _ => anyhow::bail!("Unknown builtin widget: {}", name),
     }
 }
@@ -473,6 +478,588 @@ impl slate_plugin_sdk::Widget for ResourceUsageWidget {
     }
 }
 
+// --- Power Widget (builtin) ---
+
+struct PowerWidget;
+
+impl PowerWidget {
+    fn new() -> Self {
+        Self
+    }
+}
+
+impl slate_plugin_sdk::Widget for PowerWidget {
+    fn metadata(&self) -> WidgetMetadata {
+        WidgetMetadata {
+            name: "Power".to_string(),
+            description: "Battery and power status".to_string(),
+            version: "0.1.0".to_string(),
+            author: None,
+            homepage: None,
+        }
+    }
+
+    fn init(&mut self, _config: WidgetConfig) {}
+
+    fn refresh(&mut self) -> WidgetContent {
+        let (has_battery, state, percent) = get_power_info();
+
+        let state_color = match state.as_str() {
+            "Charging" => slate_plugin_sdk::Color::Green,
+            "Discharging" => {
+                if percent < 20 { slate_plugin_sdk::Color::Red }
+                else if percent < 50 { slate_plugin_sdk::Color::Yellow }
+                else { slate_plugin_sdk::Color::Green }
+            }
+            "Critical" | "Low" => slate_plugin_sdk::Color::Red,
+            _ => slate_plugin_sdk::Color::White,
+        };
+
+        let mut pairs = vec![
+            ("Status".to_string(), slate_plugin_sdk::Cell::colored(state.clone(), state_color)),
+        ];
+
+        if has_battery {
+            let pct_color = if percent < 20 { slate_plugin_sdk::Color::Red }
+                else if percent < 50 { slate_plugin_sdk::Color::Yellow }
+                else { slate_plugin_sdk::Color::Green };
+            pairs.push(("Battery".to_string(), slate_plugin_sdk::Cell::colored(
+                format!("{}%", percent), pct_color
+            )));
+        }
+
+        pairs.push(("Source".to_string(), slate_plugin_sdk::Cell::plain(
+            if has_battery && state == "Discharging" { "Battery".to_string() } else { "AC Power".to_string() }
+        )));
+
+        WidgetContent::KeyValue { pairs }
+    }
+}
+
+fn get_power_info() -> (bool, String, u64) {
+    #[cfg(target_os = "windows")]
+    {
+        let output = Command::new("powershell")
+            .args(["-NoProfile", "-Command",
+                "(Get-CimInstance Win32_Battery | Select-Object EstimatedChargeRemaining, BatteryStatus | ConvertTo-Json) 2>$null; if (-not $?) { Write-Output '{\"ac_power\": true}' }"])
+            .output();
+        if let Ok(out) = output {
+            let text = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&text) {
+                if val.get("ac_power").is_some() {
+                    return (false, "AC Power".to_string(), 100);
+                }
+                let percent = val["EstimatedChargeRemaining"].as_u64().unwrap_or(0);
+                let status = match val["BatteryStatus"].as_u64().unwrap_or(0) {
+                    1 => "Discharging",
+                    2 => "AC Power",
+                    3 => "Fully Charged",
+                    4 => "Low",
+                    5 => "Critical",
+                    6..=8 => "Charging",
+                    _ => "Unknown",
+                };
+                return (true, status.to_string(), percent);
+            }
+        }
+        (false, "AC Power".to_string(), 100)
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let output = Command::new("pmset").args(["-g", "batt"]).output();
+        if let Ok(out) = output {
+            let text = String::from_utf8_lossy(&out.stdout);
+            for line in text.lines() {
+                if line.contains("InternalBattery") {
+                    let parts: Vec<&str> = line.split_whitespace().collect();
+                    let percent = parts.iter()
+                        .find(|p| p.ends_with("%;"))
+                        .map(|p| p.trim_end_matches("%;").parse::<u64>().unwrap_or(0))
+                        .unwrap_or(0);
+                    let state = if line.contains("charging") { "Charging" }
+                        else if line.contains("discharging") { "Discharging" }
+                        else { "Fully Charged" };
+                    return (true, state.to_string(), percent);
+                }
+            }
+        }
+        (false, "AC Power".to_string(), 100)
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let output = Command::new("cat")
+            .arg("/sys/class/power_supply/BAT0/capacity")
+            .output();
+        if let Ok(out) = output {
+            if out.status.success() {
+                let percent: u64 = String::from_utf8_lossy(&out.stdout).trim().parse().unwrap_or(0);
+                let status_out = Command::new("cat")
+                    .arg("/sys/class/power_supply/BAT0/status")
+                    .output();
+                let state = status_out
+                    .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+                    .unwrap_or_else(|_| "Unknown".to_string());
+                return (true, state, percent);
+            }
+        }
+        (false, "AC Power".to_string(), 100)
+    }
+}
+
+// --- Firewall Widget (builtin) ---
+
+struct FirewallWidget;
+
+impl FirewallWidget {
+    fn new() -> Self {
+        Self
+    }
+}
+
+impl slate_plugin_sdk::Widget for FirewallWidget {
+    fn metadata(&self) -> WidgetMetadata {
+        WidgetMetadata {
+            name: "Firewall".to_string(),
+            description: "Firewall status and rules".to_string(),
+            version: "0.1.0".to_string(),
+            author: None,
+            homepage: None,
+        }
+    }
+
+    fn init(&mut self, _config: WidgetConfig) {}
+
+    fn refresh(&mut self) -> WidgetContent {
+        let (platform, enabled, rules) = get_firewall_info();
+
+        let status_color = if enabled { slate_plugin_sdk::Color::Green } else { slate_plugin_sdk::Color::Red };
+        let mut items = vec![
+            slate_plugin_sdk::ListItem {
+                id: "status".to_string(),
+                title: format!("Firewall: {}", if enabled { "Enabled" } else { "Disabled" }),
+                subtitle: Some(format!("Platform: {}", platform)),
+                icon: None,
+                style: slate_plugin_sdk::CellStyle { fg: Some(status_color), ..Default::default() },
+            }
+        ];
+
+        for (i, rule) in rules.iter().enumerate() {
+            items.push(slate_plugin_sdk::ListItem {
+                id: format!("rule-{}", i),
+                title: rule.clone(),
+                subtitle: None,
+                icon: None,
+                style: Default::default(),
+            });
+        }
+
+        WidgetContent::List {
+            items,
+            selectable: true,
+            actions: vec![],
+        }
+    }
+}
+
+fn get_firewall_info() -> (String, bool, Vec<String>) {
+    #[cfg(target_os = "windows")]
+    {
+        let output = Command::new("netsh")
+            .args(["advfirewall", "show", "allprofiles", "state"])
+            .output();
+        let enabled = if let Ok(out) = &output {
+            String::from_utf8_lossy(&out.stdout).contains("ON")
+        } else {
+            false
+        };
+
+        let rules_output = Command::new("netsh")
+            .args(["advfirewall", "firewall", "show", "rule", "name=all", "dir=in"])
+            .output();
+        let mut rules = Vec::new();
+        if let Ok(out) = rules_output {
+            let text = String::from_utf8_lossy(&out.stdout);
+            let mut name = String::new();
+            let mut action = String::new();
+            let mut port = String::new();
+            for line in text.lines() {
+                let trimmed = line.trim();
+                if trimmed.starts_with("Rule Name:") {
+                    if !name.is_empty() {
+                        rules.push(format!("{} {} IN/{}", action.to_uppercase(), name, port));
+                    }
+                    name = trimmed.trim_start_matches("Rule Name:").trim().to_string();
+                    action = "Allow".to_string();
+                    port = "Any".to_string();
+                } else if trimmed.starts_with("Action:") {
+                    action = trimmed.trim_start_matches("Action:").trim().to_string();
+                } else if trimmed.starts_with("LocalPort:") {
+                    port = trimmed.trim_start_matches("LocalPort:").trim().to_string();
+                }
+                if rules.len() >= 15 { break; }
+            }
+            if !name.is_empty() && rules.len() < 15 {
+                rules.push(format!("{} {} IN/{}", action.to_uppercase(), name, port));
+            }
+        }
+
+        ("Windows".to_string(), enabled, rules)
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let output = Command::new("ufw").args(["status"]).output();
+        if let Ok(out) = output {
+            let text = String::from_utf8_lossy(&out.stdout);
+            let enabled = text.contains("Status: active");
+            let rules: Vec<String> = text.lines().skip(4).take(15)
+                .map(|l| l.trim().to_string())
+                .filter(|l| !l.is_empty())
+                .collect();
+            return ("Linux (ufw)".to_string(), enabled, rules);
+        }
+        let ipt = Command::new("iptables").args(["-L", "-n", "--line-numbers"]).output();
+        if let Ok(out) = ipt {
+            let text = String::from_utf8_lossy(&out.stdout);
+            let rules: Vec<String> = text.lines().skip(2).take(15)
+                .map(|l| l.trim().to_string())
+                .filter(|l| !l.is_empty())
+                .collect();
+            return ("Linux (iptables)".to_string(), true, rules);
+        }
+        ("Linux".to_string(), false, Vec::new())
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let output = Command::new("pfctl").args(["-sr"]).output();
+        let rules: Vec<String> = if let Ok(out) = output {
+            String::from_utf8_lossy(&out.stdout).lines().take(15)
+                .map(|l| l.trim().to_string())
+                .filter(|l| !l.is_empty())
+                .collect()
+        } else {
+            Vec::new()
+        };
+        ("macOS (pf)".to_string(), !rules.is_empty(), rules)
+    }
+}
+
+// --- IP Addresses Widget (builtin) ---
+
+struct IpAddressesWidget;
+
+impl IpAddressesWidget {
+    fn new() -> Self {
+        Self
+    }
+}
+
+impl slate_plugin_sdk::Widget for IpAddressesWidget {
+    fn metadata(&self) -> WidgetMetadata {
+        WidgetMetadata {
+            name: "IP Addresses".to_string(),
+            description: "Network interface addresses".to_string(),
+            version: "0.1.0".to_string(),
+            author: None,
+            homepage: None,
+        }
+    }
+
+    fn init(&mut self, _config: WidgetConfig) {}
+
+    fn refresh(&mut self) -> WidgetContent {
+        let interfaces = get_network_interfaces();
+
+        if interfaces.is_empty() {
+            return WidgetContent::Text {
+                content: "No network interfaces found".to_string(),
+                scrollable: false,
+                wrap: true,
+            };
+        }
+
+        let pairs: Vec<(String, slate_plugin_sdk::Cell)> = interfaces
+            .into_iter()
+            .map(|(name, ip)| {
+                let display = if ip.is_empty() { "—".to_string() } else { ip };
+                (name, slate_plugin_sdk::Cell::plain(display))
+            })
+            .collect();
+
+        WidgetContent::KeyValue { pairs }
+    }
+}
+
+fn get_network_interfaces() -> Vec<(String, String)> {
+    let networks = sysinfo::Networks::new_with_refreshed_list();
+    let mut results: Vec<(String, String)> = Vec::new();
+
+    for (name, _data) in networks.iter() {
+        let ip = get_interface_ip(name);
+        results.push((name.clone(), ip));
+    }
+
+    results
+}
+
+fn get_interface_ip(interface_name: &str) -> String {
+    #[cfg(target_os = "windows")]
+    {
+        let output = Command::new("netsh")
+            .args(["interface", "ip", "show", "addresses", interface_name])
+            .output();
+        if let Ok(out) = output {
+            let text = String::from_utf8_lossy(&out.stdout);
+            for line in text.lines() {
+                let trimmed = line.trim();
+                if trimmed.starts_with("IP Address:") || trimmed.starts_with("IP") {
+                    if let Some(ip) = trimmed.split_whitespace().last() {
+                        if ip.contains('.') {
+                            return ip.to_string();
+                        }
+                    }
+                }
+            }
+        }
+        String::new()
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let output = Command::new("ip")
+            .args(["-4", "addr", "show", interface_name])
+            .output();
+        if let Ok(out) = output {
+            let text = String::from_utf8_lossy(&out.stdout);
+            for line in text.lines() {
+                let trimmed = line.trim();
+                if trimmed.starts_with("inet ") {
+                    if let Some(addr) = trimmed.split_whitespace().nth(1) {
+                        return addr.split('/').next().unwrap_or("").to_string();
+                    }
+                }
+            }
+        }
+        String::new()
+    }
+}
+
+// --- VCS Widget (builtin) ---
+
+struct VcsWidget {
+    engine: String,
+    repo_path: String,
+}
+
+impl VcsWidget {
+    fn new(config: WidgetConfig) -> Self {
+        let engine = config.settings.get("engine")
+            .and_then(|v| v.as_str())
+            .unwrap_or("git")
+            .to_string();
+        let repo_path = config.settings.get("repo_path")
+            .and_then(|v| v.as_str())
+            .unwrap_or(".")
+            .to_string();
+        Self { engine, repo_path }
+    }
+}
+
+impl slate_plugin_sdk::Widget for VcsWidget {
+    fn metadata(&self) -> WidgetMetadata {
+        WidgetMetadata {
+            name: format!("VCS ({})", self.engine),
+            description: "Version control status".to_string(),
+            version: "0.1.0".to_string(),
+            author: None,
+            homepage: None,
+        }
+    }
+
+    fn init(&mut self, config: WidgetConfig) {
+        if let Some(e) = config.settings.get("engine").and_then(|v| v.as_str()) {
+            self.engine = e.to_string();
+        }
+        if let Some(p) = config.settings.get("repo_path").and_then(|v| v.as_str()) {
+            self.repo_path = p.to_string();
+        }
+    }
+
+    fn refresh(&mut self) -> WidgetContent {
+        if self.repo_path.trim().is_empty() || self.repo_path == "." {
+            return WidgetContent::Text {
+                content: "Configure repo_path in settings".to_string(),
+                scrollable: false,
+                wrap: true,
+            };
+        }
+
+        let path = std::path::Path::new(&self.repo_path);
+        if !path.exists() {
+            return WidgetContent::Text {
+                content: format!("Repo path not found: {}", self.repo_path),
+                scrollable: false,
+                wrap: true,
+            };
+        }
+
+        let (branch, status_entries, log_entries) = match self.engine.as_str() {
+            "hg" => get_hg_info(&self.repo_path),
+            _ => get_git_info(&self.repo_path),
+        };
+
+        let mut modified = 0usize;
+        let mut added = 0usize;
+        let mut deleted = 0usize;
+        let mut untracked = 0usize;
+        for (state, _) in &status_entries {
+            match state.as_str() {
+                "modified" => modified += 1,
+                "added" => added += 1,
+                "deleted" => deleted += 1,
+                "untracked" => untracked += 1,
+                _ => {}
+            }
+        }
+
+        let mut summary_parts = Vec::new();
+        if modified > 0 { summary_parts.push(format!("{modified} modified")); }
+        if added > 0 { summary_parts.push(format!("{added} added")); }
+        if deleted > 0 { summary_parts.push(format!("{deleted} deleted")); }
+        if untracked > 0 { summary_parts.push(format!("{untracked} untracked")); }
+
+        let status_summary = if summary_parts.is_empty() {
+            "clean".to_string()
+        } else {
+            summary_parts.join(", ")
+        };
+
+        let status_color = if summary_parts.is_empty() {
+            slate_plugin_sdk::Color::Green
+        } else {
+            slate_plugin_sdk::Color::Yellow
+        };
+
+        let mut pairs = vec![
+            ("Engine".to_string(), slate_plugin_sdk::Cell::plain(self.engine.clone())),
+            ("Branch".to_string(), slate_plugin_sdk::Cell::plain(
+                if branch.is_empty() { "(detached)".to_string() } else { branch }
+            )),
+            ("Status".to_string(), slate_plugin_sdk::Cell::colored(status_summary, status_color)),
+        ];
+
+        for (i, (hash, message, author, date)) in log_entries.iter().take(5).enumerate() {
+            let key = if i == 0 { "Last commit".to_string() } else { format!("Recent {}", i + 1) };
+            let mut val = format!("{} {}", hash, message);
+            if !author.is_empty() || !date.is_empty() {
+                let extra: Vec<&str> = [author.as_str(), date.as_str()]
+                    .iter()
+                    .filter(|s| !s.is_empty())
+                    .copied()
+                    .collect();
+                val.push_str(&format!(" ({})", extra.join(" • ")));
+            }
+            pairs.push((key, slate_plugin_sdk::Cell::plain(val)));
+        }
+
+        if log_entries.is_empty() {
+            pairs.push(("Last commit".to_string(), slate_plugin_sdk::Cell::plain("No commits available".to_string())));
+        }
+
+        WidgetContent::KeyValue { pairs }
+    }
+}
+
+/// Returns (branch, status_entries[(state, file)], log_entries[(hash, message, author, date)])
+fn get_git_info(repo_path: &str) -> (String, Vec<(String, String)>, Vec<(String, String, String, String)>) {
+    let branch = Command::new("git")
+        .args(["rev-parse", "--abbrev-ref", "HEAD"])
+        .current_dir(repo_path)
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_else(|_| "unknown".to_string());
+
+    let status: Vec<(String, String)> = Command::new("git")
+        .args(["status", "--porcelain"])
+        .current_dir(repo_path)
+        .output()
+        .map(|o| {
+            String::from_utf8_lossy(&o.stdout).lines().filter(|l| l.len() >= 3).map(|line| {
+                let state = match &line[..2] {
+                    " M" | "M " | "MM" => "modified",
+                    "A " | "AM" => "added",
+                    " D" | "D " => "deleted",
+                    "??" => "untracked",
+                    _ => "other",
+                };
+                (state.to_string(), line[3..].to_string())
+            }).collect()
+        })
+        .unwrap_or_default();
+
+    let log: Vec<(String, String, String, String)> = Command::new("git")
+        .args(["log", "--oneline", "-10", "--format=%h|%s|%an|%ar"])
+        .current_dir(repo_path)
+        .output()
+        .map(|o| {
+            String::from_utf8_lossy(&o.stdout).lines().filter(|l| !l.is_empty()).map(|line| {
+                let parts: Vec<&str> = line.splitn(4, '|').collect();
+                (
+                    parts.first().unwrap_or(&"").to_string(),
+                    parts.get(1).unwrap_or(&"").to_string(),
+                    parts.get(2).unwrap_or(&"").to_string(),
+                    parts.get(3).unwrap_or(&"").to_string(),
+                )
+            }).collect()
+        })
+        .unwrap_or_default();
+
+    (branch, status, log)
+}
+
+fn get_hg_info(repo_path: &str) -> (String, Vec<(String, String)>, Vec<(String, String, String, String)>) {
+    let branch = Command::new("hg")
+        .args(["branch"])
+        .current_dir(repo_path)
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_else(|_| "default".to_string());
+
+    let status: Vec<(String, String)> = Command::new("hg")
+        .args(["status"])
+        .current_dir(repo_path)
+        .output()
+        .map(|o| {
+            String::from_utf8_lossy(&o.stdout).lines().filter(|l| l.len() >= 2).map(|line| {
+                let state = match line.chars().next().unwrap_or(' ') {
+                    'M' => "modified",
+                    'A' => "added",
+                    'R' => "deleted",
+                    '?' => "untracked",
+                    _ => "other",
+                };
+                (state.to_string(), line.get(2..).unwrap_or("").to_string())
+            }).collect()
+        })
+        .unwrap_or_default();
+
+    let log: Vec<(String, String, String, String)> = Command::new("hg")
+        .args(["log", "-l", "10", "--template", "{short(node)}|{desc|firstline}|{author|user}|{date|age}\n"])
+        .current_dir(repo_path)
+        .output()
+        .map(|o| {
+            String::from_utf8_lossy(&o.stdout).lines().filter(|l| !l.is_empty()).map(|line| {
+                let parts: Vec<&str> = line.splitn(4, '|').collect();
+                (
+                    parts.first().unwrap_or(&"").to_string(),
+                    parts.get(1).unwrap_or(&"").to_string(),
+                    parts.get(2).unwrap_or(&"").to_string(),
+                    parts.get(3).unwrap_or(&"").to_string(),
+                )
+            }).collect()
+        })
+        .unwrap_or_default();
+
+    (branch, status, log)
+}
 
 fn toml_to_json(value: &toml::Value) -> serde_json::Value {
     match value {

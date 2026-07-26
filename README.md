@@ -5,7 +5,8 @@ A terminal info dashboard with a plugin ecosystem. Think [wtfutil](https://wtfut
 ## Features
 
 - **WASM-sandboxed plugins** — Community plugins run in an Extism sandbox with capability-gated permissions
-- **10 built-in plugins** — Clock, resources, weather, HN, feeds, VCS, networking, and more
+- **5 built-in widgets** — Resources, power, firewall, network interfaces, VCS (git/hg)
+- **6 WASM plugins** — Clock, weather, HN, feeds, IP info, GitHub
 - **Lua scripting** — Quick personal widgets with zero compilation
 - **Plugin manager** — Install from GitHub repos, lockfile-based versioning, update notifications
 - **Interactive lists** — Navigate items with j/k, open links with Enter
@@ -86,16 +87,16 @@ Environment variables are interpolated with `${VAR_NAME}` syntax.
 
 | Plugin | Type | Description |
 |--------|------|-------------|
-| `clock` | WASM | Current time with timezone |
 | `resource_usage` | Builtin | CPU, memory, swap, temperatures |
-| `power` | WASM | Battery status and charging state |
+| `power` | Builtin | Battery status and charging state |
+| `ipaddresses` | Builtin | Local network interface addresses |
+| `firewall` | Builtin | Firewall status and rules |
+| `vcs` | Builtin | Git/Mercurial status (configurable engine) |
+| `clock` | WASM | Current time with timezone |
 | `weather` | WASM | Weather via OpenWeatherMap |
-| `ipinfo` | WASM | Public IP and geolocation |
-| `ipaddresses` | WASM | Local network interfaces |
+| `ipinfo` | WASM | Public IP and geolocation (via ipinfo.io) |
 | `hackernews` | WASM | Top stories (interactive list) |
 | `feedreader` | WASM | RSS/Atom feed reader |
-| `vcs` | WASM | Git/Mercurial status (configurable engine) |
-| `firewall` | WASM | Firewall rules display |
 | `github` | WASM | GitHub PRs, issues, repo stats |
 
 ### Plugin Management
@@ -208,17 +209,13 @@ slate/
 │   ├── slate-plugin-sdk/     # Widget trait, WidgetContent types, WidgetAction
 │   ├── slate-plugin-manager/ # GitHub download, versions, lockfile, registry
 │   └── slate-cli/            # Binary, clap commands, built-in widgets
-├── plugins/                  # WASM plugin source (10 plugins)
+├── plugins/                  # WASM plugin source (6 plugins)
 │   ├── clock/
 │   ├── hackernews/
 │   ├── ipinfo/
-│   ├── ipaddresses/
 │   ├── github/
-│   ├── power/
 │   ├── weather/
-│   ├── feedreader/
-│   ├── vcs/
-│   └── firewall/
+│   └── feedreader/
 └── .github/extensions/       # Copilot skill for scaffolding plugins
 ```
 
@@ -226,9 +223,14 @@ slate/
 
 | Tier | Runtime | Use Case |
 |------|---------|----------|
-| **Built-in** | Native Rust | System-level: CPU, memory, temperatures |
-| **WASM Plugin** | Extism sandbox | Community plugins: network, APIs, tools |
+| **Built-in** | Native Rust | Needs direct OS/system access (power, firewall, network interfaces, VCS, CPU/memory) |
+| **WASM Plugin** | Extism sandbox | Fetches its own data via capability-gated host functions (HTTP APIs, storage) |
 | **Lua Script** | mlua (Luau) | Quick personal widgets, no compilation |
+
+**When to use which:**
+- Use **builtin** when the widget needs direct system access (process execution, sysinfo, file reads) that cannot be meaningfully sandboxed — the data source *is* the local machine.
+- Use **WASM plugin** when the widget owns its own data fetching (HTTP APIs, parsing responses) — the sandbox provides real isolation and the plugin is portable across machines.
+- Use **Lua script** for personal one-off widgets that don't need distribution.
 
 All implement the same `Widget` trait and are configured uniformly in `slate.toml`.
 

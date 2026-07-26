@@ -1,7 +1,0 @@
-[metadata]
-name = "vcs"
-description = "Version control status and recent commits"
-version = "0.1.0"
-author = "Slate Community"
-
-[permissions]

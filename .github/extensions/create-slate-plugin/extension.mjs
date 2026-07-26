@@ -7,7 +7,7 @@ const session = await joinSession({
         {
             name: "create-slate-plugin",
             description:
-                "Scaffold a new Slate WASM plugin module. Creates the directory structure, Cargo.toml, plugin.toml, and boilerplate src/lib.rs with extism-pdk exports. Use when the user wants to create a new Slate widget/module/plugin.",
+                "Scaffold a new Slate WASM plugin module. Creates the directory structure, Cargo.toml, plugin.toml, and boilerplate src/lib.rs with extism-pdk exports. Use when the user wants to create a new Slate widget/module/plugin. IMPORTANT: Only use WASM plugins for widgets that fetch their own data via HTTP APIs or capability-gated host functions. If the widget needs direct OS/system access (power, network interfaces, firewall rules, VCS status, hardware sensors), it should be a builtin widget in crates/slate-cli/src/commands.rs instead — not a WASM plugin.",
         },
     ],
     tools: [
@@ -133,7 +133,12 @@ To use in slate.toml:
   position = { row = 0, col = 0 }
 
 Content type: ${content_type}
-Permissions: ${permissions.length > 0 ? permissions.join(", ") : "none"}`;
+Permissions: ${permissions.length > 0 ? permissions.join(", ") : "none"}
+
+NOTE: This creates a WASM plugin (sandboxed, portable). If this widget needs
+direct OS access (system commands, hardware sensors, file reads), consider
+making it a builtin widget in crates/slate-cli/src/commands.rs instead.
+Builtins use native Rust and implement the same Widget trait.`;
             },
         },
     ],

@@ -174,20 +174,18 @@ impl slate_plugin_sdk::Widget for WasmPlugin {
     }
 
     fn refresh(&mut self) -> WidgetContent {
-        // Build input from config settings, injecting host-provided values
+        // Build input from config settings
         let mut settings = self
             .config
             .as_ref()
             .map(|c| c.settings.clone())
             .unwrap_or_default();
 
-        // Inject current time for plugins that need it
+        // Inject current time (cheap, always available)
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default();
         let secs = now.as_secs() as i64;
-
-        // Format time using simple calculation (UTC offset handled by chrono in host)
         let time_str = format_local_time(secs);
         settings.insert("current_time".to_string(), serde_json::json!(time_str.0));
         settings.insert("current_date".to_string(), serde_json::json!(time_str.1));
