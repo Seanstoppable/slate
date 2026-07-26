@@ -1,14 +1,14 @@
 // iStats plugin — displays system stats (temperature, fans, battery) via iStats CLI.
 // Language: Zig (compiled to wasm32-freestanding, using raw Extism ABI)
 
-// Extism host ABI imports
-extern "extism:host/env" fn extism_input_length() u64;
-extern "extism:host/env" fn extism_input_load_u8(offset: u64) u8;
-extern "extism:host/env" fn extism_alloc(size: u64) u64;
-extern "extism:host/env" fn extism_store_u8(offset: u64, value: u8) void;
-extern "extism:host/env" fn extism_output_set(offset: u64, length: u64) void;
-extern "extism:host/env" fn extism_length(offset: u64) u64;
-extern "extism:host/env" fn extism_load_u8(offset: u64) u8;
+// Extism kernel ABI imports (provided by the linked Extism kernel module)
+extern "env" fn extism_input_length() u64;
+extern "env" fn extism_input_load_u8(offset: u64) u8;
+extern "env" fn extism_alloc(size: u64) u64;
+extern "env" fn extism_store_u8(offset: u64, value: u8) void;
+extern "env" fn extism_output_set(offset: u64, length: u64) void;
+extern "env" fn extism_length(offset: u64) u64;
+extern "env" fn extism_load_u8(offset: u64) u8;
 
 // Custom host function
 extern "extism:host/user" fn exec_command(offset: u64) u64;
