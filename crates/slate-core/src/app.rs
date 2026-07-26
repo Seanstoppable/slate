@@ -76,14 +76,19 @@ impl App {
     pub fn run(&mut self) -> Result<()> {
         enable_raw_mode()?;
         let mut stdout = io::stdout();
-        execute!(stdout, EnterAlternateScreen)?;
+        execute!(stdout, EnterAlternateScreen, crossterm::cursor::Hide)?;
         let backend = CrosstermBackend::new(stdout);
         let mut terminal = Terminal::new(backend)?;
 
         let result = self.main_loop(&mut terminal);
 
+        // Restore terminal state fully
         disable_raw_mode()?;
-        execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+        execute!(
+            terminal.backend_mut(),
+            crossterm::cursor::Show,
+            LeaveAlternateScreen
+        )?;
         terminal.show_cursor()?;
 
         result

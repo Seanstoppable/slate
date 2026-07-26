@@ -52,6 +52,18 @@ enum Commands {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Install panic hook that restores terminal before printing panic
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let _ = crossterm::terminal::disable_raw_mode();
+        let _ = crossterm::execute!(
+            std::io::stdout(),
+            crossterm::cursor::Show,
+            crossterm::terminal::LeaveAlternateScreen
+        );
+        default_hook(info);
+    }));
+
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env())
         .init();

@@ -1,82 +1,244 @@
 # Slate
 
-A terminal info dashboard with a plugin ecosystem. Think wtfutil rewritten with first-class plugin support — WASM-sandboxed modules installable from GitHub repos, vim-plug style management, and update notifications.
+A terminal info dashboard with a plugin ecosystem. Think [wtfutil](https://wtfutil.com/) rewritten with first-class plugin support — WASM-sandboxed modules, vim-plug style management, and update notifications.
+
+## Features
+
+- **WASM-sandboxed plugins** — Community plugins run in an Extism sandbox with capability-gated permissions
+- **10 built-in plugins** — Clock, resources, weather, HN, feeds, VCS, networking, and more
+- **Lua scripting** — Quick personal widgets with zero compilation
+- **Plugin manager** — Install from GitHub repos, lockfile-based versioning, update notifications
+- **Interactive lists** — Navigate items with j/k, open links with Enter
+- **Vim-style navigation** — h/j/k/l, Tab cycling, focus management
 
 ## Quick Start
 
 ```bash
-# Build
+# Build the dashboard
 cargo build --release
 
-# Run the dashboard
-slate run
+# Build WASM plugins (from project root)
+for dir in plugins/*/; do
+  (cd "$dir" && cargo build --release --target wasm32-unknown-unknown)
+done
 
-# Or with a specific config
-slate run --config path/to/slate.toml
+# Run
+./target/release/slate
 ```
 
 ## Configuration
 
-Create `~/.config/slate/slate.toml`:
+Config lives at:
+- **Windows**: `%APPDATA%\slate\slate.toml`
+- **macOS/Linux**: `~/.config/slate/slate.toml`
 
 ```toml
 [global]
-refresh_interval = 300
+refresh_interval = 300  # seconds between auto-refresh
 
 [layout]
 rows = 2
 cols = 2
 
-[[widget]]
-type = "builtin:clock"
-position = { row = 0, col = 0 }
-
+# Built-in widget (native system access)
 [[widget]]
 type = "builtin:resource_usage"
+position = { row = 0, col = 0 }
+
+# Local WASM plugin
+[[widget]]
+type = "wasm:/path/to/slate_clock.wasm"
 position = { row = 0, col = 1 }
+
+# GitHub-hosted plugin (installed via `slate install`)
+[[widget]]
+type = "github.com/slate-community/slate-hackernews"
+position = { row = 1, col = 0 }
+
+# Lua script
+[[widget]]
+type = "lua:~/.config/slate/scripts/greeting.lua"
+position = { row = 1, col = 1 }
+
+[updates]
+check_interval = "daily"
+notify = true
+auto_update = false
 ```
 
-## Plugin Management
+### Widget Settings
+
+Widgets receive arbitrary settings from config:
+
+```toml
+[[widget]]
+type = "wasm:/path/to/slate_weather.wasm"
+position = { row = 0, col = 1 }
+api_key = "${OPENWEATHER_API_KEY}"
+location = "San Francisco"
+```
+
+Environment variables are interpolated with `${VAR_NAME}` syntax.
+
+## Plugins
+
+### Available Plugins
+
+| Plugin | Type | Description |
+|--------|------|-------------|
+| `clock` | WASM | Current time with timezone |
+| `resource_usage` | Builtin | CPU, memory, swap, temperatures |
+| `power` | WASM | Battery status and charging state |
+| `weather` | WASM | Weather via OpenWeatherMap |
+| `ipinfo` | WASM | Public IP and geolocation |
+| `ipaddresses` | WASM | Local network interfaces |
+| `hackernews` | WASM | Top stories (interactive list) |
+| `feedreader` | WASM | RSS/Atom feed reader |
+| `vcs` | WASM | Git/Mercurial status (configurable engine) |
+| `firewall` | WASM | Firewall rules display |
+| `github` | WASM | GitHub PRs, issues, repo stats |
+
+### Plugin Management
 
 ```bash
-slate install          # Install all declared plugins
-slate update           # Update to latest versions
+slate install          # Install all declared plugins from config
+slate update           # Update to latest compatible versions
 slate outdated         # Show available updates
 slate list             # List installed plugins
 slate remove <name>    # Remove a plugin
-slate search <query>   # Search the registry
-slate create <name>    # Scaffold a new plugin
+slate search <query>   # Search the plugin registry
+slate create <name>    # Scaffold a new plugin project
 ```
 
-## Plugin Types
+### Creating a Plugin
 
-| Tier | Runtime | For |
-|------|---------|-----|
-| Built-in | Native Rust | System-level: CPU, clock, network |
-| WASM Plugin | Extism sandbox | Community: GitHub, weather, etc. |
-| Lua Script | mlua (Luau) | Quick personal widgets |
+Plugins are Rust crates compiled to `wasm32-unknown-unknown` using [Extism PDK](https://extism.org/):
+
+```rust
+use extism_pdk::*;
+use serde_json::json;
+
+#[plugin_fn]
+pub fn metadata(_input: String) -> FnResult<String> {
+    Ok(json!({
+        "name": "My Widget",
+        "description": "Does something cool",
+        "version": env!("CARGO_PKG_VERSION"),
+        "author": "You"
+    }).to_string())
+}
+
+#[plugin_fn]
+pub fn refresh(input: String) -> FnResult<String> {
+    // input contains JSON settings from config
+    let settings: serde_json::Value = serde_json::from_str(&input).unwrap_or_default();
+
+    // Make HTTP requests (if permitted):
+    // let req = HttpRequest::new("https://api.example.com/data");
+    // let resp = http::request::<String>(&req, None)?;
+
+    Ok(json!({
+        "type": "key_value",
+        "pairs": [
+            {"key": "Status", "value": "OK"},
+            {"key": "Info", "value": "Hello from my plugin"}
+        ]
+    }).to_string())
+}
+
+#[plugin_fn]
+pub fn on_key(_input: String) -> FnResult<String> {
+    Ok(String::new())
+}
+```
+
+Build: `cargo build --release --target wasm32-unknown-unknown`
+
+### Content Types
+
+Plugins return JSON with one of these types:
+
+```jsonc
+// Simple text
+{"type": "text", "content": "Hello!", "scrollable": false, "wrap": true}
+
+// Key-value pairs
+{"type": "key_value", "pairs": [{"key": "CPU", "value": "42%"}]}
+
+// Interactive list
+{"type": "list", "items": [{"id": "1", "title": "Item", "subtitle": "Detail"}], "selectable": true}
+```
+
+### Permissions
+
+Plugins declare required permissions in `plugin.toml`:
+
+```toml
+[permissions]
+network = ["api.github.com"]     # HTTP to specific hosts
+exec = ["docker"]                 # Run specific binaries
+storage = true                    # Sandboxed key-value store
+filesystem_read = ["~/.config"]   # Read specific paths
+raw_network = true                # ICMP/ping
+secrets = ["token"]               # Masked in UI
+```
+
+WASM enforces sandboxing architecturally — plugins cannot bypass permissions.
 
 ## Keyboard Navigation
 
-- `q` — Quit
-- `Tab` — Next widget
-- `h/j/k/l` or arrow keys — Navigate grid
-- `r` — Force refresh focused widget
-- `Enter` — Select/activate
+| Key | Action |
+|-----|--------|
+| `q` | Quit |
+| `Tab` / `Shift+Tab` | Cycle widgets (reading order) |
+| `←` `→` `↑` `↓` or `h` `j` `k` `l` | Move focus / scroll list |
+| `Enter` | Select item (opens URL in browser for links) |
+| `r` | Force refresh focused widget |
+| `Ctrl+C` | Quit |
+
+When a widget contains a selectable list, `j`/`k` scroll within the list instead of moving focus.
 
 ## Architecture
 
 ```
 slate/
 ├── crates/
-│   ├── slate-core/           # TUI engine, layout, config
-│   ├── slate-plugin-host/    # WASM + Lua runtimes, permissions
-│   ├── slate-plugin-sdk/     # Widget trait, types
-│   ├── slate-plugin-manager/ # GitHub install, lockfile, registry
-│   └── slate-cli/            # Binary, clap commands
-├── plugins/                  # Example WASM plugins
-├── builtins/                 # Native Rust widgets
-└── docs/                     # Documentation
+│   ├── slate-core/           # TUI engine (ratatui), layout, config, notifications
+│   ├── slate-plugin-host/    # WASM (Extism) + Lua (mlua) runtimes, permissions
+│   ├── slate-plugin-sdk/     # Widget trait, WidgetContent types, WidgetAction
+│   ├── slate-plugin-manager/ # GitHub download, versions, lockfile, registry
+│   └── slate-cli/            # Binary, clap commands, built-in widgets
+├── plugins/                  # WASM plugin source (10 plugins)
+│   ├── clock/
+│   ├── hackernews/
+│   ├── ipinfo/
+│   ├── ipaddresses/
+│   ├── github/
+│   ├── power/
+│   ├── weather/
+│   ├── feedreader/
+│   ├── vcs/
+│   └── firewall/
+└── .github/extensions/       # Copilot skill for scaffolding plugins
+```
+
+### Module Tiers
+
+| Tier | Runtime | Use Case |
+|------|---------|----------|
+| **Built-in** | Native Rust | System-level: CPU, memory, temperatures |
+| **WASM Plugin** | Extism sandbox | Community plugins: network, APIs, tools |
+| **Lua Script** | mlua (Luau) | Quick personal widgets, no compilation |
+
+All implement the same `Widget` trait and are configured uniformly in `slate.toml`.
+
+## Requirements
+
+- Rust 1.70+ with `wasm32-unknown-unknown` target
+- Windows: MSVC Build Tools (for native compilation)
+
+```bash
+rustup target add wasm32-unknown-unknown
 ```
 
 ## License
