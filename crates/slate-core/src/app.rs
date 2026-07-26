@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
+    event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -140,7 +140,10 @@ impl App {
             // Handle input (poll with timeout for refresh)
             if event::poll(Duration::from_millis(100))? {
                 if let Event::Key(key) = event::read()? {
-                    self.handle_key(key);
+                    // Only handle key press events (ignore release/repeat)
+                    if key.kind == KeyEventKind::Press {
+                        self.handle_key(key);
+                    }
                 }
             }
         }
