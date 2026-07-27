@@ -511,6 +511,36 @@ mod tests {
         }
     }
 
+    fn sample_builtin() -> PluginInfo {
+        PluginInfo {
+            name: "power".to_string(),
+            description: "Shows battery state".to_string(),
+            version: "built-in".to_string(),
+            author: "Slate".to_string(),
+            language: "rust (native)".to_string(),
+            os: vec![],
+            permissions: vec![],
+            kind: "builtin",
+            config_example: "[[widget]]\ntype = \"builtin:power\"".to_string(),
+            install_hint: "Built-in".to_string(),
+        }
+    }
+
+    fn sample_script() -> PluginInfo {
+        PluginInfo {
+            name: "local-script".to_string(),
+            description: "Scripted widget".to_string(),
+            version: "0.1.0".to_string(),
+            author: "Slate Community".to_string(),
+            language: "lua".to_string(),
+            os: vec!["windows".to_string()],
+            permissions: vec!["unsandboxed (full io access)".to_string()],
+            kind: "script",
+            config_example: "[[widget]]\ntype = \"lua:scripts/local.lua\"".to_string(),
+            install_hint: "Copy to scripts/".to_string(),
+        }
+    }
+
     #[test]
     fn extract_lua_field_finds_string_values() {
         let source = "name = \"My Widget\"\ndescription = \"Does stuff\"\nversion = \"2.0.0\"";
@@ -533,6 +563,19 @@ mod tests {
         let source = "name = \"Hello\"\nfunction refresh() end";
         assert_eq!(extract_lua_field(source, "version"), None);
         assert_eq!(extract_lua_field(source, "missing"), None);
+    }
+
+    #[test]
+    fn extract_lua_field_handles_whitespace_and_indentation() {
+        let source = "    name   =   \"Indented Widget\"\n  description = \"With spaces\"";
+        assert_eq!(
+            extract_lua_field(source, "name"),
+            Some("Indented Widget".to_string())
+        );
+        assert_eq!(
+            extract_lua_field(source, "description"),
+            Some("With spaces".to_string())
+        );
     }
 
     #[test]
@@ -624,9 +667,43 @@ mod tests {
     }
 
     #[test]
+    fn generate_docs_html_renders_multiple_plugin_cards_and_badges() {
+        let html = generate_docs_html(&[sample_plugin(), sample_builtin(), sample_script()]).unwrap();
+        assert!(html.contains("kind-badge plugin"));
+        assert!(html.contains("kind-badge builtin"));
+        assert!(html.contains("kind-badge script"));
+        assert!(html.contains("lang-badge lang-rust"));
+        assert!(html.contains("lang-badge lang-other\">lua</span>"));
+        assert!(html.contains("&#x1F34E; macOS"));
+        assert!(html.contains("&#x1F310; All"));
+        assert!(html.contains("<em>None required</em>"));
+    }
+
+    #[test]
+    fn generate_docs_html_embeds_plugin_data_javascript() {
+        let html = generate_docs_html(&[sample_plugin(), sample_builtin()]).unwrap();
+        assert!(html.contains("const pluginData = ["));
+        assert!(html.contains("{name:\"weather\",desc:\"Shows weather\""));
+        assert!(html.contains("kind:\"plugin\""));
+        assert!(html.contains("os:[\"macos\",\"linux\"]"));
+        assert!(html.contains("perms:[\"network: api.example.com\"]"));
+        assert!(html.contains("{name:\"power\",desc:\"Shows battery state\""));
+        assert!(html.contains("os:[\"All platforms\"]"));
+        assert!(html.contains("perms:[]"));
+    }
+
+    #[test]
     fn template_file_exists_and_contains_placeholders() {
         let template_path = resolve_template_path().unwrap();
         let template = std::fs::read_to_string(template_path).unwrap();
+        assert!(template.contains("{{CARDS}}"));
+        assert!(template.contains("{{PLUGIN_DATA}}"));
+    }
+
+    #[test]
+    fn load_template_returns_html_shell_with_placeholders() {
+        let template = load_template().unwrap();
+        assert!(template.contains("<!DOCTYPE html>"));
         assert!(template.contains("{{CARDS}}"));
         assert!(template.contains("{{PLUGIN_DATA}}"));
     }

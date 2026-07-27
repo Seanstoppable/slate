@@ -68,6 +68,16 @@ impl slate_plugin_sdk::Widget for VcsWidget {
             _ => get_git_info(&self.repo_path),
         };
 
+        build_vcs_content(&self.engine, branch, status_entries, log_entries)
+    }
+}
+
+fn build_vcs_content(
+    engine: &str,
+    branch: String,
+    status_entries: Vec<(String, String)>,
+    log_entries: Vec<(String, String, String, String)>,
+) -> WidgetContent {
         let mut modified = 0usize;
         let mut added = 0usize;
         let mut deleted = 0usize;
@@ -111,7 +121,7 @@ impl slate_plugin_sdk::Widget for VcsWidget {
         let mut pairs = vec![
             (
                 "Engine".to_string(),
-                slate_plugin_sdk::Cell::plain(self.engine.clone()),
+                slate_plugin_sdk::Cell::plain(engine.to_string()),
             ),
             (
                 "Branch".to_string(),
@@ -153,7 +163,6 @@ impl slate_plugin_sdk::Widget for VcsWidget {
         }
 
         WidgetContent::KeyValue { pairs }
-    }
 }
 
 fn get_git_info(
@@ -284,8 +293,10 @@ fn get_hg_info(
 
 #[cfg(test)]
 mod tests {
-    use super::VcsWidget;
+    use super::{build_vcs_content, VcsWidget};
     use slate_plugin_sdk::{Position, Widget, WidgetConfig, WidgetContent};
+    use std::collections::HashMap;
+    use tempfile::tempdir;
 
     fn test_widget_config() -> WidgetConfig {
         WidgetConfig {
@@ -297,6 +308,13 @@ mod tests {
             },
             settings: Default::default(),
             refresh_interval: None,
+        }
+    }
+
+    fn test_widget_config_with(settings: HashMap<String, serde_json::Value>) -> WidgetConfig {
+        WidgetConfig {
+            settings,
+            ..test_widget_config()
         }
     }
 
@@ -312,6 +330,143 @@ mod tests {
                 assert!(content.contains("Configure repo_path in settings"));
             }
             other => panic!("expected text content, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn vcs_widget_new_uses_configured_engine_and_repo_path() {
+        let widget = VcsWidget::new(test_widget_config_with(HashMap::from([
+            ("engine".to_string(), serde_json::json!("hg")),
+            ("repo_path".to_string(), serde_json::json!("C:\\repo")),
+        ])));
+
+        assert_eq!(widget.engine, "hg");
+        assert_eq!(widget.repo_path, "C:\\repo");
+    }
+
+    #[test]
+    fn vcs_widget_metadata_uses_engine_name() {
+        let widget = VcsWidget::new(test_widget_config_with(HashMap::from([(
+            "engine".to_string(),
+            serde_json::json!("hg"),
+        )])));
+
+        assert_eq!(widget.metadata().name, "VCS (hg)");
+    }
+
+    #[test]
+    fn vcs_widget_returns_configuration_message_for_empty_repo_path() {
+        let mut widget = VcsWidget::new(test_widget_config_with(HashMap::from([(
+            "repo_path".to_string(),
+            serde_json::json!("   "),
+        )])));
+
+        match widget.refresh() {
+            WidgetContent::Text { content, .. } => {
+                assert!(content.contains("Configure repo_path in settings"));
+            }
+            other => panic!("expected text content, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn vcs_widget_returns_error_for_nonexistent_repo_path() {
+        let temp = tempdir().unwrap();
+        let missing_path = temp.path().join("missing-repo");
+        let mut widget = VcsWidget::new(test_widget_config_with(HashMap::from([(
+            "repo_path".to_string(),
+            serde_json::json!(missing_path.to_string_lossy().to_string()),
+        )])));
+
+        match widget.refresh() {
+            WidgetContent::Text { content, .. } => {
+                assert!(content.contains("Repo path not found"));
+                assert!(content.contains("missing-repo"));
+            }
+            other => panic!("expected text content, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn vcs_widget_init_updates_engine_and_repo_path() {
+        let mut widget = VcsWidget::new(test_widget_config());
+        widget.init(test_widget_config_with(HashMap::from([
+            ("engine".to_string(), serde_json::json!("hg")),
+            ("repo_path".to_string(), serde_json::json!("C:\\repos\\project")),
+        ])));
+
+        assert_eq!(widget.engine, "hg");
+        assert_eq!(widget.repo_path, "C:\\repos\\project");
+    }
+
+    #[test]
+    fn build_vcs_content_summarizes_status_and_recent_commits() {
+        let content = build_vcs_content(
+            "git",
+            String::new(),
+            vec![
+                ("modified".to_string(), "src/main.rs".to_string()),
+                ("added".to_string(), "src/lib.rs".to_string()),
+                ("deleted".to_string(), "README.md".to_string()),
+                ("untracked".to_string(), "notes.txt".to_string()),
+            ],
+            vec![
+                (
+                    "abc123".to_string(),
+                    "Fix widget".to_string(),
+                    "Sean".to_string(),
+                    "2 hours ago".to_string(),
+                ),
+                (
+                    "def456".to_string(),
+                    "Add tests".to_string(),
+                    String::new(),
+                    String::new(),
+                ),
+            ],
+        );
+
+        match content {
+            WidgetContent::KeyValue { pairs } => {
+                let map: HashMap<_, _> = pairs
+                    .into_iter()
+                    .map(|(key, value)| (key, value.text))
+                    .collect();
+                assert_eq!(map.get("Engine").map(String::as_str), Some("git"));
+                assert_eq!(map.get("Branch").map(String::as_str), Some("(detached)"));
+                assert_eq!(
+                    map.get("Status").map(String::as_str),
+                    Some("1 modified, 1 added, 1 deleted, 1 untracked")
+                );
+                assert_eq!(
+                    map.get("Last commit").map(String::as_str),
+                    Some("abc123 Fix widget (Sean • 2 hours ago)")
+                );
+                assert_eq!(map.get("Recent 2").map(String::as_str), Some("def456 Add tests"));
+            }
+            other => panic!("expected key-value content, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn build_vcs_content_handles_clean_repo_without_commits() {
+        let content = build_vcs_content("hg", "default".to_string(), vec![], vec![]);
+
+        match content {
+            WidgetContent::KeyValue { pairs } => {
+                let map: HashMap<_, _> = pairs
+                    .into_iter()
+                    .map(|(key, value)| (key, value.text))
+                    .collect();
+                assert_eq!(map.get("Engine").map(String::as_str), Some("hg"));
+                assert_eq!(map.get("Branch").map(String::as_str), Some("default"));
+                assert_eq!(map.get("Status").map(String::as_str), Some("clean"));
+                assert_eq!(
+                    map.get("Last commit").map(String::as_str),
+                    Some("No commits available")
+                );
+            }
+            other => panic!("expected key-value content, got {other:?}"),
         }
     }
 }

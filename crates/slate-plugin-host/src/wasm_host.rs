@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use extism::{Function, Manifest, Plugin, UserData, Val, Wasm, PTR};
-use slate_plugin_sdk::{Permissions, WidgetConfig, WidgetContent, WidgetMetadata};
+use slate_plugin_sdk::{Permissions, WidgetAction, WidgetConfig, WidgetContent, WidgetMetadata};
 use std::path::Path;
 
 use crate::permissions::PermissionGuard;
@@ -92,19 +92,7 @@ impl WasmPlugin {
 
         // Try to get metadata from the plugin
         let metadata = match plugin.call::<&str, String>("metadata", "") {
-            Ok(json_str) => {
-                if let Ok(meta) = serde_json::from_str::<serde_json::Value>(&json_str) {
-                    WidgetMetadata {
-                        name: meta["name"].as_str().unwrap_or(&name).to_string(),
-                        description: meta["description"].as_str().unwrap_or("").to_string(),
-                        version: meta["version"].as_str().unwrap_or("0.1.0").to_string(),
-                        author: meta["author"].as_str().map(String::from),
-                        homepage: meta["homepage"].as_str().map(String::from),
-                    }
-                } else {
-                    default_metadata(&name)
-                }
-            }
+            Ok(json_str) => parse_widget_metadata(&json_str, &name),
             Err(_) => default_metadata(&name),
         };
 
@@ -143,6 +131,20 @@ fn default_metadata(name: &str) -> WidgetMetadata {
         version: "0.1.0".to_string(),
         author: None,
         homepage: None,
+    }
+}
+
+fn parse_widget_metadata(json_str: &str, fallback_name: &str) -> WidgetMetadata {
+    let Ok(meta) = serde_json::from_str::<serde_json::Value>(json_str) else {
+        return default_metadata(fallback_name);
+    };
+
+    WidgetMetadata {
+        name: meta["name"].as_str().unwrap_or(fallback_name).to_string(),
+        description: meta["description"].as_str().unwrap_or("").to_string(),
+        version: meta["version"].as_str().unwrap_or("0.1.0").to_string(),
+        author: meta["author"].as_str().map(String::from),
+        homepage: meta["homepage"].as_str().map(String::from),
     }
 }
 
@@ -242,6 +244,24 @@ fn format_tz_time(tz_name: &str) -> (String, String) {
     }
 }
 
+fn parse_widget_action(response: &str) -> Option<WidgetAction> {
+    let Ok(val) = serde_json::from_str::<serde_json::Value>(response) else {
+        return None;
+    };
+
+    if let Some(url) = val["open_url"].as_str() {
+        return Some(WidgetAction::OpenUrl(url.to_string()));
+    }
+    if let Some(msg) = val["notify"].as_str() {
+        return Some(WidgetAction::Notify(msg.to_string()));
+    }
+    if let Some(detail) = val["show_detail"].as_str() {
+        return Some(WidgetAction::ShowDetail(detail.to_string()));
+    }
+
+    None
+}
+
 impl slate_plugin_sdk::Widget for WasmPlugin {
     fn metadata(&self) -> WidgetMetadata {
         self.metadata.clone()
@@ -313,22 +333,7 @@ impl slate_plugin_sdk::Widget for WasmPlugin {
     ) -> Option<slate_plugin_sdk::WidgetAction> {
         let input = serde_json::json!({ "action_id": action_id, "item_id": item_id }).to_string();
         match self.plugin.call::<&str, String>("on_action", &input) {
-            Ok(response) => {
-                if let Ok(val) = serde_json::from_str::<serde_json::Value>(&response) {
-                    if let Some(url) = val["open_url"].as_str() {
-                        return Some(slate_plugin_sdk::WidgetAction::OpenUrl(url.to_string()));
-                    }
-                    if let Some(msg) = val["notify"].as_str() {
-                        return Some(slate_plugin_sdk::WidgetAction::Notify(msg.to_string()));
-                    }
-                    if let Some(detail) = val["show_detail"].as_str() {
-                        return Some(slate_plugin_sdk::WidgetAction::ShowDetail(
-                            detail.to_string(),
-                        ));
-                    }
-                }
-                None
-            }
+            Ok(response) => parse_widget_action(&response),
             Err(_) => None,
         }
     }
@@ -340,6 +345,8 @@ impl slate_plugin_sdk::Widget for WasmPlugin {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
 
     #[test]
     fn parse_widget_content_handles_text_content() {
@@ -484,6 +491,101 @@ mod tests {
             }
             other => panic!("expected list content, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn parse_widget_content_handles_string_list_items() {
+        let content = parse_widget_content(r#"{"type":"list","items":["First","Second"]}"#);
+
+        match content {
+            WidgetContent::List {
+                items,
+                selectable,
+                actions,
+            } => {
+                assert_eq!(items.len(), 2);
+                assert_eq!(items[0].title, "First");
+                assert_eq!(items[1].title, "Second");
+                assert!(!selectable);
+                assert!(actions.is_empty());
+            }
+            other => panic!("expected list content, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_widget_metadata_handles_defaults_and_explicit_fields() {
+        let metadata = parse_widget_metadata(
+            r#"{"name":"Clock","description":"Shows time","version":"1.2.3","author":"Slate","homepage":"https://example.com"}"#,
+            "fallback",
+        );
+
+        assert_eq!(metadata.name, "Clock");
+        assert_eq!(metadata.description, "Shows time");
+        assert_eq!(metadata.version, "1.2.3");
+        assert_eq!(metadata.author.as_deref(), Some("Slate"));
+        assert_eq!(metadata.homepage.as_deref(), Some("https://example.com"));
+
+        let defaults = parse_widget_metadata(r#"{"description":"Only description"}"#, "fallback");
+        assert_eq!(defaults.name, "fallback");
+        assert_eq!(defaults.description, "Only description");
+        assert_eq!(defaults.version, "0.1.0");
+        assert_eq!(defaults.author, None);
+        assert_eq!(defaults.homepage, None);
+    }
+
+    #[test]
+    fn parse_widget_metadata_falls_back_for_invalid_json() {
+        let metadata = parse_widget_metadata("not json", "fallback");
+
+        assert_eq!(metadata.name, "fallback");
+        assert_eq!(metadata.description, "");
+        assert_eq!(metadata.version, "0.1.0");
+    }
+
+    #[test]
+    fn parse_widget_action_handles_known_responses() {
+        assert_eq!(
+            parse_widget_action(r#"{"open_url":"https://example.com"}"#),
+            Some(WidgetAction::OpenUrl("https://example.com".to_string()))
+        );
+        assert_eq!(
+            parse_widget_action(r#"{"notify":"Updated"}"#),
+            Some(WidgetAction::Notify("Updated".to_string()))
+        );
+        assert_eq!(
+            parse_widget_action(r#"{"show_detail":"More info"}"#),
+            Some(WidgetAction::ShowDetail("More info".to_string()))
+        );
+        assert_eq!(parse_widget_action(r#"{"noop":true}"#), None);
+        assert_eq!(parse_widget_action("not json"), None);
+    }
+
+    #[test]
+    fn from_file_returns_error_for_nonexistent_file() {
+        let path = std::path::Path::new("C:\\definitely-missing-slate-plugin.wasm");
+        let err = match WasmPlugin::from_file(path, Permissions::default()) {
+            Ok(_) => panic!("expected file load to fail"),
+            Err(err) => err,
+        };
+
+        assert!(err
+            .to_string()
+            .contains("Failed to read WASM file"));
+    }
+
+    #[test]
+    fn from_file_returns_error_for_invalid_wasm_file() {
+        let mut file = NamedTempFile::new().unwrap();
+        file.write_all(b"this is not wasm").unwrap();
+
+        let err = match WasmPlugin::from_file(file.path(), Permissions::default()) {
+            Ok(_) => panic!("expected plugin creation to fail"),
+            Err(err) => err,
+        };
+        assert!(err
+            .to_string()
+            .contains("Failed to create WASM plugin"));
     }
 
     #[test]

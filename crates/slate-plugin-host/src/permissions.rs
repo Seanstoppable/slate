@@ -209,6 +209,32 @@ mod tests {
     }
 
     #[test]
+    fn test_system_permission_requires_exact_category_match() {
+        let guard = PermissionGuard::new(Permissions {
+            system: vec!["cpu".to_string(), "memory".to_string()],
+            ..Default::default()
+        });
+
+        assert!(guard.check_system("cpu").is_ok());
+        assert!(matches!(
+            guard.check_system("disk"),
+            Err(PermissionError::SystemDenied(category)) if category == "disk"
+        ));
+    }
+
+    #[test]
+    fn test_permission_errors_render_readable_messages() {
+        assert_eq!(
+            PermissionError::NetworkDenied("example.com".to_string()).to_string(),
+            "network access denied for host: example.com"
+        );
+        assert_eq!(
+            PermissionError::SystemDenied("cpu".to_string()).to_string(),
+            "system info access denied for category: cpu"
+        );
+    }
+
+    #[test]
     fn test_empty_permissions_deny_all_restricted_access() {
         let guard = PermissionGuard::new(Permissions::default());
 

@@ -32,6 +32,21 @@ struct WidgetInstance {
     detail_content: Option<String>,
 }
 
+impl WidgetInstance {
+    fn should_refresh(&self, now: Instant, focus: &FocusPosition) -> bool {
+        if now.duration_since(self.last_refresh) < self.refresh_interval {
+            return false;
+        }
+
+        let is_focused = self.row == focus.row && self.col == focus.col;
+        if is_focused && self.content.is_selectable_list() {
+            return false;
+        }
+
+        self.detail_content.is_none()
+    }
+}
+
 /// The main Slate application.
 pub struct App {
     config: SlateConfig,
@@ -114,17 +129,7 @@ impl App {
             // Refresh widgets that are due (skip focused list widgets to avoid disrupting navigation)
             let now = Instant::now();
             for instance in &mut self.widgets {
-                if now.duration_since(instance.last_refresh) >= instance.refresh_interval {
-                    // Don't auto-refresh a focused selectable list (user is navigating)
-                    let is_focused =
-                        instance.row == self.focus.row && instance.col == self.focus.col;
-                    if is_focused && instance.content.is_selectable_list() {
-                        continue;
-                    }
-                    // Don't auto-refresh while showing detail view
-                    if instance.detail_content.is_some() {
-                        continue;
-                    }
+                if instance.should_refresh(now, &self.focus) {
                     instance.content = instance.widget.refresh();
                     instance.last_refresh = now;
                     // Initialize selection for new list content
@@ -375,6 +380,10 @@ impl App {
 mod tests {
     use super::*;
     use slate_plugin_sdk::{Widget, WidgetConfig, WidgetContent, WidgetMetadata};
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
 
     /// A mock widget that returns a selectable list and responds to on_action.
     struct MockListWidget {
@@ -436,6 +445,39 @@ mod tests {
     /// A simple text widget that never responds to actions.
     struct MockTextWidget;
 
+    struct CounterTextWidget {
+        refresh_count: Arc<AtomicUsize>,
+    }
+
+    impl CounterTextWidget {
+        fn new(refresh_count: Arc<AtomicUsize>) -> Self {
+            Self { refresh_count }
+        }
+    }
+
+    impl Widget for CounterTextWidget {
+        fn metadata(&self) -> WidgetMetadata {
+            WidgetMetadata {
+                name: "Counter Text".to_string(),
+                description: "Counts refreshes".to_string(),
+                version: "0.1.0".to_string(),
+                author: None,
+                homepage: None,
+            }
+        }
+
+        fn init(&mut self, _config: WidgetConfig) {}
+
+        fn refresh(&mut self) -> WidgetContent {
+            let count = self.refresh_count.fetch_add(1, Ordering::SeqCst) + 1;
+            WidgetContent::Text {
+                content: format!("Refresh #{count}"),
+                scrollable: false,
+                wrap: true,
+            }
+        }
+    }
+
     impl Widget for MockTextWidget {
         fn metadata(&self) -> WidgetMetadata {
             WidgetMetadata {
@@ -468,6 +510,70 @@ mod tests {
         let widget = MockListWidget::new(action);
         app.add_widget(Box::new(widget), 0, 0, Some(300));
         app
+    }
+
+    #[test]
+    fn add_widget_adds_widget_and_sets_initial_content() {
+        let refresh_count = Arc::new(AtomicUsize::new(0));
+        let mut app = App::new(SlateConfig::default());
+        app.add_widget(
+            Box::new(CounterTextWidget::new(refresh_count.clone())),
+            1,
+            1,
+            Some(60),
+        );
+
+        assert_eq!(app.widgets.len(), 1);
+        assert_eq!(refresh_count.load(Ordering::SeqCst), 1);
+        assert_eq!(app.widgets[0].row, 1);
+        assert_eq!(app.widgets[0].col, 1);
+        match &app.widgets[0].content {
+            WidgetContent::Text { content, .. } => assert_eq!(content, "Refresh #1"),
+            other => panic!("expected text content, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn focused_widget_returns_widget_at_focus_position() {
+        let mut config = SlateConfig::default();
+        config.layout.rows = 1;
+        config.layout.cols = 2;
+        let mut app = App::new(config);
+        app.add_widget(Box::new(MockTextWidget), 0, 0, Some(60));
+        app.add_widget(Box::new(MockListWidget::new(None)), 0, 1, Some(60));
+
+        assert_eq!(app.focused_widget().map(|widget| widget.metadata.name.as_str()), Some("Mock Text"));
+
+        app.focus.col = 1;
+        assert_eq!(app.focused_widget().map(|widget| widget.metadata.name.as_str()), Some("Mock List"));
+    }
+
+    #[test]
+    fn should_refresh_returns_true_after_enough_time_has_passed() {
+        let refresh_count = Arc::new(AtomicUsize::new(0));
+        let mut app = App::new(SlateConfig::default());
+        app.add_widget(
+            Box::new(CounterTextWidget::new(refresh_count)),
+            0,
+            0,
+            Some(1),
+        );
+
+        let now = Instant::now();
+        app.widgets[0].last_refresh = now - Duration::from_secs(2);
+
+        assert!(app.widgets[0].should_refresh(now, &app.focus));
+    }
+
+    #[test]
+    fn should_refresh_returns_false_during_detail_view() {
+        let mut app =
+            test_app_with_list_widget(Some(WidgetAction::ShowDetail("Details".to_string())));
+        app.widgets[0].detail_content = Some("Details".to_string());
+        let now = Instant::now();
+        app.widgets[0].last_refresh = now - Duration::from_secs(600);
+
+        assert!(!app.widgets[0].should_refresh(now, &app.focus));
     }
 
     #[test]
@@ -516,6 +622,21 @@ mod tests {
         app.handle_key(make_key(KeyCode::Char('q')));
         assert!(app.widgets[0].detail_content.is_none());
         assert!(app.running); // still running
+    }
+
+    #[test]
+    fn detail_view_is_reported_by_focused_widget() {
+        let mut app = test_app_with_list_widget(Some(WidgetAction::ShowDetail(
+            "Detailed info here".to_string(),
+        )));
+
+        app.handle_key(make_key(KeyCode::Enter));
+
+        assert_eq!(
+            app.focused_widget()
+                .and_then(|widget| widget.detail_content.as_deref()),
+            Some("Detailed info here")
+        );
     }
 
     #[test]
@@ -620,9 +741,7 @@ mod tests {
         // The main loop refresh logic checks detail_content — simulate it here
         let instance = &mut app.widgets[0];
         let now = Instant::now();
-        let should_refresh = now.duration_since(instance.last_refresh) >= instance.refresh_interval
-            && instance.detail_content.is_none();
-        assert!(!should_refresh);
+        assert!(!instance.should_refresh(now, &app.focus));
     }
 
     #[test]
@@ -642,5 +761,60 @@ mod tests {
         app.handle_key(make_key(KeyCode::Char('r')));
         // Widget content should be refreshed (still a list)
         assert!(app.widgets[0].content.is_selectable_list());
+    }
+
+    #[test]
+    fn forced_refresh_updates_content_and_resets_timer() {
+        let refresh_count = Arc::new(AtomicUsize::new(0));
+        let mut app = App::new(SlateConfig::default());
+        app.add_widget(
+            Box::new(CounterTextWidget::new(refresh_count.clone())),
+            0,
+            0,
+            Some(60),
+        );
+
+        let previous_refresh = Instant::now() - Duration::from_secs(600);
+        app.widgets[0].last_refresh = previous_refresh;
+
+        app.handle_key(make_key(KeyCode::Char('r')));
+
+        assert_eq!(refresh_count.load(Ordering::SeqCst), 2);
+        assert!(app.widgets[0].last_refresh > previous_refresh);
+        match &app.widgets[0].content {
+            WidgetContent::Text { content, .. } => assert_eq!(content, "Refresh #2"),
+            other => panic!("expected text content, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn handle_key_with_no_widgets_does_not_panic() {
+        let mut app = App::new(SlateConfig::default());
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            app.handle_key(make_key(KeyCode::Enter));
+            app.handle_key(make_key(KeyCode::Char('r')));
+            app.handle_key(make_key(KeyCode::Left));
+            app.handle_key(make_key(KeyCode::Esc));
+        }));
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn navigation_stays_within_grid_bounds() {
+        let mut config = SlateConfig::default();
+        config.layout.rows = 2;
+        config.layout.cols = 2;
+        let mut app = App::new(config);
+
+        app.handle_key(make_key(KeyCode::Left));
+        app.handle_key(make_key(KeyCode::Up));
+        assert_eq!((app.focus.row, app.focus.col), (0, 0));
+
+        app.focus.row = 1;
+        app.focus.col = 1;
+        app.handle_key(make_key(KeyCode::Right));
+        app.handle_key(make_key(KeyCode::Down));
+        assert_eq!((app.focus.row, app.focus.col), (1, 1));
     }
 }

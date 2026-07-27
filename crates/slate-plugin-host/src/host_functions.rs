@@ -124,6 +124,19 @@ mod tests {
     }
 
     #[test]
+    fn plugin_store_keeps_keys_isolated_and_owns_values() {
+        let mut store = PluginStore::new();
+        let mut value = vec![9, 8, 7];
+        store.set("alpha", value.clone());
+        store.set("beta", vec![1, 2, 3]);
+        value[0] = 0;
+
+        assert_eq!(store.get("alpha"), Some(&[9, 8, 7][..]));
+        assert_eq!(store.get("beta"), Some(&[1, 2, 3][..]));
+        assert_eq!(store.get("gamma"), None);
+    }
+
+    #[test]
     fn extract_host_returns_host_for_valid_urls() {
         assert_eq!(extract_host("https://example.com").unwrap(), "example.com");
         assert_eq!(
@@ -134,6 +147,11 @@ mod tests {
             extract_host("http://subdomain.example.com/path?q=1").unwrap(),
             "subdomain.example.com"
         );
+        assert_eq!(
+            extract_host("https://user:pass@localhost:3000/dashboard").unwrap(),
+            "localhost"
+        );
+        assert_eq!(extract_host("http://127.0.0.1:8080").unwrap(), "127.0.0.1");
     }
 
     #[test]
@@ -145,6 +163,18 @@ mod tests {
     #[test]
     fn default_method_returns_get() {
         assert_eq!(default_method(), "GET");
+    }
+
+    #[test]
+    fn http_request_default_method_applies_when_method_is_missing() {
+        let request: HttpRequest = serde_json::from_value(json!({
+            "url": "https://example.com"
+        }))
+        .unwrap();
+
+        assert_eq!(request.method, "GET");
+        assert!(request.headers.is_empty());
+        assert!(request.body.is_none());
     }
 
     #[test]

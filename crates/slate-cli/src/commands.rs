@@ -728,8 +728,24 @@ fn toml_to_json(value: &toml::Value) -> serde_json::Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::builtins;
+    use slate_plugin_sdk::Position;
     use slate_plugin_sdk::Widget;
     use tempfile::tempdir;
+
+    fn widget_config() -> WidgetConfig {
+        WidgetConfig {
+            position: Position {
+                row: 0,
+                col: 0,
+                row_span: 1,
+                col_span: 1,
+            },
+            settings: Default::default(),
+            refresh_interval: None,
+        }
+    }
+
     fn write_wasm(path: &std::path::Path, source: &str) {
         std::fs::write(path, wat::parse_str(source).unwrap()).unwrap();
     }
@@ -937,6 +953,33 @@ mod tests {
     }
 
     #[test]
+    fn validate_wasm_binary_with_valid_required_exports_only_has_no_errors() {
+        let dir = tempdir().unwrap();
+        let wasm_path = dir.path().join("valid-required-only.wasm");
+        write_wasm(
+            &wasm_path,
+            r#"
+                (module
+                    (func (export "metadata") (result i32) (i32.const 0))
+                    (func (export "refresh") (result i32) (i32.const 0))
+                )
+            "#,
+        );
+
+        let issues = validate_wasm_binary(&wasm_path);
+        let errors: Vec<_> = issues
+            .iter()
+            .filter(|issue| !issue.starts_with("Optional"))
+            .collect();
+        assert!(errors.is_empty(), "unexpected issues: {:?}", errors);
+        assert!(
+            issues
+                .iter()
+                .any(|issue| issue.contains("Optional exports not found"))
+        );
+    }
+
+    #[test]
     fn validate_wasm_binary_reports_unresolvable_imports() {
         let dir = tempdir().unwrap();
         let wasm_path = dir.path().join("imports.wasm");
@@ -989,5 +1032,127 @@ mod tests {
             toml_to_json(&value),
             serde_json::json!({"nested": [{"flag": true}]})
         );
+    }
+
+    #[test]
+    fn toml_to_json_preserves_nested_datetimes() {
+        let datetime = "2024-01-02T03:04:05Z"
+            .parse::<toml::value::Datetime>()
+            .unwrap();
+        let value = toml::Value::Table(toml::map::Map::from_iter([(
+            "schedule".to_string(),
+            toml::Value::Table(toml::map::Map::from_iter([(
+                "start".to_string(),
+                toml::Value::Datetime(datetime),
+            )])),
+        )]));
+
+        assert_eq!(
+            toml_to_json(&value),
+            serde_json::json!({"schedule": {"start": "2024-01-02T03:04:05Z"}})
+        );
+    }
+
+    #[test]
+    fn create_builtin_returns_all_known_widgets() {
+        assert!(builtins::create_builtin("resource_usage", widget_config()).is_ok());
+        assert!(builtins::create_builtin("power", widget_config()).is_ok());
+        assert!(builtins::create_builtin("firewall", widget_config()).is_ok());
+        assert!(builtins::create_builtin("ipaddresses", widget_config()).is_ok());
+        assert!(builtins::create_builtin("vcs", widget_config()).is_ok());
+        assert!(builtins::create_builtin("nonexistent", widget_config()).is_err());
+    }
+
+    #[tokio::test]
+    async fn create_scaffolds_plugin_project() {
+        let dir = tempdir().unwrap();
+        let name = dir.path().join("test-plugin");
+
+        create(name.to_str().unwrap()).await.unwrap();
+
+        let cargo_path = name.join("Cargo.toml");
+        let plugin_path = name.join("plugin.toml");
+        let lib_path = name.join("src").join("lib.rs");
+
+        assert!(cargo_path.exists());
+        assert!(plugin_path.exists());
+        assert!(lib_path.exists());
+
+        let cargo = std::fs::read_to_string(cargo_path).unwrap();
+        assert!(cargo.contains("test-plugin"));
+        assert!(cargo.contains("crate-type = [\"cdylib\"]"));
+        assert!(cargo.contains("extism-pdk = \"1\""));
+
+        let plugin = std::fs::read_to_string(plugin_path).unwrap();
+        assert!(plugin.contains("[metadata]"));
+        assert!(plugin.contains("test-plugin"));
+        assert!(plugin.contains("description = \"A Slate plugin\""));
+
+        let lib = std::fs::read_to_string(lib_path).unwrap();
+        assert!(lib.contains("#[plugin_fn]"));
+        assert!(lib.contains("pub fn metadata"));
+        assert!(lib.contains("pub fn refresh"));
+        assert!(lib.contains("Hello from my plugin!"));
+    }
+
+    #[tokio::test]
+    async fn check_validates_builtin_widgets() {
+        let dir = tempdir().unwrap();
+        let config_path = dir.path().join("slate.toml");
+        std::fs::write(
+            &config_path,
+            r#"
+[[widget]]
+type = "builtin:resource_usage"
+position = { row = 0, col = 0 }
+
+[[widget]]
+type = "builtin:power"
+position = { row = 0, col = 1 }
+"#,
+        )
+        .unwrap();
+
+        check(Some(config_path.to_str().unwrap())).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn check_reports_unknown_builtin_without_erroring() {
+        let dir = tempdir().unwrap();
+        let config_path = dir.path().join("slate.toml");
+        std::fs::write(
+            &config_path,
+            r#"
+[[widget]]
+type = "builtin:not-real"
+position = { row = 0, col = 0 }
+"#,
+        )
+        .unwrap();
+
+        check(Some(config_path.to_str().unwrap())).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn check_reports_missing_lua_script_without_erroring() {
+        let dir = tempdir().unwrap();
+        let config_path = dir.path().join("slate.toml");
+        let lua_path = dir.path().join("missing.lua");
+        let config = format!(
+            r#"
+[[widget]]
+type = "lua:{}"
+position = {{ row = 0, col = 0 }}
+"#,
+            lua_path.display()
+        );
+        std::fs::write(&config_path, config).unwrap();
+
+        check(Some(config_path.to_str().unwrap())).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn migrate_does_not_error() {
+        migrate("nonexistent.yml").await.unwrap();
     }
 }
