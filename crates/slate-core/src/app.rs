@@ -28,6 +28,8 @@ struct WidgetInstance {
     refresh_interval: Duration,
     /// Selected index for list widgets
     selected: Option<usize>,
+    /// Detail view content (replaces normal rendering, suppresses refresh)
+    detail_content: Option<String>,
 }
 
 /// The main Slate application.
@@ -76,6 +78,7 @@ impl App {
             last_refresh: Instant::now(),
             refresh_interval: Duration::from_secs(interval),
             selected,
+            detail_content: None,
         });
     }
 
@@ -118,6 +121,10 @@ impl App {
                     if is_focused && instance.content.is_selectable_list() {
                         continue;
                     }
+                    // Don't auto-refresh while showing detail view
+                    if instance.detail_content.is_some() {
+                        continue;
+                    }
                     instance.content = instance.widget.refresh();
                     instance.last_refresh = now;
                     // Initialize selection for new list content
@@ -147,14 +154,32 @@ impl App {
                         let area = grid[row][col];
                         let focused =
                             self.focus.row == instance.row && self.focus.col == instance.col;
-                        render_widget(
-                            frame,
-                            area,
-                            &instance.content,
-                            &instance.metadata,
-                            focused,
-                            instance.selected,
-                        );
+
+                        // Show detail view if set, otherwise normal content
+                        if let Some(detail) = &instance.detail_content {
+                            let detail_widget_content = WidgetContent::Text {
+                                content: detail.clone(),
+                                scrollable: true,
+                                wrap: true,
+                            };
+                            render_widget(
+                                frame,
+                                area,
+                                &detail_widget_content,
+                                &instance.metadata,
+                                focused,
+                                None,
+                            );
+                        } else {
+                            render_widget(
+                                frame,
+                                area,
+                                &instance.content,
+                                &instance.metadata,
+                                focused,
+                                instance.selected,
+                            );
+                        }
                     }
                 }
 
@@ -182,6 +207,24 @@ impl App {
     }
 
     fn handle_key(&mut self, key: KeyEvent) {
+        // If showing detail view, Escape dismisses it
+        let focused_showing_detail = self
+            .focused_widget()
+            .map(|w| w.detail_content.is_some())
+            .unwrap_or(false);
+
+        if focused_showing_detail {
+            match key.code {
+                KeyCode::Esc | KeyCode::Char('q') => {
+                    if let Some(instance) = self.focused_widget_mut() {
+                        instance.detail_content = None;
+                    }
+                    return;
+                }
+                _ => return, // Ignore all other keys while in detail view
+            }
+        }
+
         // Check if focused widget is a selectable list
         let focused_is_list = self
             .focused_widget()
@@ -245,7 +288,12 @@ impl App {
                         if let Some(item) = items.get(sel) {
                             let item_id = item.id.clone();
                             if let Some(action) = instance.widget.on_action("select", &item_id) {
-                                Self::handle_widget_action(action);
+                                match action {
+                                    WidgetAction::ShowDetail(detail) => {
+                                        instance.detail_content = Some(detail);
+                                    }
+                                    other => Self::handle_widget_action(other),
+                                }
                             }
                         }
                     }
@@ -295,9 +343,9 @@ impl App {
                 // For now, just log it
                 tracing::info!("Widget notification: {}", msg);
             }
-            WidgetAction::ShowDetail(detail) => {
-                // Log for now — TUI rendering of detail view is a follow-up
-                tracing::info!("Widget detail view: {} chars", detail.len());
+            WidgetAction::ShowDetail(_) => {
+                // Handled directly at the call site (sets detail_content on instance)
+                unreachable!("ShowDetail should be handled before calling handle_widget_action");
             }
         }
     }
