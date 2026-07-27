@@ -17,10 +17,7 @@ function getNestedValue(obj, path) {
 
 function checkService(service) {
   try {
-    var req = new HttpRequest(service.url);
-    req.method = "GET";
-    req.headers = { "Accept": "application/json" };
-    var resp = Http.request(req);
+    var resp = Http.request({ url: service.url, method: "GET", headers: { "Accept": "application/json" } });
     var body = resp.body;
 
     if (!body || body.length === 0) {

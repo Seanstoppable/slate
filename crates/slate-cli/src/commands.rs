@@ -821,6 +821,42 @@ pub async fn docs(output_dir: Option<&str>) -> Result<()> {
         });
     }
 
+    // Scan scripts/ directory for Lua widgets
+    let scripts_path = Path::new("scripts");
+    if scripts_path.exists() {
+        for entry in std::fs::read_dir(scripts_path)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("lua") {
+                if let Ok(content) = std::fs::read_to_string(&path) {
+                    let name = extract_lua_field(&content, "name")
+                        .unwrap_or_else(|| path.file_stem().unwrap_or_default().to_string_lossy().to_string());
+                    let description = extract_lua_field(&content, "description").unwrap_or_default();
+                    let version = extract_lua_field(&content, "version").unwrap_or_else(|| "0.1.0".to_string());
+
+                    let filename = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+                    let config_example = format!(
+                        "[[widget]]\ntype = \"lua:scripts/{}\"\nposition = {{ row = 0, col = 0 }}",
+                        filename
+                    );
+
+                    plugins.push(PluginInfo {
+                        name: name.to_lowercase().replace(' ', "-"),
+                        description,
+                        version,
+                        author: "Slate Community".to_string(),
+                        language: "lua".to_string(),
+                        os: vec!["macos".to_string(), "linux".to_string(), "windows".to_string()],
+                        permissions: vec!["unsandboxed (full io access)".to_string()],
+                        kind: "script",
+                        config_example,
+                        install_hint: format!("Copy {} to your scripts/ folder and add to slate.toml.", filename),
+                    });
+                }
+            }
+        }
+    }
+
     plugins.sort_by(|a, b| a.name.cmp(&b.name));
 
     // Generate HTML
@@ -829,9 +865,10 @@ pub async fn docs(output_dir: Option<&str>) -> Result<()> {
     std::fs::write(&out_file, &html)?;
 
     println!("Generated plugin docs: {}", out_file.display());
-    println!("  {} plugins, {} builtins",
+    println!("  {} plugins, {} builtins, {} scripts",
         plugins.iter().filter(|p| p.kind == "plugin").count(),
         plugins.iter().filter(|p| p.kind == "builtin").count(),
+        plugins.iter().filter(|p| p.kind == "script").count(),
     );
 
     Ok(())
@@ -893,6 +930,28 @@ fn generate_config_example(name: &str, _kind: &str, manifest: &DocsManifest) -> 
     lines.join("\n")
 }
 
+/// Extract a top-level `name = "value"` assignment from a Lua script.
+fn extract_lua_field(source: &str, field: &str) -> Option<String> {
+    for line in source.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with(field) {
+            // Match: field = "value"
+            if let Some(rest) = trimmed.strip_prefix(field) {
+                let rest = rest.trim();
+                if let Some(rest) = rest.strip_prefix('=') {
+                    let rest = rest.trim();
+                    if let Some(rest) = rest.strip_prefix('"') {
+                        if let Some(end) = rest.find('"') {
+                            return Some(rest[..end].to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
 fn generate_docs_html(plugins: &[PluginInfo]) -> String {
     let mut cards = String::new();
     for (idx, p) in plugins.iter().enumerate() {
@@ -919,6 +978,8 @@ fn generate_docs_html(plugins: &[PluginInfo]) -> String {
 
         let kind_badge = if p.kind == "builtin" {
             r#"<span class="kind-badge builtin">built-in</span>"#
+        } else if p.kind == "script" {
+            r#"<span class="kind-badge script">lua script</span>"#
         } else {
             r#"<span class="kind-badge plugin">plugin</span>"#
         };
@@ -1104,6 +1165,7 @@ header p {{ color: var(--text-muted); font-size: 1.1rem; margin-top: 0.5rem; }}
 }}
 .kind-badge.builtin {{ background: #1f3d2a; color: var(--green); }}
 .kind-badge.plugin {{ background: #1c2d4f; color: var(--accent); }}
+.kind-badge.script {{ background: #3d2a1f; color: #f0a050; }}
 .lang-badge {{
   font-size: 0.7rem;
   padding: 0.2rem 0.5rem;
@@ -1254,6 +1316,7 @@ header p {{ color: var(--text-muted); font-size: 1.1rem; margin-top: 0.5rem; }}
     <button class="filter-btn active" data-kind="all">All Types</button>
     <button class="filter-btn" data-kind="builtin">Built-in</button>
     <button class="filter-btn" data-kind="plugin">Plugin</button>
+    <button class="filter-btn" data-kind="script">Lua Script</button>
   </div>
 </div>
 

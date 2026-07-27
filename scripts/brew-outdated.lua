@@ -7,14 +7,12 @@ description = "Shows Homebrew packages with available updates"
 version = "0.1.0"
 
 function refresh()
-    local handle = io.popen("brew outdated --verbose 2>/dev/null")
-    if not handle then
+    local result = slate.exec("brew", {"outdated", "--verbose"})
+    if result.exit_code == -1 then
         return '{"type":"text","content":"brew not found","scrollable":false,"wrap":true}'
     end
 
-    local output = handle:read("*a")
-    handle:close()
-
+    local output = result.stdout
     if output == nil or output == "" then
         return '{"type":"text","content":"✓ All packages up to date","scrollable":false,"wrap":false}'
     end

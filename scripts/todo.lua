@@ -14,11 +14,11 @@ function refresh()
     end
 
     -- Expand ~ to home directory
-    local home = os.getenv("HOME") or os.getenv("USERPROFILE") or ""
+    local home = slate.env("HOME") or slate.env("USERPROFILE") or ""
     filepath = filepath:gsub("^~", home)
 
-    local file = io.open(filepath, "r")
-    if not file then
+    local content = slate.read_file(filepath)
+    if not content then
         return string.format(
             '{"type":"text","content":"No todo file found at %s\\nCreate one to get started!","scrollable":false,"wrap":true}',
             escape(filepath)
@@ -27,7 +27,7 @@ function refresh()
 
     local items = {}
     local line_num = 0
-    for line in file:lines() do
+    for line in content:gmatch("[^\n]+") do
         line_num = line_num + 1
         line = line:match("^%s*(.-)%s*$")  -- trim
         if line ~= "" then
@@ -45,7 +45,6 @@ function refresh()
             ))
         end
     end
-    file:close()
 
     if #items == 0 then
         return '{"type":"text","content":"🎉 All done! No tasks.","scrollable":false,"wrap":false}'

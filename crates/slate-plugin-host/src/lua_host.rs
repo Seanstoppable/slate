@@ -14,6 +14,10 @@ impl LuaPlugin {
     /// Load a Lua plugin from a script file.
     pub fn from_file(path: &Path) -> Result<Self> {
         let lua = Lua::new();
+
+        // Inject the `slate` host API table before running the script
+        Self::inject_host_api(&lua)?;
+
         let script = std::fs::read_to_string(path)
             .with_context(|| format!("Failed to read Lua script: {}", path.display()))?;
 
@@ -53,6 +57,72 @@ impl LuaPlugin {
             },
             script_path: path.display().to_string(),
         })
+    }
+
+    /// Inject `slate.*` host functions into the Lua environment.
+    fn inject_host_api(lua: &Lua) -> Result<()> {
+        let slate = lua.create_table().map_err(|e| anyhow::anyhow!("{}", e))?;
+
+        // slate.exec(cmd, args?) -> { stdout, stderr, exit_code }
+        let exec_fn = lua.create_function(|lua_ctx, (cmd, args): (String, Option<Vec<String>>)| {
+            let args = args.unwrap_or_default();
+            let output = std::process::Command::new(&cmd)
+                .args(&args)
+                .output();
+
+            match output {
+                Ok(out) => {
+                    let tbl = lua_ctx.create_table()?;
+                    tbl.set("stdout", String::from_utf8_lossy(&out.stdout).to_string())?;
+                    tbl.set("stderr", String::from_utf8_lossy(&out.stderr).to_string())?;
+                    tbl.set("exit_code", out.status.code().unwrap_or(-1))?;
+                    Ok(tbl)
+                }
+                Err(e) => {
+                    let tbl = lua_ctx.create_table()?;
+                    tbl.set("stdout", "")?;
+                    tbl.set("stderr", e.to_string())?;
+                    tbl.set("exit_code", -1)?;
+                    Ok(tbl)
+                }
+            }
+        }).map_err(|e| anyhow::anyhow!("{}", e))?;
+        slate.set("exec", exec_fn).map_err(|e| anyhow::anyhow!("{}", e))?;
+
+        // slate.read_file(path) -> string or nil
+        let read_file_fn = lua.create_function(|_, path: String| {
+            match std::fs::read_to_string(&path) {
+                Ok(content) => Ok(Some(content)),
+                Err(_) => Ok(None),
+            }
+        }).map_err(|e| anyhow::anyhow!("{}", e))?;
+        slate.set("read_file", read_file_fn).map_err(|e| anyhow::anyhow!("{}", e))?;
+
+        // slate.time() -> { hour, min, sec, year, month, day, weekday, timestamp }
+        let time_fn = lua.create_function(|lua_ctx, ()| {
+            use chrono::Local;
+            let now = Local::now();
+            let tbl = lua_ctx.create_table()?;
+            tbl.set("hour", now.format("%H").to_string().parse::<i32>().unwrap_or(0))?;
+            tbl.set("min", now.format("%M").to_string().parse::<i32>().unwrap_or(0))?;
+            tbl.set("sec", now.format("%S").to_string().parse::<i32>().unwrap_or(0))?;
+            tbl.set("year", now.format("%Y").to_string().parse::<i32>().unwrap_or(0))?;
+            tbl.set("month", now.format("%m").to_string().parse::<i32>().unwrap_or(0))?;
+            tbl.set("day", now.format("%d").to_string().parse::<i32>().unwrap_or(0))?;
+            tbl.set("weekday", now.format("%A").to_string())?;
+            tbl.set("timestamp", now.timestamp())?;
+            Ok(tbl)
+        }).map_err(|e| anyhow::anyhow!("{}", e))?;
+        slate.set("time", time_fn).map_err(|e| anyhow::anyhow!("{}", e))?;
+
+        // slate.env(name) -> string or nil
+        let env_fn = lua.create_function(|_, name: String| {
+            Ok(std::env::var(&name).ok())
+        }).map_err(|e| anyhow::anyhow!("{}", e))?;
+        slate.set("env", env_fn).map_err(|e| anyhow::anyhow!("{}", e))?;
+
+        lua.globals().set("slate", slate).map_err(|e| anyhow::anyhow!("{}", e))?;
+        Ok(())
     }
 }
 

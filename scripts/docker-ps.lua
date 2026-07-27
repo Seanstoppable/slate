@@ -7,42 +7,31 @@ description = "Shows running Docker containers"
 version = "0.1.0"
 
 function refresh()
-    local handle = io.popen('docker ps --format "{{.Names}}|{{.Image}}|{{.Status}}|{{.Ports}}" 2>/dev/null')
-    if not handle then
+    local result = slate.exec("docker", {"ps", "--format", "{{.Names}}|{{.Image}}|{{.Status}}|{{.Ports}}"})
+    if result.exit_code == -1 then
         return '{"type":"text","content":"docker not found","scrollable":false,"wrap":true}'
     end
 
-    local output = handle:read("*a")
-    handle:close()
-
+    local output = result.stdout
     if output == nil or output == "" then
         -- Maybe docker isn't running or no containers
-        local check = io.popen("docker info 2>&1")
-        if check then
-            local info = check:read("*a")
-            check:close()
-            if info:match("Cannot connect") or info:match("error") then
-                return '{"type":"text","content":"⚠ Docker daemon not running","scrollable":false,"wrap":true}'
-            end
+        if result.stderr:match("Cannot connect") or result.stderr:match("error") then
+            return '{"type":"text","content":"⚠ Docker daemon not running","scrollable":false,"wrap":true}'
         end
         return '{"type":"text","content":"No running containers","scrollable":false,"wrap":false}'
     end
 
     local items = {}
     for line in output:gmatch("[^\n]+") do
-        local name, image, status, ports = line:match("^(.-)|(.-)|(.-)|(.*)")
-        if name then
+        local cname, image, status, ports = line:match("^(.-)|(.-)|(.-)|(.*)")
+        if cname then
             local subtitle = image
             if ports and ports ~= "" then
                 subtitle = subtitle .. " • " .. ports:gsub("0%.0%.0%.0:", ":")
             end
-            local color = "green"
-            if status:match("Paused") then color = "yellow"
-            elseif status:match("Restarting") then color = "red"
-            end
             table.insert(items, string.format(
                 '{"id":"%s","title":"%s","subtitle":"%s"}',
-                escape(name), escape(name .. " (" .. status .. ")"), escape(subtitle)
+                escape(cname), escape(cname .. " (" .. status .. ")"), escape(subtitle)
             ))
         end
     end

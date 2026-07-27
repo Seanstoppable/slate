@@ -8,30 +8,26 @@ version = "0.1.0"
 
 function refresh()
     -- Read config
-    local count = 8
+    local count = "8"
     local path = "."
     if config_json then
-        local c = config_json
-        local n = c:match('"count"%s*:%s*(%d+)')
-        if n then count = tonumber(n) end
-        local p = c:match('"path"%s*:%s*"(.-)"')
+        local n = config_json:match('"count"%s*:%s*(%d+)')
+        if n then count = n end
+        local p = config_json:match('"path"%s*:%s*"(.-)"')
         if p then path = p end
     end
 
-    local cmd = string.format(
-        'git -C "%s" log --oneline --no-decorate -n %d --format="%%h|%%s|%%ar|%%an" 2>/dev/null',
-        path, count
-    )
-    local handle = io.popen(cmd)
-    if not handle then
+    local result = slate.exec("git", {"-C", path, "log", "--oneline", "--no-decorate", "-n", count, "--format=%h|%s|%ar|%an"})
+    if result.exit_code ~= 0 then
+        if result.stderr:match("not a git repository") then
+            return '{"type":"text","content":"Not a git repository","scrollable":false,"wrap":true}'
+        end
         return '{"type":"text","content":"git not available","scrollable":false,"wrap":true}'
     end
 
-    local output = handle:read("*a")
-    handle:close()
-
+    local output = result.stdout
     if output == nil or output == "" then
-        return '{"type":"text","content":"Not a git repository","scrollable":false,"wrap":true}'
+        return '{"type":"text","content":"No commits found","scrollable":false,"wrap":false}'
     end
 
     local items = {}

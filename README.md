@@ -281,36 +281,38 @@ All implement the same `Widget` trait and are configured uniformly in `slate.tom
 
 ### Lua Scripts
 
-Lua scripts are the fastest way to add a personal widget. They have full access to `io.popen`, `os.execute`, file I/O, and return the same JSON content types as WASM plugins.
+Lua scripts are the fastest way to add a personal widget. They run in a sandboxed Luau runtime with access to host-provided `slate.*` functions:
+
+| Function | Description |
+|----------|-------------|
+| `slate.exec(cmd, args?)` | Run a command, returns `{stdout, stderr, exit_code}` |
+| `slate.read_file(path)` | Read a file, returns string or nil |
+| `slate.time()` | Current time: `{hour, min, sec, year, month, day, weekday, timestamp}` |
+| `slate.env(name)` | Read an environment variable, returns string or nil |
 
 ```lua
--- scripts/brew-outdated.lua
-name = "Brew Outdated"
-description = "Shows Homebrew packages with available updates"
+-- scripts/git-recent.lua
+name = "Git Recent"
+description = "Shows recent git commits"
 
 function refresh()
-    local handle = io.popen("brew outdated --verbose 2>/dev/null")
-    if not handle then
-        return '{"type":"text","content":"brew not found","scrollable":false,"wrap":true}'
+    local result = slate.exec("git", {"log", "--oneline", "-n", "8"})
+    if result.exit_code ~= 0 then
+        return '{"type":"text","content":"Not a git repo","scrollable":false,"wrap":true}'
     end
-    local output = handle:read("*a")
-    handle:close()
-
-    if output == "" then
-        return '{"type":"text","content":"✓ All packages up to date","scrollable":false,"wrap":false}'
-    end
-    -- ... format as list items
+    -- ... format result.stdout as list items
 end
 ```
 
 Config:
 ```toml
 [[widget]]
-type = "lua:scripts/brew-outdated.lua"
+type = "lua:scripts/git-recent.lua"
 position = { row = 2, col = 0 }
+path = "/path/to/repo"
 ```
 
-See `scripts/` for more examples: disk usage, docker containers, git log, todo.txt.
+See `scripts/` for more examples: brew outdated, disk usage, docker containers, git log, todo.txt.
 
 ## Requirements
 
