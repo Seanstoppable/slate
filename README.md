@@ -7,8 +7,8 @@ A terminal info dashboard with a plugin ecosystem. Think [wtfutil](https://wtfut
 - **WASM-sandboxed plugins** — Community plugins run in an Extism sandbox with capability-gated permissions
 - **5 built-in widgets** — Resources, power, firewall, network interfaces, VCS (git/hg)
 - **6 WASM plugins (Rust)** — Clock, weather, HN, feeds, IP info, GitHub
-- **4 WASM plugins (polyglot)** — Status pages (JS), brew outdated (Go), iStats (Zig), wego (AssemblyScript)
-- **Lua scripting** — Quick personal widgets with zero compilation
+- **4 WASM plugins (polyglot)** — Status pages (JS), iStats (Zig), wego (AssemblyScript), cmdrunner (Go)
+- **Lua scripting** — Quick personal widgets with zero compilation (brew outdated, docker ps, disk usage, git log, todo.txt)
 - **Plugin manager** — Install from GitHub repos, lockfile-based versioning, update notifications
 - **Interactive lists** — Navigate items with j/k, open links with Enter
 - **Vim-style navigation** — h/j/k/l, Tab cycling, focus management
@@ -100,7 +100,7 @@ Environment variables are interpolated with `${VAR_NAME}` syntax.
 | `feedreader` | WASM | Rust | RSS/Atom feed reader |
 | `github` | WASM | Rust | GitHub PRs, issues, repo stats |
 | `status-pages` | WASM | JavaScript | Service status page monitor (Statuspage APIs) |
-| `brew-outdated` | WASM | Go | Outdated Homebrew packages |
+| `brew-outdated` | WASM | Go | Outdated Homebrew packages (polyglot demo; prefer `scripts/brew-outdated.lua`) |
 | `istats` | WASM | Zig | System stats via iStats (macOS) |
 | `wego` | WASM | AssemblyScript | Weather display via wego CLI |
 
@@ -242,16 +242,23 @@ slate/
 │   ├── slate-plugin-manager/ # GitHub download, versions, lockfile, registry
 │   └── slate-cli/            # Binary, clap commands, built-in widgets
 ├── plugins/                  # WASM plugin source (10 plugins, multiple languages)
-│   ├── clock/                # Rust
+│   ├── clock/                # Rust — multi-location world clocks
 │   ├── hackernews/           # Rust
 │   ├── ipinfo/               # Rust
 │   ├── github/               # Rust
 │   ├── weather/              # Rust
 │   ├── feedreader/           # Rust
 │   ├── status-pages/         # JavaScript (Extism JS PDK)
-│   ├── brew-outdated/        # Go (TinyGo)
+│   ├── brew-outdated/        # Go (TinyGo) — polyglot demo
 │   ├── istats/               # Zig
 │   └── wego/                 # AssemblyScript
+├── scripts/                  # Lua script examples (no compilation needed)
+│   ├── greeting.lua          # Hello-world
+│   ├── brew-outdated.lua     # Homebrew outdated packages
+│   ├── disk-usage.lua        # df -h with progress bars
+│   ├── docker-ps.lua         # Running Docker containers
+│   ├── git-recent.lua        # Recent commits in a repo
+│   └── todo.lua              # todo.txt reader
 └── .github/extensions/       # Copilot skill for scaffolding plugins
 ```
 
@@ -265,10 +272,45 @@ slate/
 
 **When to use which:**
 - Use **builtin** when the widget needs direct system access (process execution, sysinfo, file reads) that cannot be meaningfully sandboxed — the data source *is* the local machine.
-- Use **WASM plugin** when the widget owns its own data fetching (HTTP APIs, parsing responses) — the sandbox provides real isolation and the plugin is portable across machines.
-- Use **Lua script** for personal one-off widgets that don't need distribution.
+- Use **WASM plugin** when the widget owns its own data fetching (HTTP APIs, parsing responses) — the sandbox provides real isolation and the plugin is portable/distributable across machines.
+- Use **Lua script** for personal command-runner widgets (shell one-liners, file reading, simple formatting). If it's "run a command and display the output" — use Lua. No compilation, instant iteration, full `io.popen`/`os.execute` access.
+
+**Rule of thumb:** If your widget is ≤50 lines and mostly shells out to a CLI tool → Lua script. If it makes HTTP requests to an API and you want to share it → WASM plugin.
 
 All implement the same `Widget` trait and are configured uniformly in `slate.toml`.
+
+### Lua Scripts
+
+Lua scripts are the fastest way to add a personal widget. They have full access to `io.popen`, `os.execute`, file I/O, and return the same JSON content types as WASM plugins.
+
+```lua
+-- scripts/brew-outdated.lua
+name = "Brew Outdated"
+description = "Shows Homebrew packages with available updates"
+
+function refresh()
+    local handle = io.popen("brew outdated --verbose 2>/dev/null")
+    if not handle then
+        return '{"type":"text","content":"brew not found","scrollable":false,"wrap":true}'
+    end
+    local output = handle:read("*a")
+    handle:close()
+
+    if output == "" then
+        return '{"type":"text","content":"✓ All packages up to date","scrollable":false,"wrap":false}'
+    end
+    -- ... format as list items
+end
+```
+
+Config:
+```toml
+[[widget]]
+type = "lua:scripts/brew-outdated.lua"
+position = { row = 2, col = 0 }
+```
+
+See `scripts/` for more examples: disk usage, docker containers, git log, todo.txt.
 
 ## Requirements
 

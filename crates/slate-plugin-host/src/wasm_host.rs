@@ -226,6 +226,19 @@ fn format_local_time(_epoch_secs: i64) -> (String, String, String) {
     (time, date, tz)
 }
 
+/// Format time in a specific timezone. Returns (time, date).
+fn format_tz_time(tz_name: &str) -> (String, String) {
+    use chrono::Utc;
+    if let Ok(tz) = tz_name.parse::<chrono_tz::Tz>() {
+        let now = Utc::now().with_timezone(&tz);
+        let time = now.format("%H:%M:%S").to_string();
+        let date = now.format("%a, %b %d").to_string();
+        (time, date)
+    } else {
+        ("--:--:--".to_string(), tz_name.to_string())
+    }
+}
+
 impl slate_plugin_sdk::Widget for WasmPlugin {
     fn metadata(&self) -> WidgetMetadata {
         self.metadata.clone()
@@ -252,6 +265,23 @@ impl slate_plugin_sdk::Widget for WasmPlugin {
         settings.insert("current_time".to_string(), serde_json::json!(time_str.0));
         settings.insert("current_date".to_string(), serde_json::json!(time_str.1));
         settings.insert("timezone".to_string(), serde_json::json!(time_str.2));
+
+        // Build clocks array if locations are configured
+        if let Some(locations) = settings.get("locations").cloned() {
+            if let Some(locations_obj) = locations.as_object() {
+                let clocks: Vec<serde_json::Value> = locations_obj.iter().map(|(label, tz_val)| {
+                    let tz_str = tz_val.as_str().unwrap_or("UTC");
+                    let (time, date) = format_tz_time(tz_str);
+                    serde_json::json!({
+                        "label": label,
+                        "time": time,
+                        "date": date,
+                        "zone": tz_str
+                    })
+                }).collect();
+                settings.insert("clocks".to_string(), serde_json::json!(clocks));
+            }
+        }
 
         let input = serde_json::to_string(&settings).unwrap_or_default();
 

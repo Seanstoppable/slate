@@ -9,3 +9,8 @@ language = "rust"
 network = ["api.github.com"]
 secrets = ["token"]
 storage = true
+
+[config]
+token = { type = "string", required = true, description = "GitHub personal access token (use ${GITHUB_TOKEN} for env var)" }
+repos = { type = "array", required = true, description = "List of repositories to monitor (e.g. ['owner/repo'])" }
+show = { type = "string", required = false, description = "What to show: 'prs', 'issues', or 'all' (default: 'all')" }

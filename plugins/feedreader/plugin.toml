@@ -7,3 +7,7 @@ language = "rust"
 
 [permissions]
 network = ["*"]
+
+[config]
+feed_url = { type = "string", required = true, description = "URL of the RSS or Atom feed to display" }
+feeds = { type = "array", required = false, description = "List of feed URLs to aggregate (alternative to feed_url)" }

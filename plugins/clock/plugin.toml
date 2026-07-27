@@ -1,9 +1,12 @@
 [plugin]
 name = "clock"
-description = "Displays the current time"
-version = "0.1.0"
+description = "Multi-location world clocks (wtfutil-style)"
+version = "0.2.0"
 author = "Slate Community"
 language = "rust"
 
 [permissions]
 # No permissions needed - pure computation
+
+[config]
+locations = { type = "table", required = false, description = "Map of label to IANA timezone (e.g. 'New York' = 'America/New_York')" }

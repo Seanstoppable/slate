@@ -7,3 +7,7 @@ language = "rust"
 
 [permissions]
 network = ["hacker-news.firebaseio.com"]
+
+[config]
+story_type = { type = "string", required = false, description = "Story type: 'top', 'new', 'best', 'ask', 'show' (default: 'top')" }
+count = { type = "integer", required = false, description = "Number of stories to display (default: 10)" }

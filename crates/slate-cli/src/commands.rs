@@ -670,6 +670,8 @@ struct DocsManifest {
     metadata: DocsManifestPlugin,
     #[serde(default)]
     permissions: DocsManifestPermissions,
+    #[serde(default)]
+    config: std::collections::HashMap<String, DocsConfigField>,
 }
 
 #[derive(serde::Deserialize, Default, Clone)]
@@ -702,6 +704,18 @@ struct DocsManifestPermissions {
     filesystem_read: Vec<String>,
     #[serde(default)]
     raw_network: Option<bool>,
+}
+
+#[derive(serde::Deserialize, Default, Clone)]
+struct DocsConfigField {
+    #[serde(default, rename = "type")]
+    field_type: String,
+    #[serde(default)]
+    required: Option<bool>,
+    #[serde(default)]
+    description: String,
+    #[serde(default)]
+    default: Option<String>,
 }
 
 /// Resolved plugin info for docs generation.
@@ -830,16 +844,38 @@ fn generate_config_example(name: &str, _kind: &str, manifest: &DocsManifest) -> 
         "position = { row = 0, col = 0 }".to_string(),
     ];
 
-    // Add settings hints from permissions
+    // Generate config from [config] section in plugin.toml (preferred)
+    if !manifest.config.is_empty() {
+        lines.push(String::new());
+        lines.push("# Configuration".to_string());
+        for (key, field) in &manifest.config {
+            let required = field.required.unwrap_or(false);
+            let example_value = match field.field_type.as_str() {
+                "array" => format!("[\"example1\", \"example2\"]"),
+                "bool" | "boolean" => "true".to_string(),
+                "int" | "integer" | "number" => "1".to_string(),
+                _ => format!("\"...\""),
+            };
+            let comment = if !field.description.is_empty() {
+                format!("  # {}{}", field.description, if required { " (required)" } else { "" })
+            } else if required {
+                "  # (required)".to_string()
+            } else {
+                String::new()
+            };
+            lines.push(format!("{} = {}{}", key, example_value, comment));
+        }
+        return lines.join("\n");
+    }
+
+    // Fallback: generate hints from permissions
     if !manifest.permissions.secrets.is_empty() {
         for secret in &manifest.permissions.secrets {
             lines.push(format!("{} = \"${{{}}}\"", secret, secret.to_uppercase()));
         }
     }
     if !manifest.permissions.network.is_empty() && manifest.permissions.network[0] != "*" {
-        // Suggest URL-related config
         match name {
-            "feedreader" => lines.push("feed_url = \"https://example.com/rss.xml\"".to_string()),
             "weather" => {
                 lines.push("provider = \"openweathermap\"".to_string());
                 lines.push("location = \"San Francisco\"".to_string());
@@ -848,7 +884,6 @@ fn generate_config_example(name: &str, _kind: &str, manifest: &DocsManifest) -> 
         }
     }
     if !manifest.permissions.exec.is_empty() {
-        // Suggest any relevant config
         match name {
             "wego" => lines.push("days = \"1\"".to_string()),
             _ => {}
