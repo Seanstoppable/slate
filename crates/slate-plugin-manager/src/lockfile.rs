@@ -79,6 +79,7 @@ impl Lockfile {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::tempdir;
 
     #[test]
     fn lockfile_serializes_and_deserializes() {
@@ -119,5 +120,51 @@ mod tests {
 
         lockfile.unlock("plugin");
         assert!(lockfile.get("plugin").is_none());
+    }
+
+    #[test]
+    fn save_and_load_round_trip() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("slate-lock.toml");
+        let mut lockfile = Lockfile::default();
+        lockfile.lock(
+            "plugin",
+            LockedPlugin {
+                source: "github.com/user/plugin".to_string(),
+                version: "1.0.0".to_string(),
+                sha256: "hash".to_string(),
+                permissions_hash: Some("perm-hash".to_string()),
+            },
+        );
+
+        lockfile.save_to(&path).unwrap();
+        let loaded = Lockfile::load_from(&path).unwrap();
+
+        let plugin = loaded.get("plugin").unwrap();
+        assert_eq!(plugin.source, "github.com/user/plugin");
+        assert_eq!(plugin.version, "1.0.0");
+        assert_eq!(plugin.sha256, "hash");
+        assert_eq!(plugin.permissions_hash.as_deref(), Some("perm-hash"));
+    }
+
+    #[test]
+    fn load_from_invalid_content_errors() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("invalid-lock.toml");
+        std::fs::write(&path, "not = [valid").unwrap();
+
+        let err = Lockfile::load_from(&path).unwrap_err();
+        assert!(err.to_string().contains("Failed to parse lockfile"));
+    }
+
+    #[test]
+    fn save_to_creates_parent_directories() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("nested").join("plugins").join("slate-lock.toml");
+        let lockfile = Lockfile::default();
+
+        lockfile.save_to(&path).unwrap();
+
+        assert!(path.exists());
     }
 }

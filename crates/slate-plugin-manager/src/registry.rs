@@ -119,4 +119,52 @@ mod tests {
 
         assert!(results.is_empty());
     }
+
+    #[test]
+    fn registry_file_deserializes_from_toml() {
+        let file: RegistryFile = toml::from_str(
+            r#"
+                [[plugins]]
+                name = "slate-github"
+                source = "github.com/slate-community/slate-github"
+                description = "GitHub issues and PRs"
+                tags = ["github", "issues"]
+            "#,
+        )
+        .unwrap();
+
+        assert_eq!(file.plugins.len(), 1);
+        assert_eq!(file.plugins[0].name, "slate-github");
+        assert_eq!(file.plugins[0].tags, vec!["github", "issues"]);
+    }
+
+    #[test]
+    fn search_is_case_insensitive() {
+        let registry = sample_registry();
+        let results = registry.search("GITHUB");
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].name, "slate-github");
+    }
+
+    #[test]
+    fn search_matches_name_description_and_tags() {
+        let registry = sample_registry();
+
+        let name_results = registry.search("weather");
+        assert_eq!(name_results.len(), 1);
+        assert_eq!(name_results[0].name, "slate-weather");
+
+        let description_results = registry.search("forecast");
+        assert_eq!(description_results.len(), 1);
+        assert_eq!(description_results[0].name, "slate-weather");
+
+        let name_and_tag_results = registry.search("github");
+        assert_eq!(name_and_tag_results.len(), 1);
+        assert_eq!(name_and_tag_results[0].name, "slate-github");
+
+        let tag_results = registry.search("issues");
+        assert_eq!(tag_results.len(), 1);
+        assert_eq!(tag_results[0].name, "slate-github");
+    }
 }

@@ -323,20 +323,28 @@ impl App {
     fn handle_widget_action(action: WidgetAction) {
         match action {
             WidgetAction::OpenUrl(url) => {
-                // Open URL in system browser
-                #[cfg(target_os = "windows")]
+                // Open URL in system browser (skip during tests)
+                #[cfg(not(test))]
                 {
-                    let _ = std::process::Command::new("cmd")
-                        .args(["/C", "start", &url])
-                        .spawn();
+                    #[cfg(target_os = "windows")]
+                    {
+                        let _ = std::process::Command::new("cmd")
+                            .args(["/C", "start", &url])
+                            .spawn();
+                    }
+                    #[cfg(target_os = "macos")]
+                    {
+                        let _ = std::process::Command::new("open").arg(&url).spawn();
+                    }
+                    #[cfg(target_os = "linux")]
+                    {
+                        let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
+                    }
                 }
-                #[cfg(target_os = "macos")]
+                #[cfg(test)]
                 {
-                    let _ = std::process::Command::new("open").arg(&url).spawn();
-                }
-                #[cfg(target_os = "linux")]
-                {
-                    let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
+                    let _ = url; // suppress unused warning
+                    tracing::debug!("OpenUrl suppressed in test: {}", "...");
                 }
             }
             WidgetAction::Notify(msg) => {

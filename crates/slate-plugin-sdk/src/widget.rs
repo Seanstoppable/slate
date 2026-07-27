@@ -40,3 +40,32 @@ pub enum WidgetAction {
 
 /// A boxed widget for dynamic dispatch.
 pub type BoxedWidget = Box<dyn Widget>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn show_detail_actions_compare_equal() {
+        assert_eq!(
+            WidgetAction::ShowDetail("details".to_string()),
+            WidgetAction::ShowDetail("details".to_string())
+        );
+    }
+
+    #[test]
+    fn open_url_actions_compare_equal() {
+        assert_eq!(
+            WidgetAction::OpenUrl("https://example.com".to_string()),
+            WidgetAction::OpenUrl("https://example.com".to_string())
+        );
+    }
+
+    #[test]
+    fn different_widget_action_variants_are_not_equal() {
+        assert_ne!(
+            WidgetAction::ShowDetail("details".to_string()),
+            WidgetAction::OpenUrl("details".to_string())
+        );
+    }
+}

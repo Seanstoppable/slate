@@ -156,6 +156,7 @@ fn resolve_version(requested: Option<&str>, latest: Option<&str>) -> Result<Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::tempdir;
 
     #[test]
     fn test_parse_github_source() {
@@ -167,6 +168,20 @@ mod tests {
     #[test]
     fn test_parse_github_source_with_https() {
         let (owner, repo) = parse_github_source("https://github.com/user/plugin").unwrap();
+        assert_eq!(owner, "user");
+        assert_eq!(repo, "plugin");
+    }
+
+    #[test]
+    fn test_parse_github_source_errors_with_invalid_input() {
+        let err = parse_github_source("github.com-only").unwrap_err();
+        assert!(err.to_string().contains("Invalid GitHub source"));
+    }
+
+    #[test]
+    fn test_parse_github_source_ignores_extra_path_segments() {
+        let (owner, repo) =
+            parse_github_source("github.com/user/plugin/releases/latest").unwrap();
         assert_eq!(owner, "user");
         assert_eq!(repo, "plugin");
     }
@@ -186,5 +201,53 @@ mod tests {
     #[test]
     fn test_resolve_version_errors_without_requested_or_latest_version() {
         assert!(resolve_version(None, None).is_err());
+    }
+
+    #[test]
+    fn test_list_installed_returns_empty_for_empty_directory() {
+        let dir = tempdir().unwrap();
+        let plugins_dir = dir.path().join("plugins");
+        std::fs::create_dir_all(&plugins_dir).unwrap();
+        let installer = PluginInstaller::new(plugins_dir);
+
+        let installed = installer.list_installed().unwrap();
+
+        assert!(installed.is_empty());
+    }
+
+    #[test]
+    fn test_list_installed_returns_plugin_directories() {
+        let dir = tempdir().unwrap();
+        let plugins_dir = dir.path().join("plugins");
+        std::fs::create_dir_all(plugins_dir.join("plugin-a")).unwrap();
+        std::fs::create_dir_all(plugins_dir.join("plugin-b")).unwrap();
+        std::fs::write(plugins_dir.join("README.txt"), "not a plugin dir").unwrap();
+        let installer = PluginInstaller::new(plugins_dir);
+
+        let mut installed = installer.list_installed().unwrap();
+        installed.sort();
+
+        assert_eq!(installed, vec!["plugin-a".to_string(), "plugin-b".to_string()]);
+    }
+
+    #[test]
+    fn test_remove_deletes_existing_plugin_directory() {
+        let dir = tempdir().unwrap();
+        let plugins_dir = dir.path().join("plugins");
+        let plugin_dir = plugins_dir.join("plugin-a");
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+        let installer = PluginInstaller::new(plugins_dir);
+
+        installer.remove("plugin-a").unwrap();
+
+        assert!(!plugin_dir.exists());
+    }
+
+    #[test]
+    fn test_remove_ignores_missing_plugin_directory() {
+        let dir = tempdir().unwrap();
+        let installer = PluginInstaller::new(dir.path().join("plugins"));
+
+        installer.remove("missing-plugin").unwrap();
     }
 }

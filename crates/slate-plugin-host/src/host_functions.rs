@@ -94,3 +94,91 @@ impl PluginStore {
         self.data.insert(key.to_string(), value);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn plugin_store_starts_empty() {
+        let store = PluginStore::new();
+        assert_eq!(store.get("missing"), None);
+    }
+
+    #[test]
+    fn plugin_store_gets_and_sets_values() {
+        let mut store = PluginStore::new();
+        store.set("token", vec![1, 2, 3]);
+
+        assert_eq!(store.get("token"), Some(&[1, 2, 3][..]));
+    }
+
+    #[test]
+    fn plugin_store_overwrites_existing_values() {
+        let mut store = PluginStore::new();
+        store.set("token", vec![1, 2, 3]);
+        store.set("token", vec![4, 5]);
+
+        assert_eq!(store.get("token"), Some(&[4, 5][..]));
+    }
+
+    #[test]
+    fn extract_host_returns_host_for_valid_urls() {
+        assert_eq!(extract_host("https://example.com").unwrap(), "example.com");
+        assert_eq!(
+            extract_host("https://example.com:8080/api/v1").unwrap(),
+            "example.com"
+        );
+        assert_eq!(
+            extract_host("http://subdomain.example.com/path?q=1").unwrap(),
+            "subdomain.example.com"
+        );
+    }
+
+    #[test]
+    fn extract_host_errors_when_url_has_no_host() {
+        let err = extract_host("mailto:test@example.com").unwrap_err();
+        assert!(err.to_string().contains("No host"));
+    }
+
+    #[test]
+    fn default_method_returns_get() {
+        assert_eq!(default_method(), "GET");
+    }
+
+    #[test]
+    fn http_request_deserializes_with_default_method() {
+        let request: HttpRequest = serde_json::from_value(json!({
+            "url": "https://example.com",
+            "headers": { "Accept": "application/json" }
+        }))
+        .unwrap();
+
+        assert_eq!(request.method, "GET");
+        assert_eq!(
+            request.headers.get("Accept").map(String::as_str),
+            Some("application/json")
+        );
+        assert_eq!(request.body, None);
+    }
+
+    #[test]
+    fn http_request_deserializes_explicit_fields() {
+        let request: HttpRequest = serde_json::from_value(json!({
+            "url": "https://example.com/api",
+            "method": "POST",
+            "headers": { "Content-Type": "application/json" },
+            "body": "{\"ok\":true}"
+        }))
+        .unwrap();
+
+        assert_eq!(request.url, "https://example.com/api");
+        assert_eq!(request.method, "POST");
+        assert_eq!(
+            request.headers.get("Content-Type").map(String::as_str),
+            Some("application/json")
+        );
+        assert_eq!(request.body.as_deref(), Some("{\"ok\":true}"));
+    }
+}

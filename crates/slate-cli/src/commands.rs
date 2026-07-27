@@ -2451,6 +2451,24 @@ fn toml_to_json(value: &toml::Value) -> serde_json::Value {
 mod tests {
     use super::*;
     use slate_plugin_sdk::Widget;
+    use tempfile::tempdir;
+
+    fn test_widget_config() -> WidgetConfig {
+        WidgetConfig {
+            position: slate_plugin_sdk::Position {
+                row: 0,
+                col: 0,
+                row_span: 1,
+                col_span: 1,
+            },
+            settings: Default::default(),
+            refresh_interval: None,
+        }
+    }
+
+    fn write_wasm(path: &std::path::Path, source: &str) {
+        std::fs::write(path, wat::parse_str(source).unwrap()).unwrap();
+    }
 
     #[test]
     fn toml_to_json_converts_all_supported_value_types() {
@@ -2611,6 +2629,302 @@ mod tests {
                 assert!(content.contains("Plugin load error"));
             }
             other => panic!("expected text, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn read_plugin_manifest_finds_manifest_in_same_directory() {
+        let dir = tempdir().unwrap();
+        let wasm_path = dir.path().join("widget.wasm");
+        std::fs::write(&wasm_path, b"wasm").unwrap();
+        std::fs::write(
+            dir.path().join("plugin.toml"),
+            "[plugin]\nname = \"same-dir\"\nos = [\"windows\"]\n",
+        )
+        .unwrap();
+
+        let manifest = read_plugin_manifest(&wasm_path).unwrap();
+        assert_eq!(manifest.plugin.name, "same-dir");
+        assert_eq!(manifest.plugin.os, vec!["windows"]);
+    }
+
+    #[test]
+    fn read_plugin_manifest_finds_manifest_in_parent_directory() {
+        let dir = tempdir().unwrap();
+        let nested = dir.path().join("target").join("wasm32");
+        std::fs::create_dir_all(&nested).unwrap();
+        let wasm_path = nested.join("widget.wasm");
+        std::fs::write(&wasm_path, b"wasm").unwrap();
+        std::fs::write(
+            dir.path().join("target").join("plugin.toml"),
+            "[plugin]\nname = \"parent-dir\"\nos = [\"linux\"]\n",
+        )
+        .unwrap();
+
+        let manifest = read_plugin_manifest(&wasm_path).unwrap();
+        assert_eq!(manifest.plugin.name, "parent-dir");
+        assert_eq!(manifest.plugin.os, vec!["linux"]);
+    }
+
+    #[test]
+    fn read_plugin_manifest_returns_none_when_manifest_is_missing_or_invalid() {
+        let dir = tempdir().unwrap();
+        let wasm_path = dir.path().join("widget.wasm");
+        std::fs::write(&wasm_path, b"wasm").unwrap();
+        assert!(read_plugin_manifest(&wasm_path).is_none());
+
+        std::fs::write(dir.path().join("plugin.toml"), "not valid = [").unwrap();
+        assert!(read_plugin_manifest(&wasm_path).is_none());
+    }
+
+    #[test]
+    fn current_os_matches_platform_constant() {
+        let expected = match std::env::consts::OS {
+            "macos" => "macos",
+            "linux" => "linux",
+            "windows" => "windows",
+            other => other,
+        };
+        assert_eq!(current_os(), expected);
+    }
+
+    #[test]
+    fn check_os_support_allows_missing_empty_and_matching_manifests() {
+        let dir = tempdir().unwrap();
+        let wasm_path = dir.path().join("widget.wasm");
+        std::fs::write(&wasm_path, b"wasm").unwrap();
+
+        assert!(check_os_support(&wasm_path).is_ok());
+
+        std::fs::write(dir.path().join("plugin.toml"), "[plugin]\nos = []\n").unwrap();
+        assert!(check_os_support(&wasm_path).is_ok());
+
+        std::fs::write(
+            dir.path().join("plugin.toml"),
+            format!("[plugin]\nname = \"widget\"\nos = [\"{}\"]\n", current_os()),
+        )
+        .unwrap();
+        assert!(check_os_support(&wasm_path).is_ok());
+    }
+
+    #[test]
+    fn check_os_support_rejects_unsupported_os() {
+        let dir = tempdir().unwrap();
+        let wasm_path = dir.path().join("widget.wasm");
+        std::fs::write(&wasm_path, b"wasm").unwrap();
+
+        let unsupported = ["linux", "macos", "windows"]
+            .into_iter()
+            .find(|os| *os != current_os())
+            .unwrap();
+        std::fs::write(
+            dir.path().join("plugin.toml"),
+            format!("[plugin]\nname = \"widget\"\nos = [\"{}\"]\n", unsupported),
+        )
+        .unwrap();
+
+        let error = check_os_support(&wasm_path).unwrap_err();
+        assert!(error.to_string().contains("Not available on"));
+        assert!(error.to_string().contains(unsupported));
+    }
+
+    #[test]
+    fn validate_wasm_binary_reports_missing_required_exports_for_minimal_module() {
+        let dir = tempdir().unwrap();
+        let wasm_path = dir.path().join("minimal.wasm");
+        write_wasm(&wasm_path, "(module)");
+
+        let issues = validate_wasm_binary(&wasm_path);
+        assert!(issues.iter().any(|issue| issue == "Missing required export: 'metadata'"));
+        assert!(issues.iter().any(|issue| issue == "Missing required export: 'refresh'"));
+        assert!(issues
+            .iter()
+            .any(|issue| issue.contains("Optional exports not found")));
+    }
+
+    #[test]
+    fn validate_wasm_binary_reports_invalid_binary() {
+        let dir = tempdir().unwrap();
+        let wasm_path = dir.path().join("invalid.wasm");
+        std::fs::write(&wasm_path, b"definitely-not-wasm").unwrap();
+
+        let issues = validate_wasm_binary(&wasm_path);
+        assert_eq!(issues.len(), 1);
+        assert!(issues[0].contains("Invalid WASM binary"));
+    }
+
+    #[test]
+    fn validate_wasm_binary_accepts_module_with_required_and_optional_exports() {
+        let dir = tempdir().unwrap();
+        let wasm_path = dir.path().join("valid.wasm");
+        write_wasm(
+            &wasm_path,
+            r#"
+                (module
+                    (func (export "metadata"))
+                    (func (export "refresh"))
+                    (func (export "on_key"))
+                    (func (export "on_action"))
+                )
+            "#,
+        );
+
+        assert!(validate_wasm_binary(&wasm_path).is_empty());
+    }
+
+    #[test]
+    fn validate_wasm_binary_reports_unresolvable_imports() {
+        let dir = tempdir().unwrap();
+        let wasm_path = dir.path().join("imports.wasm");
+        write_wasm(
+            &wasm_path,
+            r#"
+                (module
+                    (import "mystery" "call" (func))
+                    (func (export "metadata"))
+                    (func (export "refresh"))
+                )
+            "#,
+        );
+
+        let issues = validate_wasm_binary(&wasm_path);
+        assert!(issues
+            .iter()
+            .any(|issue| issue.contains("Unresolvable import: mystery::call")));
+    }
+
+    #[test]
+    fn resolve_wasm_path_handles_explicit_paths_and_github_sources() {
+        let direct = resolve_wasm_path("wasm:path\\to\\widget.wasm").unwrap();
+        assert_eq!(direct, std::path::PathBuf::from("path\\to\\widget.wasm"));
+
+        let home = std::path::PathBuf::from(shellexpand::tilde("~/widget.wasm").as_ref());
+        assert_eq!(resolve_wasm_path("wasm:~/widget.wasm").unwrap(), home);
+
+        let expected = PluginInstaller::default_dir()
+            .unwrap()
+            .join("repo")
+            .join("repo.wasm");
+        assert_eq!(resolve_wasm_path("github.com/owner/repo").unwrap(), expected);
+    }
+
+    #[test]
+    fn html_and_js_escape_special_characters() {
+        assert_eq!(
+            html_escape("<tag attr=\"a&b\">'x'</tag>"),
+            "&lt;tag attr=&quot;a&amp;b&quot;&gt;'x'&lt;/tag&gt;"
+        );
+        assert_eq!(
+            js_escape("\\\"line1\nline2\r\t'"),
+            "\\\\\\\"line1\\nline2\\t'"
+        );
+    }
+
+    #[test]
+    fn welcome_widget_returns_expected_metadata_and_content() {
+        let mut widget = WelcomeWidget;
+        let metadata = widget.metadata();
+        assert_eq!(metadata.name, "Welcome");
+        assert_eq!(metadata.description, "Welcome screen");
+
+        match widget.refresh() {
+            WidgetContent::Text { content, wrap, .. } => {
+                assert!(content.contains("Welcome to Slate!"));
+                assert!(content.contains("slate search"));
+                assert!(wrap);
+            }
+            other => panic!("expected text content, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn toml_to_json_converts_nested_structures_recursively() {
+        let value = toml::Value::Table(toml::map::Map::from_iter([(
+            "nested".to_string(),
+            toml::Value::Array(vec![toml::Value::Table(toml::map::Map::from_iter([(
+                "flag".to_string(),
+                toml::Value::Boolean(true),
+            )]))]),
+        )]));
+
+        assert_eq!(
+            toml_to_json(&value),
+            serde_json::json!({"nested": [{"flag": true}]})
+        );
+    }
+
+    #[test]
+    fn power_widget_returns_status_pairs() {
+        let mut widget = PowerWidget::new();
+        let metadata = widget.metadata();
+        assert_eq!(metadata.name, "Power");
+        assert_eq!(metadata.description, "Battery and power status");
+
+        match widget.refresh() {
+            WidgetContent::KeyValue { pairs } => {
+                let keys: Vec<&str> = pairs.iter().map(|(key, _)| key.as_str()).collect();
+                assert!(keys.contains(&"Status"));
+                assert!(keys.contains(&"Source"));
+                assert!(pairs.iter().all(|(_, cell)| !cell.text.is_empty()));
+            }
+            other => panic!("expected key-value content, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn firewall_widget_returns_status_list() {
+        let mut widget = FirewallWidget::new();
+        let metadata = widget.metadata();
+        assert_eq!(metadata.name, "Firewall");
+        assert_eq!(metadata.description, "Firewall status and rules");
+
+        match widget.refresh() {
+            WidgetContent::List {
+                items,
+                selectable,
+                actions,
+            } => {
+                assert!(selectable);
+                assert!(actions.is_empty());
+                assert!(!items.is_empty());
+                assert_eq!(items[0].id, "status");
+                assert!(items[0].title.contains("Firewall:"));
+            }
+            other => panic!("expected list content, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn ip_addresses_widget_returns_text_or_key_value_content() {
+        let mut widget = IpAddressesWidget::new();
+        let metadata = widget.metadata();
+        assert_eq!(metadata.name, "IP Addresses");
+        assert_eq!(metadata.description, "Network interface addresses");
+
+        match widget.refresh() {
+            WidgetContent::KeyValue { pairs } => {
+                assert!(pairs.iter().all(|(key, _)| !key.is_empty()));
+                assert!(pairs.iter().all(|(_, cell)| !cell.text.is_empty()));
+            }
+            WidgetContent::Text { content, .. } => {
+                assert!(content.contains("No network interfaces found"));
+            }
+            other => panic!("expected text or key-value content, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn vcs_widget_returns_configuration_message_for_default_repo_path() {
+        let mut widget = VcsWidget::new(test_widget_config());
+        let metadata = widget.metadata();
+        assert_eq!(metadata.name, "VCS (git)");
+        assert_eq!(metadata.description, "Version control status");
+
+        match widget.refresh() {
+            WidgetContent::Text { content, .. } => {
+                assert!(content.contains("Configure repo_path in settings"));
+            }
+            other => panic!("expected text content, got {other:?}"),
         }
     }
 }
