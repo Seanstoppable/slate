@@ -295,6 +295,10 @@ impl App {
                 // For now, just log it
                 tracing::info!("Widget notification: {}", msg);
             }
+            WidgetAction::ShowDetail(detail) => {
+                // Log for now — TUI rendering of detail view is a follow-up
+                tracing::info!("Widget detail view: {} chars", detail.len());
+            }
         }
     }
 

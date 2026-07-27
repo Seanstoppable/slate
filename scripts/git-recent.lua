@@ -48,6 +48,27 @@ function refresh()
     return '{"type":"list","items":[' .. table.concat(items, ",") .. '],"selectable":true}'
 end
 
+function on_action(action_id, item_id)
+    -- item_id is the commit hash; show the full commit details
+    local path = "."
+    if config_json then
+        local p = config_json:match('"path"%s*:%s*"(.-)"')
+        if p then path = p end
+    end
+
+    local result = slate.exec("git", {"-C", path, "show", "--stat", "--format=commit %H%nAuthor: %an <%ae>%nDate:   %ad%n%n%s%n%n%b", item_id})
+    if result.exit_code ~= 0 then
+        return '{"notify":"Could not load commit details"}'
+    end
+
+    local detail = result.stdout
+    if detail == nil or detail == "" then
+        return '{"notify":"No commit details found"}'
+    end
+
+    return '{"show_detail":"' .. escape(detail) .. '"}'
+end
+
 function escape(s)
-    return s:gsub('\\', '\\\\'):gsub('"', '\\"'):gsub("\n", "\\n")
+    return s:gsub('\\', '\\\\'):gsub('"', '\\"'):gsub("\n", "\\n"):gsub("\r", "")
 end

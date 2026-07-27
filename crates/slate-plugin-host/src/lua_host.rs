@@ -202,7 +202,11 @@ impl slate_plugin_sdk::Widget for LuaPlugin {
         item_id: &str,
     ) -> Option<slate_plugin_sdk::WidgetAction> {
         if let Ok(func) = self.lua.globals().get::<LuaFunction>("on_action") {
-            let _ = func.call::<()>((action_id.to_string(), item_id.to_string()));
+            if let Ok(result) = func.call::<Option<String>>((action_id.to_string(), item_id.to_string())) {
+                if let Some(json_str) = result {
+                    return parse_widget_action(&json_str);
+                }
+            }
         }
         None
     }
@@ -217,6 +221,24 @@ impl slate_plugin_sdk::Widget for LuaPlugin {
         if let Ok(func) = self.lua.globals().get::<LuaFunction>("on_blur") {
             let _ = func.call::<()>(());
         }
+    }
+}
+
+/// Parse a JSON string returned from on_action into a WidgetAction.
+/// Supported formats:
+///   {"open_url": "https://..."}
+///   {"notify": "message"}
+///   {"show_detail": "detail text content"}
+fn parse_widget_action(json_str: &str) -> Option<slate_plugin_sdk::WidgetAction> {
+    let value: serde_json::Value = serde_json::from_str(json_str).ok()?;
+    if let Some(url) = value.get("open_url").and_then(|v| v.as_str()) {
+        Some(slate_plugin_sdk::WidgetAction::OpenUrl(url.to_string()))
+    } else if let Some(msg) = value.get("notify").and_then(|v| v.as_str()) {
+        Some(slate_plugin_sdk::WidgetAction::Notify(msg.to_string()))
+    } else if let Some(detail) = value.get("show_detail").and_then(|v| v.as_str()) {
+        Some(slate_plugin_sdk::WidgetAction::ShowDetail(detail.to_string()))
+    } else {
+        None
     }
 }
 
@@ -510,6 +532,115 @@ mod tests {
 
         let result = LuaPlugin::from_file(&script_path);
         assert!(result.is_err());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn parse_widget_action_open_url() {
+        let action = parse_widget_action(r#"{"open_url":"https://example.com"}"#);
+        assert_eq!(action, Some(slate_plugin_sdk::WidgetAction::OpenUrl("https://example.com".to_string())));
+    }
+
+    #[test]
+    fn parse_widget_action_notify() {
+        let action = parse_widget_action(r#"{"notify":"hello world"}"#);
+        assert_eq!(action, Some(slate_plugin_sdk::WidgetAction::Notify("hello world".to_string())));
+    }
+
+    #[test]
+    fn parse_widget_action_show_detail() {
+        let action = parse_widget_action(r#"{"show_detail":"commit abc123\nAuthor: dev"}"#);
+        assert_eq!(action, Some(slate_plugin_sdk::WidgetAction::ShowDetail("commit abc123\nAuthor: dev".to_string())));
+    }
+
+    #[test]
+    fn parse_widget_action_empty_json() {
+        let action = parse_widget_action("{}");
+        assert_eq!(action, None);
+    }
+
+    #[test]
+    fn parse_widget_action_invalid_json() {
+        let action = parse_widget_action("not json");
+        assert_eq!(action, None);
+    }
+
+    #[test]
+    fn parse_widget_action_empty_string() {
+        let action = parse_widget_action("");
+        assert_eq!(action, None);
+    }
+
+    #[test]
+    fn lua_on_action_returns_show_detail() {
+        let dir = std::env::temp_dir().join("slate_test_lua_on_action_detail");
+        std::fs::create_dir_all(&dir).unwrap();
+        let script_path = dir.join("action_detail.lua");
+        std::fs::write(&script_path, r#"
+            name = "Action Test"
+            function refresh() return '{"type":"text","content":"hi","scrollable":false,"wrap":true}' end
+            function on_action(action_id, item_id)
+                return '{"show_detail":"Details for ' .. item_id .. '"}'
+            end
+        "#).unwrap();
+
+        let mut plugin = LuaPlugin::from_file(&script_path).unwrap();
+        let result = plugin.on_action("select", "abc123");
+        assert_eq!(result, Some(slate_plugin_sdk::WidgetAction::ShowDetail("Details for abc123".to_string())));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn lua_on_action_returns_open_url() {
+        let dir = std::env::temp_dir().join("slate_test_lua_on_action_url");
+        std::fs::create_dir_all(&dir).unwrap();
+        let script_path = dir.join("action_url.lua");
+        std::fs::write(&script_path, r#"
+            name = "URL Test"
+            function refresh() return '{"type":"text","content":"hi","scrollable":false,"wrap":true}' end
+            function on_action(action_id, item_id)
+                return '{"open_url":"https://github.com/' .. item_id .. '"}'
+            end
+        "#).unwrap();
+
+        let mut plugin = LuaPlugin::from_file(&script_path).unwrap();
+        let result = plugin.on_action("open", "user/repo");
+        assert_eq!(result, Some(slate_plugin_sdk::WidgetAction::OpenUrl("https://github.com/user/repo".to_string())));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn lua_on_action_returns_none_when_nil() {
+        let dir = std::env::temp_dir().join("slate_test_lua_on_action_nil");
+        std::fs::create_dir_all(&dir).unwrap();
+        let script_path = dir.join("action_nil.lua");
+        std::fs::write(&script_path, r#"
+            name = "Nil Test"
+            function refresh() return '{"type":"text","content":"hi","scrollable":false,"wrap":true}' end
+            function on_action(action_id, item_id)
+                return nil
+            end
+        "#).unwrap();
+
+        let mut plugin = LuaPlugin::from_file(&script_path).unwrap();
+        let result = plugin.on_action("select", "item1");
+        assert_eq!(result, None);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn lua_on_action_returns_none_when_not_defined() {
+        let dir = std::env::temp_dir().join("slate_test_lua_on_action_missing");
+        std::fs::create_dir_all(&dir).unwrap();
+        let script_path = dir.join("no_action.lua");
+        std::fs::write(&script_path, r#"
+            name = "No Action"
+            function refresh() return '{"type":"text","content":"hi","scrollable":false,"wrap":true}' end
+        "#).unwrap();
+
+        let mut plugin = LuaPlugin::from_file(&script_path).unwrap();
+        let result = plugin.on_action("select", "item1");
+        assert_eq!(result, None);
         std::fs::remove_dir_all(&dir).ok();
     }
 }

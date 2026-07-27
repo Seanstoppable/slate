@@ -153,5 +153,93 @@ end
 
 function escape(s)
     if not s then return "" end
-    return s:gsub('\\', '\\\\'):gsub('"', '\\"'):gsub("\n", "\\n")
+    return s:gsub('\\', '\\\\'):gsub('"', '\\"'):gsub("\n", "\\n"):gsub("\r", "")
+end
+
+function on_action(action_id, item_id)
+    -- item_id format: "{type}-{index}" or "{type}-header"/"{type}-err"/"{type}-empty"
+    -- For actual items, look up the resource name and describe it
+    if item_id:match("%-header$") or item_id:match("%-err$") or item_id:match("%-empty$") then
+        return nil
+    end
+
+    -- Parse the object type from item_id (e.g., "pods-3" -> "pods")
+    local obj_type = item_id:match("^(.-)%-[0-9]+$")
+    if not obj_type then return nil end
+
+    -- We need to find the resource name. Fetch it again (simple approach)
+    local context = nil
+    local namespace = nil
+    if config_json then
+        context = config_json:match('"context"%s*:%s*"(.-)"')
+        namespace = config_json:match('"namespace"%s*:%s*"(.-)"')
+    end
+
+    -- Get the specific item by index
+    local idx = tonumber(item_id:match("%-([0-9]+)$"))
+    if not idx then return nil end
+
+    local args = {"get", obj_type, "--no-headers"}
+    if context then
+        table.insert(args, "--context")
+        table.insert(args, context)
+    end
+    if namespace then
+        table.insert(args, "-n")
+        table.insert(args, namespace)
+    else
+        table.insert(args, "--all-namespaces")
+    end
+
+    local list_result = slate.exec("kubectl", args)
+    if list_result.exit_code ~= 0 then
+        return '{"notify":"Could not list resources"}'
+    end
+
+    -- Find the Nth resource name
+    local count = 0
+    local resource_name = nil
+    local resource_ns = nil
+    for line in list_result.stdout:gmatch("[^\n]+") do
+        if line:match("%S") then
+            count = count + 1
+            if count == idx then
+                local parts = {}
+                for part in line:gmatch("%S+") do
+                    table.insert(parts, part)
+                end
+                if namespace then
+                    resource_name = parts[1]
+                    resource_ns = namespace
+                else
+                    -- all-namespaces: first col is namespace
+                    resource_ns = parts[1]
+                    resource_name = parts[2]
+                end
+                break
+            end
+        end
+    end
+
+    if not resource_name then
+        return '{"notify":"Resource not found"}'
+    end
+
+    -- Run kubectl describe
+    local describe_args = {"describe", obj_type:gsub("s$", ""), resource_name}
+    if context then
+        table.insert(describe_args, "--context")
+        table.insert(describe_args, context)
+    end
+    if resource_ns then
+        table.insert(describe_args, "-n")
+        table.insert(describe_args, resource_ns)
+    end
+
+    local result = slate.exec("kubectl", describe_args)
+    if result.exit_code ~= 0 then
+        return '{"notify":"' .. escape(result.stderr:sub(1, 80)) .. '"}'
+    end
+
+    return '{"show_detail":"' .. escape(result.stdout) .. '"}'
 end

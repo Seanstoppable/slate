@@ -321,6 +321,9 @@ impl slate_plugin_sdk::Widget for WasmPlugin {
                     if let Some(msg) = val["notify"].as_str() {
                         return Some(slate_plugin_sdk::WidgetAction::Notify(msg.to_string()));
                     }
+                    if let Some(detail) = val["show_detail"].as_str() {
+                        return Some(slate_plugin_sdk::WidgetAction::ShowDetail(detail.to_string()));
+                    }
                 }
                 None
             }

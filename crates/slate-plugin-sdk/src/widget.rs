@@ -28,12 +28,14 @@ pub trait Widget: Send {
 }
 
 /// Actions a widget can request from the host.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum WidgetAction {
     /// Open a URL in the system browser.
     OpenUrl(String),
     /// Display a notification message.
     Notify(String),
+    /// Show detail content in the widget cell (replaces list view until dismissed).
+    ShowDetail(String),
 }
 
 /// A boxed widget for dynamic dispatch.
