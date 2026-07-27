@@ -1,0 +1,633 @@
+use anyhow::{anyhow, Result};
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+
+#[derive(serde::Deserialize, Default, Clone)]
+struct DocsManifest {
+    #[serde(default)]
+    plugin: DocsManifestPlugin,
+    #[serde(default)]
+    metadata: DocsManifestPlugin,
+    #[serde(default)]
+    permissions: DocsManifestPermissions,
+    #[serde(default)]
+    config: HashMap<String, DocsConfigField>,
+}
+
+#[derive(serde::Deserialize, Default, Clone)]
+struct DocsManifestPlugin {
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    description: String,
+    #[serde(default)]
+    version: String,
+    #[serde(default)]
+    author: String,
+    #[serde(default)]
+    language: String,
+    #[serde(default)]
+    os: Vec<String>,
+}
+
+#[derive(serde::Deserialize, Default, Clone)]
+struct DocsManifestPermissions {
+    #[serde(default)]
+    network: Vec<String>,
+    #[serde(default)]
+    exec: Vec<String>,
+    #[serde(default)]
+    secrets: Vec<String>,
+    #[serde(default)]
+    storage: Option<bool>,
+    #[serde(default)]
+    filesystem_read: Vec<String>,
+    #[serde(default)]
+    raw_network: Option<bool>,
+}
+
+#[derive(serde::Deserialize, Default, Clone)]
+struct DocsConfigField {
+    #[serde(default, rename = "type")]
+    field_type: String,
+    #[serde(default)]
+    required: Option<bool>,
+    #[serde(default)]
+    description: String,
+    #[allow(dead_code)]
+    #[serde(default)]
+    default: Option<String>,
+}
+
+struct PluginInfo {
+    name: String,
+    description: String,
+    version: String,
+    author: String,
+    language: String,
+    os: Vec<String>,
+    permissions: Vec<String>,
+    kind: &'static str,
+    config_example: String,
+    install_hint: String,
+}
+
+pub async fn docs(output_dir: Option<&str>) -> Result<()> {
+    let out = PathBuf::from(output_dir.unwrap_or("docs/plugins"));
+    std::fs::create_dir_all(&out)?;
+
+    let mut plugins: Vec<PluginInfo> = Vec::new();
+
+    let plugins_path = Path::new("plugins");
+    if plugins_path.exists() {
+        for entry in std::fs::read_dir(plugins_path)? {
+            let entry = entry?;
+            let toml_path = entry.path().join("plugin.toml");
+            if toml_path.exists() {
+                if let Ok(content) = std::fs::read_to_string(&toml_path) {
+                    if let Ok(manifest) = toml::from_str::<DocsManifest>(&content) {
+                        let p = if !manifest.plugin.name.is_empty() {
+                            &manifest.plugin
+                        } else {
+                            &manifest.metadata
+                        };
+                        let mut perms = Vec::new();
+                        if !manifest.permissions.network.is_empty() {
+                            perms.push(format!(
+                                "network: {}",
+                                manifest.permissions.network.join(", ")
+                            ));
+                        }
+                        if !manifest.permissions.exec.is_empty() {
+                            perms.push(format!("exec: {}", manifest.permissions.exec.join(", ")));
+                        }
+                        if !manifest.permissions.secrets.is_empty() {
+                            perms.push(format!(
+                                "secrets: {}",
+                                manifest.permissions.secrets.join(", ")
+                            ));
+                        }
+                        if manifest.permissions.storage == Some(true) {
+                            perms.push("storage".to_string());
+                        }
+                        if !manifest.permissions.filesystem_read.is_empty() {
+                            perms.push(format!(
+                                "filesystem_read: {}",
+                                manifest.permissions.filesystem_read.join(", ")
+                            ));
+                        }
+                        if manifest.permissions.raw_network == Some(true) {
+                            perms.push("raw_network".to_string());
+                        }
+
+                        let config_example = generate_config_example(&p.name, "plugin", &manifest);
+                        let install_hint = if p.language.is_empty() || p.language == "rust" {
+                            format!(
+                                "Add to slate.toml:\n  type = \"github.com/slate-community/slate-{}\"",
+                                p.name
+                            )
+                        } else {
+                            format!(
+                                "Build: see plugins/{}/README.md\nOr add pre-built: type = \"wasm:path/to/plugin.wasm\"",
+                                p.name
+                            )
+                        };
+
+                        plugins.push(PluginInfo {
+                            name: p.name.clone(),
+                            description: p.description.clone(),
+                            version: p.version.clone(),
+                            author: p.author.clone(),
+                            language: if p.language.is_empty() {
+                                "rust".to_string()
+                            } else {
+                                p.language.clone()
+                            },
+                            os: p.os.clone(),
+                            permissions: perms,
+                            kind: "plugin",
+                            config_example,
+                            install_hint,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    let builtins: &[(&str, &str, &str, &str)] = &[
+        ("resource_usage", "CPU, memory, swap, and temperature monitoring", "Real-time system resource usage with configurable refresh rates. Shows CPU percentage, memory used/total, swap usage, CPU count, and hottest temperature sensor.", "[[widget]]\ntype = \"builtin:resource_usage\"\nposition = { row = 0, col = 0 }"),
+        ("power", "Battery status and power source", "Shows charge level, charging state, and power source. On desktops without a battery, displays 'AC Power (100%)'. Supports Windows (WMI), macOS (pmset), and Linux (sysfs).", "[[widget]]\ntype = \"builtin:power\"\nposition = { row = 0, col = 1 }"),
+        ("firewall", "Firewall rules and status", "Displays active firewall rules. Uses netsh on Windows, pfctl on macOS, and iptables/nftables on Linux.", "[[widget]]\ntype = \"builtin:firewall\"\nposition = { row = 0, col = 2 }"),
+        ("ipaddresses", "Network interface IP addresses", "Lists all network interfaces with their IPv4/IPv6 addresses. Shows interface name, IP, and status. Defaults to all interfaces if none specified.", "[[widget]]\ntype = \"builtin:ipaddresses\"\nposition = { row = 1, col = 0 }"),
+        ("vcs", "Version control status (Git/Mercurial)", "Branch, modified files, and recent commit log for a repository. Set engine to 'git' or 'hg'. Multiple instances supported for different repos.", "[[widget]]\ntype = \"builtin:vcs\"\nposition = { row = 1, col = 1 }\nengine = \"git\"\nrepo_path = \"/path/to/repo\""),
+    ];
+    for (name, desc, _long_desc, config) in builtins {
+        plugins.push(PluginInfo {
+            name: name.to_string(),
+            description: desc.to_string(),
+            version: "built-in".to_string(),
+            author: "Slate".to_string(),
+            language: "rust (native)".to_string(),
+            os: vec![
+                "macos".to_string(),
+                "linux".to_string(),
+                "windows".to_string(),
+            ],
+            permissions: vec!["system (native access)".to_string()],
+            kind: "builtin",
+            config_example: config.to_string(),
+            install_hint: "Built-in - no installation needed. Just add to slate.toml.".to_string(),
+        });
+    }
+
+    let scripts_path = Path::new("scripts");
+    if scripts_path.exists() {
+        for entry in std::fs::read_dir(scripts_path)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("lua") {
+                if let Ok(content) = std::fs::read_to_string(&path) {
+                    let name = extract_lua_field(&content, "name").unwrap_or_else(|| {
+                        path.file_stem()
+                            .unwrap_or_default()
+                            .to_string_lossy()
+                            .to_string()
+                    });
+                    let description =
+                        extract_lua_field(&content, "description").unwrap_or_default();
+                    let version = extract_lua_field(&content, "version")
+                        .unwrap_or_else(|| "0.1.0".to_string());
+
+                    let filename = path
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_string();
+                    let config_example = format!(
+                        "[[widget]]\ntype = \"lua:scripts/{}\"\nposition = {{ row = 0, col = 0 }}",
+                        filename
+                    );
+
+                    plugins.push(PluginInfo {
+                        name: name.to_lowercase().replace(' ', "-"),
+                        description,
+                        version,
+                        author: "Slate Community".to_string(),
+                        language: "lua".to_string(),
+                        os: vec![
+                            "macos".to_string(),
+                            "linux".to_string(),
+                            "windows".to_string(),
+                        ],
+                        permissions: vec!["unsandboxed (full io access)".to_string()],
+                        kind: "script",
+                        config_example,
+                        install_hint: format!(
+                            "Copy {} to your scripts/ folder and add to slate.toml.",
+                            filename
+                        ),
+                    });
+                }
+            }
+        }
+    }
+
+    plugins.sort_by(|a, b| a.name.cmp(&b.name));
+
+    let html = generate_docs_html(&plugins)?;
+    let out_file = out.join("index.html");
+    std::fs::write(&out_file, &html)?;
+
+    println!("Generated plugin docs: {}", out_file.display());
+    println!(
+        "  {} plugins, {} builtins, {} scripts",
+        plugins.iter().filter(|p| p.kind == "plugin").count(),
+        plugins.iter().filter(|p| p.kind == "builtin").count(),
+        plugins.iter().filter(|p| p.kind == "script").count(),
+    );
+
+    Ok(())
+}
+
+fn generate_config_example(name: &str, _kind: &str, manifest: &DocsManifest) -> String {
+    let mut lines = vec![
+        "[[widget]]".to_string(),
+        format!("type = \"github.com/slate-community/slate-{}\"", name),
+        "position = { row = 0, col = 0 }".to_string(),
+    ];
+
+    if !manifest.config.is_empty() {
+        lines.push(String::new());
+        lines.push("# Configuration".to_string());
+        for (key, field) in &manifest.config {
+            let required = field.required.unwrap_or(false);
+            let example_value = match field.field_type.as_str() {
+                "array" => "[\"example1\", \"example2\"]".to_string(),
+                "bool" | "boolean" => "true".to_string(),
+                "int" | "integer" | "number" => "1".to_string(),
+                _ => "\"...\"".to_string(),
+            };
+            let comment = if !field.description.is_empty() {
+                format!(
+                    "  # {}{}",
+                    field.description,
+                    if required { " (required)" } else { "" }
+                )
+            } else if required {
+                "  # (required)".to_string()
+            } else {
+                String::new()
+            };
+            lines.push(format!("{} = {}{}", key, example_value, comment));
+        }
+        return lines.join("\n");
+    }
+
+    if !manifest.permissions.secrets.is_empty() {
+        for secret in &manifest.permissions.secrets {
+            lines.push(format!("{} = \"${{{}}}\"", secret, secret.to_uppercase()));
+        }
+    }
+    if !manifest.permissions.network.is_empty() && manifest.permissions.network[0] != "*" {
+        if name == "weather" {
+            lines.push("provider = \"openweathermap\"".to_string());
+            lines.push("location = \"San Francisco\"".to_string());
+        }
+    }
+    if !manifest.permissions.exec.is_empty() && name == "wego" {
+        lines.push("days = \"1\"".to_string());
+    }
+
+    lines.join("\n")
+}
+
+fn extract_lua_field(source: &str, field: &str) -> Option<String> {
+    for line in source.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with(field) {
+            if let Some(rest) = trimmed.strip_prefix(field) {
+                let rest = rest.trim();
+                if let Some(rest) = rest.strip_prefix('=') {
+                    let rest = rest.trim();
+                    if let Some(rest) = rest.strip_prefix('"') {
+                        if let Some(end) = rest.find('"') {
+                            return Some(rest[..end].to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+fn generate_docs_html(plugins: &[PluginInfo]) -> Result<String> {
+    let mut cards = String::new();
+    for (idx, p) in plugins.iter().enumerate() {
+        let os_badges = if p.os.is_empty() {
+            r#"<span class="os-badge all" title="All platforms">&#x1F310; All</span>"#.to_string()
+        } else {
+            p.os.iter()
+                .map(|os| {
+                    match os.as_str() {
+                        "macos" => {
+                            r#"<span class="os-badge macos" title="macOS">&#x1F34E; macOS</span>"#
+                        }
+                        "linux" => {
+                            r#"<span class="os-badge linux" title="Linux">&#x1F427; Linux</span>"#
+                        }
+                        "windows" => {
+                            r#"<span class="os-badge windows" title="Windows">&#x1FA9F; Windows</span>"#
+                        }
+                        other => return format!(r#"<span class="os-badge">{}</span>"#, other),
+                    }
+                    .to_string()
+                })
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+
+        let lang_class = match p.language.as_str() {
+            "rust" | "rust (native)" => "lang-rust",
+            "go" => "lang-go",
+            "zig" => "lang-zig",
+            "typescript" | "assemblyscript" => "lang-ts",
+            _ => "lang-other",
+        };
+
+        let kind_badge = if p.kind == "builtin" {
+            r#"<span class="kind-badge builtin">built-in</span>"#
+        } else if p.kind == "script" {
+            r#"<span class="kind-badge script">lua script</span>"#
+        } else {
+            r#"<span class="kind-badge plugin">plugin</span>"#
+        };
+
+        let perms_html = if p.permissions.is_empty() {
+            "<em>None required</em>".to_string()
+        } else {
+            p.permissions
+                .iter()
+                .map(|perm| format!(r#"<span class="perm-tag">{}</span>"#, html_escape(perm)))
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+
+        let os_data = if p.os.is_empty() {
+            "macos linux windows".to_string()
+        } else {
+            p.os.join(" ")
+        };
+
+        cards.push_str(&format!(
+            r#"<div class="plugin-card" data-os="{os_data}" data-lang="{lang}" data-kind="{kind}" data-name="{name}" data-desc="{desc}" onclick="showDetail({idx})">
+  <div class="card-header">
+    <h3>{name}</h3>
+    <div class="badges">{kind_badge} <span class="lang-badge {lang_class}">{lang}</span></div>
+  </div>
+  <p class="description">{description}</p>
+  <div class="card-meta">
+    <div class="os-row">{os_badges}</div>
+    <div class="perms-row"><strong>Permissions:</strong> {perms_html}</div>
+    <div class="version-row">v{version} &middot; {author}</div>
+  </div>
+</div>
+"#,
+            idx = idx,
+            os_data = os_data,
+            lang = p.language,
+            kind = p.kind,
+            name = html_escape(&p.name),
+            desc = html_escape(&p.description),
+            description = html_escape(&p.description),
+            kind_badge = kind_badge,
+            lang_class = lang_class,
+            os_badges = os_badges,
+            perms_html = perms_html,
+            version = html_escape(&p.version),
+            author = html_escape(&p.author),
+        ));
+    }
+
+    let mut plugin_data = String::from("[\n");
+    for (i, p) in plugins.iter().enumerate() {
+        if i > 0 {
+            plugin_data.push_str(",\n");
+        }
+        let os_list = if p.os.is_empty() {
+            "\"All platforms\"".to_string()
+        } else {
+            p.os.iter()
+                .map(|o| format!("\"{}\"", o))
+                .collect::<Vec<_>>()
+                .join(",")
+        };
+        let perms_list = p
+            .permissions
+            .iter()
+            .map(|perm| format!("\"{}\"", js_escape(perm)))
+            .collect::<Vec<_>>()
+            .join(",");
+        plugin_data.push_str(&format!(
+            r#"  {{name:"{}",desc:"{}",version:"{}",author:"{}",lang:"{}",kind:"{}",os:[{}],perms:[{}],config:"{}",install:"{}"}}"#,
+            js_escape(&p.name),
+            js_escape(&p.description),
+            js_escape(&p.version),
+            js_escape(&p.author),
+            js_escape(&p.language),
+            p.kind,
+            os_list,
+            perms_list,
+            js_escape(&p.config_example),
+            js_escape(&p.install_hint),
+        ));
+    }
+    plugin_data.push_str("\n]");
+
+    let template = load_template()?;
+    Ok(template
+        .replace("{{CARDS}}", &cards)
+        .replace("{{PLUGIN_DATA}}", &plugin_data))
+}
+
+fn load_template() -> Result<String> {
+    let template_path = resolve_template_path()?;
+    Ok(std::fs::read_to_string(template_path)?)
+}
+
+fn resolve_template_path() -> Result<PathBuf> {
+    let relative = PathBuf::from("docs").join("template.html");
+    if relative.exists() {
+        return Ok(relative);
+    }
+
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(exe_dir) = exe_path.parent() {
+            for ancestor in exe_dir.ancestors() {
+                let candidate = ancestor.join("docs").join("template.html");
+                if candidate.exists() {
+                    return Ok(candidate);
+                }
+            }
+        }
+    }
+
+    Err(anyhow!("Template not found: docs/template.html"))
+}
+
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+fn js_escape(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\r', "")
+        .replace('\t', "\\t")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_plugin() -> PluginInfo {
+        PluginInfo {
+            name: "weather".to_string(),
+            description: "Shows weather".to_string(),
+            version: "1.2.3".to_string(),
+            author: "Slate".to_string(),
+            language: "rust".to_string(),
+            os: vec!["macos".to_string(), "linux".to_string()],
+            permissions: vec!["network: api.example.com".to_string()],
+            kind: "plugin",
+            config_example: "[[widget]]\ntype = \"github.com/slate-community/slate-weather\""
+                .to_string(),
+            install_hint: "Add to slate.toml".to_string(),
+        }
+    }
+
+    #[test]
+    fn extract_lua_field_finds_string_values() {
+        let source = "name = \"My Widget\"\ndescription = \"Does stuff\"\nversion = \"2.0.0\"";
+        assert_eq!(
+            extract_lua_field(source, "name"),
+            Some("My Widget".to_string())
+        );
+        assert_eq!(
+            extract_lua_field(source, "description"),
+            Some("Does stuff".to_string())
+        );
+        assert_eq!(
+            extract_lua_field(source, "version"),
+            Some("2.0.0".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_lua_field_returns_none_for_missing() {
+        let source = "name = \"Hello\"\nfunction refresh() end";
+        assert_eq!(extract_lua_field(source, "version"), None);
+        assert_eq!(extract_lua_field(source, "missing"), None);
+    }
+
+    #[test]
+    fn generate_config_example_uses_config_section() {
+        let manifest = DocsManifest {
+            plugin: DocsManifestPlugin {
+                name: "test".to_string(),
+                ..Default::default()
+            },
+            metadata: DocsManifestPlugin::default(),
+            permissions: DocsManifestPermissions::default(),
+            config: [
+                (
+                    "url".to_string(),
+                    DocsConfigField {
+                        field_type: "string".to_string(),
+                        required: Some(true),
+                        description: "The API URL".to_string(),
+                        default: None,
+                    },
+                ),
+                (
+                    "count".to_string(),
+                    DocsConfigField {
+                        field_type: "integer".to_string(),
+                        required: Some(false),
+                        description: "Number of items".to_string(),
+                        default: None,
+                    },
+                ),
+            ]
+            .into_iter()
+            .collect(),
+        };
+
+        let example = generate_config_example("test", "plugin", &manifest);
+        assert!(example.contains("[[widget]]"));
+        assert!(example.contains("type = \"github.com/slate-community/slate-test\""));
+        assert!(example.contains("# Configuration"));
+        assert!(example.contains("(required)"));
+        assert!(example.contains("The API URL"));
+    }
+
+    #[test]
+    fn generate_config_example_falls_back_to_permissions() {
+        let manifest = DocsManifest {
+            plugin: DocsManifestPlugin::default(),
+            metadata: DocsManifestPlugin::default(),
+            permissions: DocsManifestPermissions {
+                secrets: vec!["token".to_string()],
+                ..Default::default()
+            },
+            config: HashMap::new(),
+        };
+
+        let example = generate_config_example("github", "plugin", &manifest);
+        assert!(example.contains("token = \"${TOKEN}\""));
+    }
+
+    #[test]
+    fn html_and_js_escape_special_characters() {
+        assert_eq!(
+            html_escape("<tag attr=\"a&b\">'x'</tag>"),
+            "&lt;tag attr=&quot;a&amp;b&quot;&gt;'x'&lt;/tag&gt;"
+        );
+        assert_eq!(
+            js_escape("\\\"line1\nline2\r\t'"),
+            "\\\\\\\"line1\\nline2\\t'"
+        );
+    }
+
+    #[test]
+    fn generate_docs_html_with_empty_plugins_fills_template_markers() {
+        let html = generate_docs_html(&[]).unwrap();
+        assert!(html.contains("<!DOCTYPE html>"));
+        assert!(html.contains("<div class=\"grid\" id=\"grid\">"));
+        assert!(html.contains("const pluginData = ["));
+        assert!(!html.contains("{{CARDS}}"));
+        assert!(!html.contains("{{PLUGIN_DATA}}"));
+    }
+
+    #[test]
+    fn generate_docs_html_with_sample_plugins_contains_card_content() {
+        let html = generate_docs_html(&[sample_plugin()]).unwrap();
+        assert!(html.contains("<h3>weather</h3>"));
+        assert!(html.contains("Shows weather"));
+        assert!(html.contains("network: api.example.com"));
+        assert!(html.contains("onclick=\"showDetail(0)\""));
+    }
+
+    #[test]
+    fn template_file_exists_and_contains_placeholders() {
+        let template_path = resolve_template_path().unwrap();
+        let template = std::fs::read_to_string(template_path).unwrap();
+        assert!(template.contains("{{CARDS}}"));
+        assert!(template.contains("{{PLUGIN_DATA}}"));
+    }
+}

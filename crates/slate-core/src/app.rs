@@ -491,9 +491,8 @@ mod tests {
 
     #[test]
     fn escape_dismisses_detail_view() {
-        let mut app = test_app_with_list_widget(Some(WidgetAction::ShowDetail(
-            "Details".to_string(),
-        )));
+        let mut app =
+            test_app_with_list_widget(Some(WidgetAction::ShowDetail("Details".to_string())));
 
         // Enter detail view
         app.handle_key(make_key(KeyCode::Enter));
@@ -506,9 +505,8 @@ mod tests {
 
     #[test]
     fn q_dismisses_detail_view_without_quitting() {
-        let mut app = test_app_with_list_widget(Some(WidgetAction::ShowDetail(
-            "Details".to_string(),
-        )));
+        let mut app =
+            test_app_with_list_widget(Some(WidgetAction::ShowDetail("Details".to_string())));
 
         // Enter detail view
         app.handle_key(make_key(KeyCode::Enter));
@@ -522,9 +520,8 @@ mod tests {
 
     #[test]
     fn keys_are_ignored_during_detail_view() {
-        let mut app = test_app_with_list_widget(Some(WidgetAction::ShowDetail(
-            "Details".to_string(),
-        )));
+        let mut app =
+            test_app_with_list_widget(Some(WidgetAction::ShowDetail("Details".to_string())));
 
         // Enter detail view
         app.handle_key(make_key(KeyCode::Enter));
@@ -610,9 +607,8 @@ mod tests {
 
     #[test]
     fn refresh_is_suppressed_when_detail_is_showing() {
-        let mut app = test_app_with_list_widget(Some(WidgetAction::ShowDetail(
-            "Details".to_string(),
-        )));
+        let mut app =
+            test_app_with_list_widget(Some(WidgetAction::ShowDetail("Details".to_string())));
 
         // Enter detail
         app.handle_key(make_key(KeyCode::Enter));
@@ -631,9 +627,8 @@ mod tests {
 
     #[test]
     fn forced_refresh_clears_detail_and_refreshes() {
-        let mut app = test_app_with_list_widget(Some(WidgetAction::ShowDetail(
-            "Details".to_string(),
-        )));
+        let mut app =
+            test_app_with_list_widget(Some(WidgetAction::ShowDetail("Details".to_string())));
 
         // Enter detail
         app.handle_key(make_key(KeyCode::Enter));

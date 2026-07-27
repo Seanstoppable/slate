@@ -2,7 +2,9 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use tracing_subscriber::EnvFilter;
 
+mod builtins;
 mod commands;
+mod docs;
 
 #[derive(Parser)]
 #[command(
@@ -102,6 +104,6 @@ async fn main() -> Result<()> {
         Some(Commands::Search { query }) => commands::search(&query).await,
         Some(Commands::Migrate { path }) => commands::migrate(&path).await,
         Some(Commands::Check { config }) => commands::check(config.as_deref()).await,
-        Some(Commands::Docs { output }) => commands::docs(output.as_deref()).await,
+        Some(Commands::Docs { output }) => docs::docs(output.as_deref()).await,
     }
 }

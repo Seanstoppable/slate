@@ -202,7 +202,9 @@ impl slate_plugin_sdk::Widget for LuaPlugin {
         item_id: &str,
     ) -> Option<slate_plugin_sdk::WidgetAction> {
         if let Ok(func) = self.lua.globals().get::<LuaFunction>("on_action") {
-            if let Ok(result) = func.call::<Option<String>>((action_id.to_string(), item_id.to_string())) {
+            if let Ok(result) =
+                func.call::<Option<String>>((action_id.to_string(), item_id.to_string()))
+            {
                 if let Some(json_str) = result {
                     return parse_widget_action(&json_str);
                 }
@@ -236,7 +238,9 @@ fn parse_widget_action(json_str: &str) -> Option<slate_plugin_sdk::WidgetAction>
     } else if let Some(msg) = value.get("notify").and_then(|v| v.as_str()) {
         Some(slate_plugin_sdk::WidgetAction::Notify(msg.to_string()))
     } else if let Some(detail) = value.get("show_detail").and_then(|v| v.as_str()) {
-        Some(slate_plugin_sdk::WidgetAction::ShowDetail(detail.to_string()))
+        Some(slate_plugin_sdk::WidgetAction::ShowDetail(
+            detail.to_string(),
+        ))
     } else {
         None
     }
@@ -538,19 +542,34 @@ mod tests {
     #[test]
     fn parse_widget_action_open_url() {
         let action = parse_widget_action(r#"{"open_url":"https://example.com"}"#);
-        assert_eq!(action, Some(slate_plugin_sdk::WidgetAction::OpenUrl("https://example.com".to_string())));
+        assert_eq!(
+            action,
+            Some(slate_plugin_sdk::WidgetAction::OpenUrl(
+                "https://example.com".to_string()
+            ))
+        );
     }
 
     #[test]
     fn parse_widget_action_notify() {
         let action = parse_widget_action(r#"{"notify":"hello world"}"#);
-        assert_eq!(action, Some(slate_plugin_sdk::WidgetAction::Notify("hello world".to_string())));
+        assert_eq!(
+            action,
+            Some(slate_plugin_sdk::WidgetAction::Notify(
+                "hello world".to_string()
+            ))
+        );
     }
 
     #[test]
     fn parse_widget_action_show_detail() {
         let action = parse_widget_action(r#"{"show_detail":"commit abc123\nAuthor: dev"}"#);
-        assert_eq!(action, Some(slate_plugin_sdk::WidgetAction::ShowDetail("commit abc123\nAuthor: dev".to_string())));
+        assert_eq!(
+            action,
+            Some(slate_plugin_sdk::WidgetAction::ShowDetail(
+                "commit abc123\nAuthor: dev".to_string()
+            ))
+        );
     }
 
     #[test]
@@ -586,7 +605,12 @@ mod tests {
 
         let mut plugin = LuaPlugin::from_file(&script_path).unwrap();
         let result = plugin.on_action("select", "abc123");
-        assert_eq!(result, Some(slate_plugin_sdk::WidgetAction::ShowDetail("Details for abc123".to_string())));
+        assert_eq!(
+            result,
+            Some(slate_plugin_sdk::WidgetAction::ShowDetail(
+                "Details for abc123".to_string()
+            ))
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -605,7 +629,12 @@ mod tests {
 
         let mut plugin = LuaPlugin::from_file(&script_path).unwrap();
         let result = plugin.on_action("open", "user/repo");
-        assert_eq!(result, Some(slate_plugin_sdk::WidgetAction::OpenUrl("https://github.com/user/repo".to_string())));
+        assert_eq!(
+            result,
+            Some(slate_plugin_sdk::WidgetAction::OpenUrl(
+                "https://github.com/user/repo".to_string()
+            ))
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 

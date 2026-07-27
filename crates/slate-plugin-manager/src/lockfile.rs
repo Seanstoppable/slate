@@ -160,7 +160,11 @@ mod tests {
     #[test]
     fn save_to_creates_parent_directories() {
         let dir = tempdir().unwrap();
-        let path = dir.path().join("nested").join("plugins").join("slate-lock.toml");
+        let path = dir
+            .path()
+            .join("nested")
+            .join("plugins")
+            .join("slate-lock.toml");
         let lockfile = Lockfile::default();
 
         lockfile.save_to(&path).unwrap();

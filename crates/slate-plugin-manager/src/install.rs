@@ -180,8 +180,7 @@ mod tests {
 
     #[test]
     fn test_parse_github_source_ignores_extra_path_segments() {
-        let (owner, repo) =
-            parse_github_source("github.com/user/plugin/releases/latest").unwrap();
+        let (owner, repo) = parse_github_source("github.com/user/plugin/releases/latest").unwrap();
         assert_eq!(owner, "user");
         assert_eq!(repo, "plugin");
     }
@@ -227,7 +226,10 @@ mod tests {
         let mut installed = installer.list_installed().unwrap();
         installed.sort();
 
-        assert_eq!(installed, vec!["plugin-a".to_string(), "plugin-b".to_string()]);
+        assert_eq!(
+            installed,
+            vec!["plugin-a".to_string(), "plugin-b".to_string()]
+        );
     }
 
     #[test]
