@@ -58,5 +58,13 @@ jobs:
           name: coverage-report
           path: coverage/cobertura.xml
 
-      - name: Coverage summary
-        run: cargo tarpaulin --workspace --out stdout --skip-clean | tail -20
+      - name: Check coverage threshold
+        run: |
+          COVERAGE=$(cargo tarpaulin --workspace --skip-clean 2>&1 | grep -oP '[\d.]+(?=% coverage)')
+          echo "Coverage: ${COVERAGE}%"
+          THRESHOLD=35
+          if [ "$(echo "$COVERAGE < $THRESHOLD" | bc -l)" -eq 1 ]; then
+            echo "::error::Coverage ${COVERAGE}% is below threshold ${THRESHOLD}%"
+            exit 1
+          fi
+          echo "✓ Coverage ${COVERAGE}% meets threshold ${THRESHOLD}%"
