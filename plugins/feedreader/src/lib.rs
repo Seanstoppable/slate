@@ -1,3 +1,4 @@
+#[cfg(target_arch = "wasm32")]
 use extism_pdk::*;
 use serde::Deserialize;
 use serde_json::json;
@@ -22,6 +23,7 @@ struct FeedItem {
     link: String,
 }
 
+#[cfg(target_arch = "wasm32")]
 #[plugin_fn]
 pub fn metadata(_input: String) -> FnResult<String> {
     Ok(json!({
@@ -33,6 +35,7 @@ pub fn metadata(_input: String) -> FnResult<String> {
     .to_string())
 }
 
+#[cfg(target_arch = "wasm32")]
 #[plugin_fn]
 pub fn refresh(input: String) -> FnResult<String> {
     let settings: Settings = serde_json::from_str(&input).unwrap_or_default();
@@ -82,11 +85,13 @@ pub fn refresh(input: String) -> FnResult<String> {
     .to_string())
 }
 
+#[cfg(target_arch = "wasm32")]
 #[plugin_fn]
 pub fn on_key(_input: String) -> FnResult<String> {
     Ok(String::new())
 }
 
+#[cfg(target_arch = "wasm32")]
 #[plugin_fn]
 pub fn on_action(input: String) -> FnResult<String> {
     let action: ActionInput = serde_json::from_str(&input).unwrap_or(ActionInput {
@@ -209,4 +214,127 @@ fn decode_xml_entities(value: &str) -> String {
         .replace("&gt;", ">")
         .replace("&quot;", "\"")
         .replace("&apos;", "'")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_decode_xml_entities() {
+        assert_eq!(decode_xml_entities("&amp;"), "&");
+        assert_eq!(decode_xml_entities("&lt;b&gt;"), "<b>");
+        assert_eq!(decode_xml_entities("&quot;hi&quot;"), "\"hi\"");
+        assert_eq!(decode_xml_entities("plain text"), "plain text");
+        assert_eq!(decode_xml_entities("a &amp; b &lt; c"), "a & b < c");
+    }
+
+    #[test]
+    fn test_strip_cdata() {
+        assert_eq!(strip_cdata("<![CDATA[hello]]>"), "hello");
+        assert_eq!(strip_cdata("no cdata"), "no cdata");
+        assert_eq!(strip_cdata("<![CDATA[<b>bold</b>]]>"), "<b>bold</b>");
+    }
+
+    #[test]
+    fn test_extract_attribute() {
+        assert_eq!(
+            extract_attribute(r#"<link rel="alternate" href="https://example.com"/>"#, "href"),
+            Some("https://example.com".to_string())
+        );
+        assert_eq!(
+            extract_attribute(r#"<link rel="alternate" href="https://example.com"/>"#, "rel"),
+            Some("alternate".to_string())
+        );
+        assert_eq!(
+            extract_attribute(r#"<link href="https://example.com"/>"#, "rel"),
+            None
+        );
+    }
+
+    #[test]
+    fn test_extract_tag_text() {
+        let block = "<title>Hello World</title><link>https://example.com</link>";
+        assert_eq!(extract_tag_text(block, "title"), Some("Hello World".to_string()));
+        assert_eq!(extract_tag_text(block, "link"), Some("https://example.com".to_string()));
+        assert_eq!(extract_tag_text(block, "missing"), None);
+    }
+
+    #[test]
+    fn test_extract_tag_text_cdata() {
+        let block = "<title><![CDATA[Breaking & News]]></title>";
+        assert_eq!(extract_tag_text(block, "title"), Some("Breaking & News".to_string()));
+    }
+
+    #[test]
+    fn test_parse_blocks() {
+        let xml = "<item><title>One</title></item><item><title>Two</title></item>";
+        let blocks = parse_blocks(xml, "item");
+        assert_eq!(blocks.len(), 2);
+        assert!(blocks[0].contains("One"));
+        assert!(blocks[1].contains("Two"));
+    }
+
+    #[test]
+    fn test_parse_blocks_with_attributes() {
+        let xml = r#"<entry xml:lang="en"><title>Test</title></entry>"#;
+        let blocks = parse_blocks(xml, "entry");
+        assert_eq!(blocks.len(), 1);
+        assert!(blocks[0].contains("Test"));
+    }
+
+    #[test]
+    fn test_parse_rss_item() {
+        let block = "<title>My Article</title><link>https://example.com/article</link>";
+        let item = parse_rss_item(block).unwrap();
+        assert_eq!(item.title, "My Article");
+        assert_eq!(item.link, "https://example.com/article");
+    }
+
+    #[test]
+    fn test_parse_rss_item_with_entities() {
+        let block = "<title>Tom &amp; Jerry</title><link>https://example.com</link>";
+        let item = parse_rss_item(block).unwrap();
+        assert_eq!(item.title, "Tom & Jerry");
+    }
+
+    #[test]
+    fn test_parse_atom_entry() {
+        let block = r#"<title>Atom Post</title><link rel="alternate" href="https://blog.example.com/post"/>"#;
+        let item = parse_atom_entry(block).unwrap();
+        assert_eq!(item.title, "Atom Post");
+        assert_eq!(item.link, "https://blog.example.com/post");
+    }
+
+    #[test]
+    fn test_parse_feed_items_rss() {
+        let xml = r#"<?xml version="1.0"?>
+<rss><channel>
+<item><title>First</title><link>https://a.com/1</link></item>
+<item><title>Second</title><link>https://a.com/2</link></item>
+</channel></rss>"#;
+        let items = parse_feed_items(xml);
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0].title, "First");
+        assert_eq!(items[1].link, "https://a.com/2");
+    }
+
+    #[test]
+    fn test_parse_feed_items_atom() {
+        let xml = r#"<?xml version="1.0"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+<entry><title>Atom One</title><link rel="alternate" href="https://b.com/1"/></entry>
+</feed>"#;
+        let items = parse_feed_items(xml);
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].title, "Atom One");
+        assert_eq!(items[0].link, "https://b.com/1");
+    }
+
+    #[test]
+    fn test_parse_feed_items_empty() {
+        let xml = "<html><body>Not a feed</body></html>";
+        let items = parse_feed_items(xml);
+        assert!(items.is_empty());
+    }
 }

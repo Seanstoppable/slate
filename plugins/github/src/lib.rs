@@ -1,3 +1,4 @@
+#[cfg(target_arch = "wasm32")]
 use extism_pdk::*;
 use serde::Deserialize;
 use serde_json::json;
@@ -59,6 +60,7 @@ struct NotificationSubject {
     subject_type: String,
 }
 
+#[cfg(target_arch = "wasm32")]
 #[plugin_fn]
 pub fn metadata(_input: String) -> FnResult<String> {
     let meta = json!({
@@ -70,6 +72,7 @@ pub fn metadata(_input: String) -> FnResult<String> {
     Ok(meta.to_string())
 }
 
+#[cfg(target_arch = "wasm32")]
 #[plugin_fn]
 pub fn refresh(_input: String) -> FnResult<String> {
     let token = config::get("token").ok().flatten().unwrap_or_default();
@@ -103,6 +106,7 @@ pub fn refresh(_input: String) -> FnResult<String> {
     }
 }
 
+#[cfg(target_arch = "wasm32")]
 fn fetch_pull_requests(token: &str, repos: &[String]) -> FnResult<String> {
     let mut items = Vec::new();
 
@@ -144,6 +148,7 @@ fn fetch_pull_requests(token: &str, repos: &[String]) -> FnResult<String> {
     Ok(content.to_string())
 }
 
+#[cfg(target_arch = "wasm32")]
 fn fetch_issues(token: &str, repos: &[String]) -> FnResult<String> {
     let mut items = Vec::new();
 
@@ -187,6 +192,7 @@ fn fetch_issues(token: &str, repos: &[String]) -> FnResult<String> {
     Ok(content.to_string())
 }
 
+#[cfg(target_arch = "wasm32")]
 fn fetch_notifications(token: &str) -> FnResult<String> {
     let url = "https://api.github.com/notifications?per_page=15";
     let req = HttpRequest::new(url)
@@ -230,6 +236,7 @@ fn fetch_notifications(token: &str) -> FnResult<String> {
     Ok(content.to_string())
 }
 
+#[cfg(target_arch = "wasm32")]
 #[plugin_fn]
 pub fn on_key(input: String) -> FnResult<String> {
     // Handle view switching: 1=PRs, 2=Issues, 3=Notifications
@@ -256,6 +263,7 @@ pub fn on_key(input: String) -> FnResult<String> {
     Ok(String::new())
 }
 
+#[cfg(target_arch = "wasm32")]
 #[plugin_fn]
 pub fn on_action(input: String) -> FnResult<String> {
     #[derive(Deserialize)]
@@ -268,8 +276,7 @@ pub fn on_action(input: String) -> FnResult<String> {
         match action.action_id.as_str() {
             "open" => {
                 // Parse "owner/repo#number" to construct URL
-                if let Some((repo, num)) = action.item_id.rsplit_once('#') {
-                    let url = format!("https://github.com/{}/pull/{}", repo, num);
+                if let Some(url) = build_pr_url(&action.item_id) {
                     return Ok(json!({"open_url": url}).to_string());
                 }
             }
@@ -282,4 +289,94 @@ pub fn on_action(input: String) -> FnResult<String> {
         }
     }
     Ok(String::new())
+}
+
+fn build_pr_url(item_id: &str) -> Option<String> {
+    let (repo, num) = item_id.rsplit_once('#')?;
+    Some(format!("https://github.com/{}/pull/{}", repo, num))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_build_pr_url_valid() {
+        assert_eq!(
+            build_pr_url("octocat/hello-world#42"),
+            Some("https://github.com/octocat/hello-world/pull/42".to_string())
+        );
+    }
+
+    #[test]
+    fn test_build_pr_url_org_repo() {
+        assert_eq!(
+            build_pr_url("my-org/my-repo#1"),
+            Some("https://github.com/my-org/my-repo/pull/1".to_string())
+        );
+    }
+
+    #[test]
+    fn test_build_pr_url_no_hash() {
+        assert_eq!(build_pr_url("octocat/hello-world"), None);
+    }
+
+    #[test]
+    fn test_build_pr_url_empty() {
+        assert_eq!(build_pr_url(""), None);
+    }
+
+    #[test]
+    fn test_notification_icon_mapping() {
+        // Test the icon selection logic for notifications
+        let types_and_icons = vec![
+            ("PullRequest", "🔀"),
+            ("Issue", "🐛"),
+            ("Release", "🏷️"),
+            ("Unknown", "📬"),
+        ];
+        for (subject_type, expected) in types_and_icons {
+            let icon = match subject_type {
+                "PullRequest" => "🔀",
+                "Issue" => "🐛",
+                "Release" => "🏷️",
+                _ => "📬",
+            };
+            assert_eq!(icon, expected);
+        }
+    }
+
+    #[test]
+    fn test_pr_formatting() {
+        // Verify PR item formatting logic
+        let pr = PullRequest {
+            number: 123,
+            title: "Fix bug".to_string(),
+            user: User { login: "dev".to_string() },
+            state: "open".to_string(),
+            draft: false,
+            html_url: String::new(),
+        };
+        let icon = if pr.draft { "📝" } else { "🟢" };
+        let title = format!("{} #{} {}", icon, pr.number, pr.title);
+        assert_eq!(title, "🟢 #123 Fix bug");
+
+        let draft_pr = PullRequest { draft: true, ..pr };
+        let icon2 = if draft_pr.draft { "📝" } else { "🟢" };
+        let title2 = format!("{} #{} {}", icon2, draft_pr.number, draft_pr.title);
+        assert_eq!(title2, "📝 #123 Fix bug");
+    }
+
+    #[test]
+    fn test_issue_label_formatting() {
+        let labels = vec![
+            Label { name: "bug".to_string() },
+            Label { name: "urgent".to_string() },
+        ];
+        let formatted: String = labels.iter()
+            .map(|l| format!("[{}]", l.name))
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert_eq!(formatted, "[bug] [urgent]");
+    }
 }

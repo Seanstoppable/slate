@@ -1,3 +1,4 @@
+#[cfg(target_arch = "wasm32")]
 use extism_pdk::*;
 use serde::Deserialize;
 use serde_json::json;
@@ -60,6 +61,7 @@ fn default_provider() -> String {
     "openweathermap".to_string()
 }
 
+#[cfg(target_arch = "wasm32")]
 #[plugin_fn]
 pub fn metadata(_input: String) -> FnResult<String> {
     Ok(json!({
@@ -71,6 +73,7 @@ pub fn metadata(_input: String) -> FnResult<String> {
     .to_string())
 }
 
+#[cfg(target_arch = "wasm32")]
 #[plugin_fn]
 pub fn refresh(input: String) -> FnResult<String> {
     let settings: Settings = serde_json::from_str(&input).unwrap_or_default();
@@ -156,6 +159,7 @@ pub fn refresh(input: String) -> FnResult<String> {
     }
 }
 
+#[cfg(target_arch = "wasm32")]
 #[plugin_fn]
 pub fn on_key(_input: String) -> FnResult<String> {
     Ok(String::new())
@@ -213,4 +217,65 @@ fn title_case(value: &str) -> String {
         })
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_build_weather_url_city_name() {
+        let url = build_weather_url("Seattle", "abc123");
+        assert!(url.contains("q=Seattle"));
+        assert!(url.contains("appid=abc123"));
+        assert!(url.contains("units=metric"));
+        assert!(!url.contains("lat="));
+    }
+
+    #[test]
+    fn test_build_weather_url_lat_lon() {
+        let url = build_weather_url("47.6,-122.3", "key");
+        assert!(url.contains("lat=47.6"));
+        assert!(url.contains("lon=-122.3"));
+        assert!(!url.contains("q="));
+    }
+
+    #[test]
+    fn test_build_weather_url_special_chars() {
+        let url = build_weather_url("New York", "my key&val");
+        assert!(url.contains("q=New%20York"));
+        assert!(url.contains("appid=my%20key%26val"));
+    }
+
+    #[test]
+    fn test_parse_lat_lon_valid() {
+        assert_eq!(parse_lat_lon("47.6,-122.3"), Some((47.6, -122.3)));
+        assert_eq!(parse_lat_lon("0,0"), Some((0.0, 0.0)));
+        assert_eq!(parse_lat_lon(" 51.5 , -0.1 "), Some((51.5, -0.1)));
+    }
+
+    #[test]
+    fn test_parse_lat_lon_invalid() {
+        assert_eq!(parse_lat_lon("Seattle"), None);
+        assert_eq!(parse_lat_lon("47.6"), None);
+        assert_eq!(parse_lat_lon("47.6,122.3,extra"), None);
+        assert_eq!(parse_lat_lon("abc,def"), None);
+    }
+
+    #[test]
+    fn test_encode_component() {
+        assert_eq!(encode_component("hello"), "hello");
+        assert_eq!(encode_component("hello world"), "hello%20world");
+        assert_eq!(encode_component("a&b=c"), "a%26b%3Dc");
+        assert_eq!(encode_component("~test-val_2.0"), "~test-val_2.0");
+    }
+
+    #[test]
+    fn test_title_case() {
+        assert_eq!(title_case("clear sky"), "Clear Sky");
+        assert_eq!(title_case("heavy rain"), "Heavy Rain");
+        assert_eq!(title_case("CLOUDY"), "CLOUDY");
+        assert_eq!(title_case(""), "");
+        assert_eq!(title_case("a"), "A");
+    }
 }

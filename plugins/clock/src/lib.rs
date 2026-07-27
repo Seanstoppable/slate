@@ -1,7 +1,9 @@
+#[cfg(target_arch = "wasm32")]
 use extism_pdk::*;
 use serde_json::json;
 
 /// Return plugin metadata.
+#[cfg(target_arch = "wasm32")]
 #[plugin_fn]
 pub fn metadata(_input: String) -> FnResult<String> {
     let meta = json!({
@@ -19,6 +21,7 @@ pub fn metadata(_input: String) -> FnResult<String> {
 ///   { "label": "New York", "time": "15:04:05", "date": "Mon, Jul 26", "zone": "EDT" }
 ///
 /// If no locations are configured, falls back to a single local time display.
+#[cfg(target_arch = "wasm32")]
 #[plugin_fn]
 pub fn refresh(input: String) -> FnResult<String> {
     let settings: serde_json::Value = serde_json::from_str(&input).unwrap_or_default();
@@ -75,7 +78,62 @@ pub fn refresh(input: String) -> FnResult<String> {
 }
 
 /// Handle key events (no-op for clock).
+#[cfg(target_arch = "wasm32")]
 #[plugin_fn]
 pub fn on_key(_input: String) -> FnResult<String> {
     Ok(String::new())
+}
+
+fn format_clock_line(label: &str, time: &str, date: &str, label_width: usize) -> String {
+    format!(" {:<width$}  {}  {}", label, time, date, width = label_width)
+}
+
+fn compute_label_width(clocks: &[serde_json::Value]) -> usize {
+    clocks.iter()
+        .filter_map(|c| c["label"].as_str())
+        .map(|l| l.len())
+        .max()
+        .unwrap_or(12)
+        .max(12)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format_clock_line() {
+        let line = format_clock_line("New York", "15:04:05", "Mon, Jul 26", 12);
+        assert_eq!(line, " New York      15:04:05  Mon, Jul 26");
+    }
+
+    #[test]
+    fn test_format_clock_line_long_label() {
+        let line = format_clock_line("San Francisco", "08:30:00", "Sat, Jul 26", 15);
+        assert_eq!(line, " San Francisco    08:30:00  Sat, Jul 26");
+    }
+
+    #[test]
+    fn test_compute_label_width_minimum() {
+        let clocks: Vec<serde_json::Value> = vec![
+            json!({"label": "NYC", "time": "12:00"}),
+        ];
+        // minimum is 12 even for short labels
+        assert_eq!(compute_label_width(&clocks), 12);
+    }
+
+    #[test]
+    fn test_compute_label_width_long() {
+        let clocks: Vec<serde_json::Value> = vec![
+            json!({"label": "San Francisco Bay Area", "time": "12:00"}),
+            json!({"label": "NYC", "time": "15:00"}),
+        ];
+        assert_eq!(compute_label_width(&clocks), 22); // "San Francisco Bay Area".len()
+    }
+
+    #[test]
+    fn test_compute_label_width_empty() {
+        let clocks: Vec<serde_json::Value> = vec![];
+        assert_eq!(compute_label_width(&clocks), 12);
+    }
 }
