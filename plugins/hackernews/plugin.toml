@@ -1,8 +1,9 @@
-[metadata]
+[plugin]
 name = "hackernews"
 description = "Hacker News top stories"
 version = "0.1.0"
 author = "Slate Community"
+language = "rust"
 
 [permissions]
 network = ["hacker-news.firebaseio.com"]

@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Slate Plugins</title>
+<style>
+:root {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --border: #30363d;
+  --text: #e6edf3;
+  --text-muted: #8b949e;
+  --accent: #58a6ff;
+  --green: #3fb950;
+  --orange: #d29922;
+  --purple: #bc8cff;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+  padding: 2rem;
+}
+.container { max-width: 1200px; margin: 0 auto; }
+header {
+  text-align: center;
+  margin-bottom: 2rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--border);
+}
+header h1 {
+  font-size: 2.5rem;
+  background: linear-gradient(135deg, var(--accent), var(--purple));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+header p { color: var(--text-muted); font-size: 1.1rem; margin-top: 0.5rem; }
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 2rem;
+  align-items: center;
+}
+.search-box {
+  flex: 1;
+  min-width: 200px;
+  padding: 0.6rem 1rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 1rem;
+}
+.search-box::placeholder { color: var(--text-muted); }
+.filter-group {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.filter-btn {
+  padding: 0.4rem 0.8rem;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: all 0.2s;
+}
+.filter-btn:hover { border-color: var(--accent); color: var(--text); }
+.filter-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 1.2rem;
+}
+.plugin-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1.2rem;
+  transition: border-color 0.2s, transform 0.1s;
+}
+.plugin-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+.plugin-card.hidden { display: none; }
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 0.5rem;
+}
+.card-header h3 { font-size: 1.15rem; color: var(--accent); }
+.badges { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.kind-badge {
+  font-size: 0.7rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+.kind-badge.builtin { background: #1f3d2a; color: var(--green); }
+.kind-badge.plugin { background: #1c2d4f; color: var(--accent); }
+.lang-badge {
+  font-size: 0.7rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 10px;
+  background: #2d1f3d;
+  color: var(--purple);
+}
+.lang-rust { background: #3d2a1f; color: #f97316; }
+.lang-go { background: #1f3d3d; color: #06b6d4; }
+.lang-zig { background: #3d3d1f; color: #eab308; }
+.lang-ts { background: #1f2d3d; color: #3b82f6; }
+.description {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  margin-bottom: 0.8rem;
+}
+.card-meta { font-size: 0.8rem; }
+.os-row { margin-bottom: 0.4rem; }
+.os-badge {
+  display: inline-block;
+  font-size: 0.75rem;
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+  background: #21262d;
+  margin-right: 0.2rem;
+}
+.perms-row {
+  color: var(--text-muted);
+  margin-bottom: 0.3rem;
+}
+.perm-tag {
+  display: inline-block;
+  font-size: 0.72rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  background: #2d1b00;
+  color: var(--orange);
+  margin: 0.1rem 0.2rem 0.1rem 0;
+}
+.version-row { color: var(--text-muted); }
+.stats {
+  text-align: center;
+  color: var(--text-muted);
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+}
+#no-results {
+  text-align: center;
+  color: var(--text-muted);
+  padding: 3rem;
+  display: none;
+}
+</style>
+</head>
+<body>
+<div class="container">
+<header>
+  <h1>⬡ Slate Plugins</h1>
+  <p>Terminal dashboard widgets — WASM-sandboxed, multi-language, installable from GitHub</p>
+</header>
+
+<div class="stats" id="stats"></div>
+
+<div class="controls">
+  <input type="text" class="search-box" id="search" placeholder="Search plugins..." autocomplete="off">
+  <div class="filter-group" id="os-filters">
+    <button class="filter-btn active" data-os="all">🌐 All</button>
+    <button class="filter-btn" data-os="macos">🍎 macOS</button>
+    <button class="filter-btn" data-os="linux">🐧 Linux</button>
+    <button class="filter-btn" data-os="windows">🪟 Windows</button>
+  </div>
+  <div class="filter-group" id="kind-filters">
+    <button class="filter-btn active" data-kind="all">All Types</button>
+    <button class="filter-btn" data-kind="builtin">Built-in</button>
+    <button class="filter-btn" data-kind="plugin">Plugin</button>
+  </div>
+</div>
+
+<div class="grid" id="grid">
+<div class="plugin-card" data-os="macos linux" data-lang="go" data-kind="plugin" data-name="brew-outdated" data-desc="Shows outdated Homebrew packages">
+  <div class="card-header">
+    <h3>brew-outdated</h3>
+    <div class="badges"><span class="kind-badge plugin">plugin</span> <span class="lang-badge lang-go">go</span></div>
+  </div>
+  <p class="description">Shows outdated Homebrew packages</p>
+  <div class="card-meta">
+    <div class="os-row"><span class="os-badge macos" title="macOS">🍎 macOS</span> <span class="os-badge linux" title="Linux">🐧 Linux</span></div>
+    <div class="perms-row"><strong>Permissions:</strong> <span class="perm-tag">exec: brew</span></div>
+    <div class="version-row">v0.1.0 · Slate Community</div>
+  </div>
+</div>
+<div class="plugin-card" data-os="macos linux windows" data-lang="rust" data-kind="plugin" data-name="clock" data-desc="Displays the current time">
+  <div class="card-header">
+    <h3>clock</h3>
+    <div class="badges"><span class="kind-badge plugin">plugin</span> <span class="lang-badge lang-rust">rust</span></div>
+  </div>
+  <p class="description">Displays the current time</p>
+  <div class="card-meta">
+    <div class="os-row"><span class="os-badge all" title="All platforms">🌐 All</span></div>
+    <div class="perms-row"><strong>Permissions:</strong> <em>None required</em></div>
+    <div class="version-row">v0.1.0 · Slate Community</div>
+  </div>
+</div>
+<div class="plugin-card" data-os="macos linux windows" data-lang="rust" data-kind="plugin" data-name="feedreader" data-desc="RSS/Atom feed reader with selectable items">
+  <div class="card-header">
+    <h3>feedreader</h3>
+    <div class="badges"><span class="kind-badge plugin">plugin</span> <span class="lang-badge lang-rust">rust</span></div>
+  </div>
+  <p class="description">RSS/Atom feed reader with selectable items</p>
+  <div class="card-meta">
+    <div class="os-row"><span class="os-badge all" title="All platforms">🌐 All</span></div>
+    <div class="perms-row"><strong>Permissions:</strong> <span class="perm-tag">network: *</span></div>
+    <div class="version-row">v0.1.0 · Slate Community</div>
+  </div>
+</div>
+<div class="plugin-card" data-os="macos linux windows" data-lang="rust (native)" data-kind="builtin" data-name="firewall" data-desc="Firewall rules and status">
+  <div class="card-header">
+    <h3>firewall</h3>
+    <div class="badges"><span class="kind-badge builtin">built-in</span> <span class="lang-badge lang-rust">rust (native)</span></div>
+  </div>
+  <p class="description">Firewall rules and status</p>
+  <div class="card-meta">
+    <div class="os-row"><span class="os-badge macos" title="macOS">🍎 macOS</span> <span class="os-badge linux" title="Linux">🐧 Linux</span> <span class="os-badge windows" title="Windows">🪟 Windows</span></div>
+    <div class="perms-row"><strong>Permissions:</strong> <span class="perm-tag">system (native access)</span></div>
+    <div class="version-row">vbuilt-in · Slate</div>
+  </div>
+</div>
+<div class="plugin-card" data-os="macos linux windows" data-lang="rust" data-kind="plugin" data-name="github" data-desc="GitHub PRs, issues, and repo stats">
+  <div class="card-header">
+    <h3>github</h3>
+    <div class="badges"><span class="kind-badge plugin">plugin</span> <span class="lang-badge lang-rust">rust</span></div>
+  </div>
+  <p class="description">GitHub PRs, issues, and repo stats</p>
+  <div class="card-meta">
+    <div class="os-row"><span class="os-badge all" title="All platforms">🌐 All</span></div>
+    <div class="perms-row"><strong>Permissions:</strong> <span class="perm-tag">network: api.github.com</span> <span class="perm-tag">secrets: token</span> <span class="perm-tag">storage</span></div>
+    <div class="version-row">v0.1.0 · Slate Community</div>
+  </div>
+</div>
+<div class="plugin-card" data-os="macos linux windows" data-lang="rust" data-kind="plugin" data-name="hackernews" data-desc="Hacker News top stories">
+  <div class="card-header">
+    <h3>hackernews</h3>
+    <div class="badges"><span class="kind-badge plugin">plugin</span> <span class="lang-badge lang-rust">rust</span></div>
+  </div>
+  <p class="description">Hacker News top stories</p>
+  <div class="card-meta">
+    <div class="os-row"><span class="os-badge all" title="All platforms">🌐 All</span></div>
+    <div class="perms-row"><strong>Permissions:</strong> <span class="perm-tag">network: hacker-news.firebaseio.com</span></div>
+    <div class="version-row">v0.1.0 · Slate Community</div>
+  </div>
+</div>
+<div class="plugin-card" data-os="macos linux windows" data-lang="rust (native)" data-kind="builtin" data-name="ipaddresses" data-desc="Network interface IP addresses">
+  <div class="card-header">
+    <h3>ipaddresses</h3>
+    <div class="badges"><span class="kind-badge builtin">built-in</span> <span class="lang-badge lang-rust">rust (native)</span></div>
+  </div>
+  <p class="description">Network interface IP addresses</p>
+  <div class="card-meta">
+    <div class="os-row"><span class="os-badge macos" title="macOS">🍎 macOS</span> <span class="os-badge linux" title="Linux">🐧 Linux</span> <span class="os-badge windows" title="Windows">🪟 Windows</span></div>
+    <div class="perms-row"><strong>Permissions:</strong> <span class="perm-tag">system (native access)</span></div>
+    <div class="version-row">vbuilt-in · Slate</div>
+  </div>
+</div>
+<div class="plugin-card" data-os="macos linux windows" data-lang="rust" data-kind="plugin" data-name="ipinfo" data-desc="Shows your public IP and geolocation info">
+  <div class="card-header">
+    <h3>ipinfo</h3>
+    <div class="badges"><span class="kind-badge plugin">plugin</span> <span class="lang-badge lang-rust">rust</span></div>
+  </div>
+  <p class="description">Shows your public IP and geolocation info</p>
+  <div class="card-meta">
+    <div class="os-row"><span class="os-badge all" title="All platforms">🌐 All</span></div>
+    <div class="perms-row"><strong>Permissions:</strong> <span class="perm-tag">network: ipinfo.io</span></div>
+    <div class="version-row">v0.1.0 · Slate Community</div>
+  </div>
+</div>
+<div class="plugin-card" data-os="macos" data-lang="zig" data-kind="plugin" data-name="istats" data-desc="System stats via iStats (macOS) - CPU temp, fan speeds, battery">
+  <div class="card-header">
+    <h3>istats</h3>
+    <div class="badges"><span class="kind-badge plugin">plugin</span> <span class="lang-badge lang-zig">zig</span></div>
+  </div>
+  <p class="description">System stats via iStats (macOS) - CPU temp, fan speeds, battery</p>
+  <div class="card-meta">
+    <div class="os-row"><span class="os-badge macos" title="macOS">🍎 macOS</span></div>
+    <div class="perms-row"><strong>Permissions:</strong> <span class="perm-tag">exec: istats</span></div>
+    <div class="version-row">v0.1.0 · Slate Community</div>
+  </div>
+</div>
+<div class="plugin-card" data-os="macos linux windows" data-lang="rust (native)" data-kind="builtin" data-name="power" data-desc="Battery status and power source">
+  <div class="card-header">
+    <h3>power</h3>
+    <div class="badges"><span class="kind-badge builtin">built-in</span> <span class="lang-badge lang-rust">rust (native)</span></div>
+  </div>
+  <p class="description">Battery status and power source</p>
+  <div class="card-meta">
+    <div class="os-row"><span class="os-badge macos" title="macOS">🍎 macOS</span> <span class="os-badge linux" title="Linux">🐧 Linux</span> <span class="os-badge windows" title="Windows">🪟 Windows</span></div>
+    <div class="perms-row"><strong>Permissions:</strong> <span class="perm-tag">system (native access)</span></div>
+    <div class="version-row">vbuilt-in · Slate</div>
+  </div>
+</div>
+<div class="plugin-card" data-os="macos linux windows" data-lang="rust (native)" data-kind="builtin" data-name="resource_usage" data-desc="CPU, memory, swap, and temperature monitoring">
+  <div class="card-header">
+    <h3>resource_usage</h3>
+    <div class="badges"><span class="kind-badge builtin">built-in</span> <span class="lang-badge lang-rust">rust (native)</span></div>
+  </div>
+  <p class="description">CPU, memory, swap, and temperature monitoring</p>
+  <div class="card-meta">
+    <div class="os-row"><span class="os-badge macos" title="macOS">🍎 macOS</span> <span class="os-badge linux" title="Linux">🐧 Linux</span> <span class="os-badge windows" title="Windows">🪟 Windows</span></div>
+    <div class="perms-row"><strong>Permissions:</strong> <span class="perm-tag">system (native access)</span></div>
+    <div class="version-row">vbuilt-in · Slate</div>
+  </div>
+</div>
+<div class="plugin-card" data-os="macos linux windows" data-lang="typescript" data-kind="plugin" data-name="status-pages" data-desc="Monitor service status pages (Atlassian Statuspage, custom APIs)">
+  <div class="card-header">
+    <h3>status-pages</h3>
+    <div class="badges"><span class="kind-badge plugin">plugin</span> <span class="lang-badge lang-ts">typescript</span></div>
+  </div>
+  <p class="description">Monitor service status pages (Atlassian Statuspage, custom APIs)</p>
+  <div class="card-meta">
+    <div class="os-row"><span class="os-badge all" title="All platforms">🌐 All</span></div>
+    <div class="perms-row"><strong>Permissions:</strong> <span class="perm-tag">network: www.githubstatus.com, status.slack.com</span></div>
+    <div class="version-row">v0.1.0 · Slate Community</div>
+  </div>
+</div>
+<div class="plugin-card" data-os="macos linux windows" data-lang="rust (native)" data-kind="builtin" data-name="vcs" data-desc="Version control status (Git/Mercurial)">
+  <div class="card-header">
+    <h3>vcs</h3>
+    <div class="badges"><span class="kind-badge builtin">built-in</span> <span class="lang-badge lang-rust">rust (native)</span></div>
+  </div>
+  <p class="description">Version control status (Git/Mercurial)</p>
+  <div class="card-meta">
+    <div class="os-row"><span class="os-badge macos" title="macOS">🍎 macOS</span> <span class="os-badge linux" title="Linux">🐧 Linux</span> <span class="os-badge windows" title="Windows">🪟 Windows</span></div>
+    <div class="perms-row"><strong>Permissions:</strong> <span class="perm-tag">system (native access)</span></div>
+    <div class="version-row">vbuilt-in · Slate</div>
+  </div>
+</div>
+<div class="plugin-card" data-os="macos linux windows" data-lang="rust" data-kind="plugin" data-name="weather" data-desc="Current weather conditions via OpenWeatherMap API">
+  <div class="card-header">
+    <h3>weather</h3>
+    <div class="badges"><span class="kind-badge plugin">plugin</span> <span class="lang-badge lang-rust">rust</span></div>
+  </div>
+  <p class="description">Current weather conditions via OpenWeatherMap API</p>
+  <div class="card-meta">
+    <div class="os-row"><span class="os-badge all" title="All platforms">🌐 All</span></div>
+    <div class="perms-row"><strong>Permissions:</strong> <span class="perm-tag">network: api.openweathermap.org</span> <span class="perm-tag">secrets: api_key</span></div>
+    <div class="version-row">v0.1.0 · Slate Community</div>
+  </div>
+</div>
+<div class="plugin-card" data-os="macos linux windows" data-lang="assemblyscript" data-kind="plugin" data-name="wego" data-desc="Weather display via wego CLI (ASCII art weather)">
+  <div class="card-header">
+    <h3>wego</h3>
+    <div class="badges"><span class="kind-badge plugin">plugin</span> <span class="lang-badge lang-ts">assemblyscript</span></div>
+  </div>
+  <p class="description">Weather display via wego CLI (ASCII art weather)</p>
+  <div class="card-meta">
+    <div class="os-row"><span class="os-badge macos" title="macOS">🍎 macOS</span> <span class="os-badge linux" title="Linux">🐧 Linux</span> <span class="os-badge windows" title="Windows">🪟 Windows</span></div>
+    <div class="perms-row"><strong>Permissions:</strong> <span class="perm-tag">exec: wego</span></div>
+    <div class="version-row">v0.1.0 · Slate Community</div>
+  </div>
+</div>
+
+</div>
+
+<div id="no-results">No plugins match your filters.</div>
+</div>
+
+<script>
+const cards = document.querySelectorAll('.plugin-card');
+const search = document.getElementById('search');
+const grid = document.getElementById('grid');
+const noResults = document.getElementById('no-results');
+const stats = document.getElementById('stats');
+
+let osFilter = 'all';
+let kindFilter = 'all';
+
+function updateStats() {
+  const visible = document.querySelectorAll('.plugin-card:not(.hidden)').length;
+  stats.textContent = visible + ' of ' + cards.length + ' plugins shown';
+  noResults.style.display = visible === 0 ? 'block' : 'none';
+}
+
+function applyFilters() {
+  const q = search.value.toLowerCase();
+  cards.forEach(card => {
+    const name = card.dataset.name.toLowerCase();
+    const desc = card.dataset.desc.toLowerCase();
+    const cardOs = card.dataset.os;
+    const cardKind = card.dataset.kind;
+
+    const matchesSearch = !q || name.includes(q) || desc.includes(q);
+    const matchesOs = osFilter === 'all' || cardOs.includes(osFilter);
+    const matchesKind = kindFilter === 'all' || cardKind === kindFilter;
+
+    card.classList.toggle('hidden', !(matchesSearch && matchesOs && matchesKind));
+  });
+  updateStats();
+}
+
+search.addEventListener('input', applyFilters);
+
+document.querySelectorAll('#os-filters .filter-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#os-filters .filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    osFilter = btn.dataset.os;
+    applyFilters();
+  });
+});
+
+document.querySelectorAll('#kind-filters .filter-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#kind-filters .filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    kindFilter = btn.dataset.kind;
+    applyFilters();
+  });
+});
+
+updateStats();
+</script>
+</body>
+</html>

@@ -1,8 +1,9 @@
-[metadata]
+[plugin]
 name = "clock"
 description = "Displays the current time"
 version = "0.1.0"
 author = "Slate Community"
+language = "rust"
 
 [permissions]
 # No permissions needed - pure computation

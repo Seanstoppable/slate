@@ -4,6 +4,7 @@ description = "Weather display via wego CLI (ASCII art weather)"
 version = "0.1.0"
 author = "Slate Community"
 language = "assemblyscript"
+os = ["macos", "linux", "windows"]
 
 [permissions]
 exec = ["wego"]

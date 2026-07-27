@@ -1,0 +1,10 @@
+[plugin]
+name = "weather"
+description = "Current weather conditions via OpenWeatherMap API"
+version = "0.1.0"
+author = "Slate Community"
+language = "rust"
+
+[permissions]
+network = ["api.openweathermap.org"]
+secrets = ["api_key"]

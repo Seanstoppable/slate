@@ -54,6 +54,12 @@ enum Commands {
         #[arg(short, long)]
         config: Option<String>,
     },
+    /// Generate plugin documentation website
+    Docs {
+        /// Output directory (default: docs/plugins)
+        #[arg(short, long)]
+        output: Option<String>,
+    },
 }
 
 #[tokio::main]
@@ -93,5 +99,6 @@ async fn main() -> Result<()> {
         Some(Commands::Search { query }) => commands::search(&query).await,
         Some(Commands::Migrate { path }) => commands::migrate(&path).await,
         Some(Commands::Check { config }) => commands::check(config.as_deref()).await,
+        Some(Commands::Docs { output }) => commands::docs(output.as_deref()).await,
     }
 }

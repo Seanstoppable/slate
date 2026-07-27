@@ -1,8 +1,9 @@
-[metadata]
+[plugin]
 name = "github"
 description = "GitHub PRs, issues, and repo stats"
 version = "0.1.0"
 author = "Slate Community"
+language = "rust"
 
 [permissions]
 network = ["api.github.com"]

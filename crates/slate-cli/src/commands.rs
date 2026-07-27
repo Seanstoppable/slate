@@ -76,6 +76,7 @@ fn try_load_widget(
         let wasm_path = std::path::PathBuf::from(path.as_ref());
 
         if wasm_path.exists() {
+            check_os_support(&wasm_path)?;
             let mut widget = WasmPlugin::from_file(&wasm_path, Permissions::default())?;
             slate_plugin_sdk::Widget::init(&mut widget, widget_config);
             Ok(Box::new(widget))
@@ -94,6 +95,7 @@ fn try_load_widget(
         let wasm_path = plugins_dir.join(plugin_name).join(format!("{}.wasm", plugin_name));
 
         if wasm_path.exists() {
+            check_os_support(&wasm_path)?;
             let mut widget = WasmPlugin::from_file(&wasm_path, Permissions::default())?;
             slate_plugin_sdk::Widget::init(&mut widget, widget_config);
             Ok(Box::new(widget))
@@ -101,6 +103,69 @@ fn try_load_widget(
             anyhow::bail!("Plugin '{}' not installed. Run `slate install` first.", entry.widget_type)
         }
     }
+}
+
+/// Plugin manifest read from plugin.toml alongside a WASM file.
+#[derive(serde::Deserialize, Default)]
+struct PluginManifest {
+    #[serde(default)]
+    plugin: PluginManifestPlugin,
+}
+
+#[derive(serde::Deserialize, Default)]
+struct PluginManifestPlugin {
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    os: Vec<String>,
+}
+
+/// Find and parse plugin.toml next to a WASM file (in same dir or parent dir).
+fn read_plugin_manifest(wasm_path: &std::path::Path) -> Option<PluginManifest> {
+    let dir = wasm_path.parent()?;
+    // Check same directory first, then parent (for plugins with target/ subdirs)
+    for candidate in [dir.join("plugin.toml"), dir.parent().map(|p| p.join("plugin.toml")).unwrap_or_default()] {
+        if candidate.exists() {
+            if let Ok(content) = std::fs::read_to_string(&candidate) {
+                if let Ok(manifest) = toml::from_str::<PluginManifest>(&content) {
+                    return Some(manifest);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Get the current OS as a normalized string matching plugin.toml conventions.
+fn current_os() -> &'static str {
+    match std::env::consts::OS {
+        "macos" => "macos",
+        "linux" => "linux",
+        "windows" => "windows",
+        other => other,
+    }
+}
+
+/// Check if a plugin supports the current OS. Returns Ok if supported or unspecified.
+fn check_os_support(wasm_path: &std::path::Path) -> Result<()> {
+    if let Some(manifest) = read_plugin_manifest(wasm_path) {
+        if !manifest.plugin.os.is_empty() {
+            let os = current_os();
+            if !manifest.plugin.os.iter().any(|s| s == os) {
+                let supported = manifest.plugin.os.join(", ");
+                let _name = if manifest.plugin.name.is_empty() {
+                    wasm_path.file_stem().and_then(|s| s.to_str()).unwrap_or("plugin").to_string()
+                } else {
+                    manifest.plugin.name.clone()
+                };
+                anyhow::bail!(
+                    "Not available on {} (supports: {})",
+                    os, supported
+                );
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Run the dashboard.
@@ -534,6 +599,19 @@ pub async fn check(config_path: Option<&str>) -> Result<()> {
                         continue;
                     }
 
+                    // Check OS support from plugin.toml
+                    if let Some(manifest) = read_plugin_manifest(&wasm_path) {
+                        if !manifest.plugin.os.is_empty() {
+                            let os = current_os();
+                            if !manifest.plugin.os.iter().any(|s| s == os) {
+                                let supported = manifest.plugin.os.join(", ");
+                                println!("  {:2}. {} ⊘ Not available on {} (supports: {})", i + 1, label, os, supported);
+                                warnings += 1;
+                                continue;
+                            }
+                        }
+                    }
+
                     let issues = validate_wasm_binary(&wasm_path);
                     let blocking: Vec<&String> = issues
                         .iter()
@@ -581,6 +659,487 @@ pub async fn check(config_path: Option<&str>) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Full manifest with both [plugin] and [metadata] section support.
+#[derive(serde::Deserialize, Default, Clone)]
+struct DocsManifest {
+    #[serde(default)]
+    plugin: DocsManifestPlugin,
+    #[serde(default)]
+    metadata: DocsManifestPlugin,
+    #[serde(default)]
+    permissions: DocsManifestPermissions,
+}
+
+#[derive(serde::Deserialize, Default, Clone)]
+struct DocsManifestPlugin {
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    description: String,
+    #[serde(default)]
+    version: String,
+    #[serde(default)]
+    author: String,
+    #[serde(default)]
+    language: String,
+    #[serde(default)]
+    os: Vec<String>,
+}
+
+#[derive(serde::Deserialize, Default, Clone)]
+struct DocsManifestPermissions {
+    #[serde(default)]
+    network: Vec<String>,
+    #[serde(default)]
+    exec: Vec<String>,
+    #[serde(default)]
+    secrets: Vec<String>,
+    #[serde(default)]
+    storage: Option<bool>,
+    #[serde(default)]
+    filesystem_read: Vec<String>,
+    #[serde(default)]
+    raw_network: Option<bool>,
+}
+
+/// Resolved plugin info for docs generation.
+struct PluginInfo {
+    name: String,
+    description: String,
+    version: String,
+    author: String,
+    language: String,
+    os: Vec<String>,
+    permissions: Vec<String>,
+    kind: &'static str, // "plugin" or "builtin"
+}
+
+/// Generate plugin documentation website.
+pub async fn docs(output_dir: Option<&str>) -> Result<()> {
+    let out = std::path::PathBuf::from(output_dir.unwrap_or("docs/plugins"));
+    std::fs::create_dir_all(&out)?;
+
+    let mut plugins: Vec<PluginInfo> = Vec::new();
+
+    // Scan plugins/ directory
+    let plugins_path = Path::new("plugins");
+    if plugins_path.exists() {
+        for entry in std::fs::read_dir(plugins_path)? {
+            let entry = entry?;
+            let toml_path = entry.path().join("plugin.toml");
+            if toml_path.exists() {
+                if let Ok(content) = std::fs::read_to_string(&toml_path) {
+                    if let Ok(manifest) = toml::from_str::<DocsManifest>(&content) {
+                        let p = if !manifest.plugin.name.is_empty() {
+                            &manifest.plugin
+                        } else {
+                            &manifest.metadata
+                        };
+                        let mut perms = Vec::new();
+                        if !manifest.permissions.network.is_empty() {
+                            perms.push(format!("network: {}", manifest.permissions.network.join(", ")));
+                        }
+                        if !manifest.permissions.exec.is_empty() {
+                            perms.push(format!("exec: {}", manifest.permissions.exec.join(", ")));
+                        }
+                        if !manifest.permissions.secrets.is_empty() {
+                            perms.push(format!("secrets: {}", manifest.permissions.secrets.join(", ")));
+                        }
+                        if manifest.permissions.storage == Some(true) {
+                            perms.push("storage".to_string());
+                        }
+                        if !manifest.permissions.filesystem_read.is_empty() {
+                            perms.push(format!("filesystem_read: {}", manifest.permissions.filesystem_read.join(", ")));
+                        }
+                        if manifest.permissions.raw_network == Some(true) {
+                            perms.push("raw_network".to_string());
+                        }
+
+                        plugins.push(PluginInfo {
+                            name: p.name.clone(),
+                            description: p.description.clone(),
+                            version: p.version.clone(),
+                            author: p.author.clone(),
+                            language: if p.language.is_empty() { "rust".to_string() } else { p.language.clone() },
+                            os: p.os.clone(),
+                            permissions: perms,
+                            kind: "plugin",
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    // Add built-in widgets
+    let builtins = [
+        ("resource_usage", "CPU, memory, swap, and temperature monitoring", "Real-time system resource usage with configurable refresh rates"),
+        ("power", "Battery status and power source", "Shows charge level, charging state, and power source (AC/battery)"),
+        ("firewall", "Firewall rules and status", "Displays active firewall rules (Windows/macOS/Linux)"),
+        ("ipaddresses", "Network interface IP addresses", "Lists all network interfaces with their IPv4/IPv6 addresses"),
+        ("vcs", "Version control status (Git/Mercurial)", "Branch, status, and recent commits for a repository"),
+    ];
+    for (name, desc, _long) in &builtins {
+        plugins.push(PluginInfo {
+            name: name.to_string(),
+            description: desc.to_string(),
+            version: "built-in".to_string(),
+            author: "Slate".to_string(),
+            language: "rust (native)".to_string(),
+            os: vec!["macos".to_string(), "linux".to_string(), "windows".to_string()],
+            permissions: vec!["system (native access)".to_string()],
+            kind: "builtin",
+        });
+    }
+
+    plugins.sort_by(|a, b| a.name.cmp(&b.name));
+
+    // Generate HTML
+    let html = generate_docs_html(&plugins);
+    let out_file = out.join("index.html");
+    std::fs::write(&out_file, &html)?;
+
+    println!("Generated plugin docs: {}", out_file.display());
+    println!("  {} plugins, {} builtins",
+        plugins.iter().filter(|p| p.kind == "plugin").count(),
+        plugins.iter().filter(|p| p.kind == "builtin").count(),
+    );
+
+    Ok(())
+}
+
+fn generate_docs_html(plugins: &[PluginInfo]) -> String {
+    let mut cards = String::new();
+    for p in plugins {
+        let os_badges = if p.os.is_empty() {
+            r#"<span class="os-badge all" title="All platforms">🌐 All</span>"#.to_string()
+        } else {
+            p.os.iter().map(|os| {
+                match os.as_str() {
+                    "macos" => r#"<span class="os-badge macos" title="macOS">🍎 macOS</span>"#,
+                    "linux" => r#"<span class="os-badge linux" title="Linux">🐧 Linux</span>"#,
+                    "windows" => r#"<span class="os-badge windows" title="Windows">🪟 Windows</span>"#,
+                    other => return format!(r#"<span class="os-badge">{}</span>"#, other),
+                }.to_string()
+            }).collect::<Vec<_>>().join(" ")
+        };
+
+        let lang_class = match p.language.as_str() {
+            "rust" | "rust (native)" => "lang-rust",
+            "go" => "lang-go",
+            "zig" => "lang-zig",
+            "typescript" | "assemblyscript" => "lang-ts",
+            _ => "lang-other",
+        };
+
+        let kind_badge = if p.kind == "builtin" {
+            r#"<span class="kind-badge builtin">built-in</span>"#
+        } else {
+            r#"<span class="kind-badge plugin">plugin</span>"#
+        };
+
+        let perms_html = if p.permissions.is_empty() {
+            "<em>None required</em>".to_string()
+        } else {
+            p.permissions.iter()
+                .map(|perm| format!(r#"<span class="perm-tag">{}</span>"#, html_escape(perm)))
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+
+        let os_data = if p.os.is_empty() {
+            "macos linux windows".to_string()
+        } else {
+            p.os.join(" ")
+        };
+
+        cards.push_str(&format!(
+            r#"<div class="plugin-card" data-os="{os_data}" data-lang="{lang}" data-kind="{kind}" data-name="{name}" data-desc="{desc}">
+  <div class="card-header">
+    <h3>{name}</h3>
+    <div class="badges">{kind_badge} <span class="lang-badge {lang_class}">{lang}</span></div>
+  </div>
+  <p class="description">{description}</p>
+  <div class="card-meta">
+    <div class="os-row">{os_badges}</div>
+    <div class="perms-row"><strong>Permissions:</strong> {perms_html}</div>
+    <div class="version-row">v{version} · {author}</div>
+  </div>
+</div>
+"#,
+            os_data = os_data,
+            lang = p.language,
+            kind = p.kind,
+            name = html_escape(&p.name),
+            desc = html_escape(&p.description),
+            description = html_escape(&p.description),
+            kind_badge = kind_badge,
+            lang_class = lang_class,
+            os_badges = os_badges,
+            perms_html = perms_html,
+            version = html_escape(&p.version),
+            author = html_escape(&p.author),
+        ));
+    }
+
+    format!(r##"<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Slate Plugins</title>
+<style>
+:root {{
+  --bg: #0d1117;
+  --surface: #161b22;
+  --border: #30363d;
+  --text: #e6edf3;
+  --text-muted: #8b949e;
+  --accent: #58a6ff;
+  --green: #3fb950;
+  --orange: #d29922;
+  --purple: #bc8cff;
+}}
+* {{ margin: 0; padding: 0; box-sizing: border-box; }}
+body {{
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+  padding: 2rem;
+}}
+.container {{ max-width: 1200px; margin: 0 auto; }}
+header {{
+  text-align: center;
+  margin-bottom: 2rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--border);
+}}
+header h1 {{
+  font-size: 2.5rem;
+  background: linear-gradient(135deg, var(--accent), var(--purple));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}}
+header p {{ color: var(--text-muted); font-size: 1.1rem; margin-top: 0.5rem; }}
+.controls {{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 2rem;
+  align-items: center;
+}}
+.search-box {{
+  flex: 1;
+  min-width: 200px;
+  padding: 0.6rem 1rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 1rem;
+}}
+.search-box::placeholder {{ color: var(--text-muted); }}
+.filter-group {{
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}}
+.filter-btn {{
+  padding: 0.4rem 0.8rem;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: all 0.2s;
+}}
+.filter-btn:hover {{ border-color: var(--accent); color: var(--text); }}
+.filter-btn.active {{ background: var(--accent); color: #fff; border-color: var(--accent); }}
+.grid {{
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 1.2rem;
+}}
+.plugin-card {{
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1.2rem;
+  transition: border-color 0.2s, transform 0.1s;
+}}
+.plugin-card:hover {{ border-color: var(--accent); transform: translateY(-2px); }}
+.plugin-card.hidden {{ display: none; }}
+.card-header {{
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 0.5rem;
+}}
+.card-header h3 {{ font-size: 1.15rem; color: var(--accent); }}
+.badges {{ display: flex; gap: 0.4rem; flex-wrap: wrap; }}
+.kind-badge {{
+  font-size: 0.7rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+}}
+.kind-badge.builtin {{ background: #1f3d2a; color: var(--green); }}
+.kind-badge.plugin {{ background: #1c2d4f; color: var(--accent); }}
+.lang-badge {{
+  font-size: 0.7rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 10px;
+  background: #2d1f3d;
+  color: var(--purple);
+}}
+.lang-rust {{ background: #3d2a1f; color: #f97316; }}
+.lang-go {{ background: #1f3d3d; color: #06b6d4; }}
+.lang-zig {{ background: #3d3d1f; color: #eab308; }}
+.lang-ts {{ background: #1f2d3d; color: #3b82f6; }}
+.description {{
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  margin-bottom: 0.8rem;
+}}
+.card-meta {{ font-size: 0.8rem; }}
+.os-row {{ margin-bottom: 0.4rem; }}
+.os-badge {{
+  display: inline-block;
+  font-size: 0.75rem;
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+  background: #21262d;
+  margin-right: 0.2rem;
+}}
+.perms-row {{
+  color: var(--text-muted);
+  margin-bottom: 0.3rem;
+}}
+.perm-tag {{
+  display: inline-block;
+  font-size: 0.72rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  background: #2d1b00;
+  color: var(--orange);
+  margin: 0.1rem 0.2rem 0.1rem 0;
+}}
+.version-row {{ color: var(--text-muted); }}
+.stats {{
+  text-align: center;
+  color: var(--text-muted);
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+}}
+#no-results {{
+  text-align: center;
+  color: var(--text-muted);
+  padding: 3rem;
+  display: none;
+}}
+</style>
+</head>
+<body>
+<div class="container">
+<header>
+  <h1>⬡ Slate Plugins</h1>
+  <p>Terminal dashboard widgets — WASM-sandboxed, multi-language, installable from GitHub</p>
+</header>
+
+<div class="stats" id="stats"></div>
+
+<div class="controls">
+  <input type="text" class="search-box" id="search" placeholder="Search plugins..." autocomplete="off">
+  <div class="filter-group" id="os-filters">
+    <button class="filter-btn active" data-os="all">🌐 All</button>
+    <button class="filter-btn" data-os="macos">🍎 macOS</button>
+    <button class="filter-btn" data-os="linux">🐧 Linux</button>
+    <button class="filter-btn" data-os="windows">🪟 Windows</button>
+  </div>
+  <div class="filter-group" id="kind-filters">
+    <button class="filter-btn active" data-kind="all">All Types</button>
+    <button class="filter-btn" data-kind="builtin">Built-in</button>
+    <button class="filter-btn" data-kind="plugin">Plugin</button>
+  </div>
+</div>
+
+<div class="grid" id="grid">
+{cards}
+</div>
+
+<div id="no-results">No plugins match your filters.</div>
+</div>
+
+<script>
+const cards = document.querySelectorAll('.plugin-card');
+const search = document.getElementById('search');
+const grid = document.getElementById('grid');
+const noResults = document.getElementById('no-results');
+const stats = document.getElementById('stats');
+
+let osFilter = 'all';
+let kindFilter = 'all';
+
+function updateStats() {{
+  const visible = document.querySelectorAll('.plugin-card:not(.hidden)').length;
+  stats.textContent = visible + ' of ' + cards.length + ' plugins shown';
+  noResults.style.display = visible === 0 ? 'block' : 'none';
+}}
+
+function applyFilters() {{
+  const q = search.value.toLowerCase();
+  cards.forEach(card => {{
+    const name = card.dataset.name.toLowerCase();
+    const desc = card.dataset.desc.toLowerCase();
+    const cardOs = card.dataset.os;
+    const cardKind = card.dataset.kind;
+
+    const matchesSearch = !q || name.includes(q) || desc.includes(q);
+    const matchesOs = osFilter === 'all' || cardOs.includes(osFilter);
+    const matchesKind = kindFilter === 'all' || cardKind === kindFilter;
+
+    card.classList.toggle('hidden', !(matchesSearch && matchesOs && matchesKind));
+  }});
+  updateStats();
+}}
+
+search.addEventListener('input', applyFilters);
+
+document.querySelectorAll('#os-filters .filter-btn').forEach(btn => {{
+  btn.addEventListener('click', () => {{
+    document.querySelectorAll('#os-filters .filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    osFilter = btn.dataset.os;
+    applyFilters();
+  }});
+}});
+
+document.querySelectorAll('#kind-filters .filter-btn').forEach(btn => {{
+  btn.addEventListener('click', () => {{
+    document.querySelectorAll('#kind-filters .filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    kindFilter = btn.dataset.kind;
+    applyFilters();
+  }});
+}});
+
+updateStats();
+</script>
+</body>
+</html>"##, cards = cards)
+}
+
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+     .replace('<', "&lt;")
+     .replace('>', "&gt;")
+     .replace('"', "&quot;")
 }
 
 /// Create a built-in widget by name.

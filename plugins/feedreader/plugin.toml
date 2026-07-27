@@ -1,0 +1,9 @@
+[plugin]
+name = "feedreader"
+description = "RSS/Atom feed reader with selectable items"
+version = "0.1.0"
+author = "Slate Community"
+language = "rust"
+
+[permissions]
+network = ["*"]
