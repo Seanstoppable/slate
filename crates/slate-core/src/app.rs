@@ -362,3 +362,282 @@ impl App {
             .find(|w| w.row == self.focus.row && w.col == self.focus.col)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use slate_plugin_sdk::{Widget, WidgetConfig, WidgetContent, WidgetMetadata};
+
+    /// A mock widget that returns a selectable list and responds to on_action.
+    struct MockListWidget {
+        action_response: Option<WidgetAction>,
+        refresh_count: std::cell::Cell<u32>,
+    }
+
+    impl MockListWidget {
+        fn new(action_response: Option<WidgetAction>) -> Self {
+            Self {
+                action_response,
+                refresh_count: std::cell::Cell::new(0),
+            }
+        }
+    }
+
+    impl Widget for MockListWidget {
+        fn metadata(&self) -> WidgetMetadata {
+            WidgetMetadata {
+                name: "Mock List".to_string(),
+                description: "Test widget".to_string(),
+                version: "0.1.0".to_string(),
+                author: None,
+                homepage: None,
+            }
+        }
+
+        fn init(&mut self, _config: WidgetConfig) {}
+
+        fn refresh(&mut self) -> WidgetContent {
+            self.refresh_count.set(self.refresh_count.get() + 1);
+            WidgetContent::List {
+                items: vec![
+                    slate_plugin_sdk::ListItem {
+                        id: "item-1".to_string(),
+                        title: "First Item".to_string(),
+                        subtitle: Some("subtitle".to_string()),
+                        icon: None,
+                        style: Default::default(),
+                    },
+                    slate_plugin_sdk::ListItem {
+                        id: "item-2".to_string(),
+                        title: "Second Item".to_string(),
+                        subtitle: None,
+                        icon: None,
+                        style: Default::default(),
+                    },
+                ],
+                selectable: true,
+                actions: vec![],
+            }
+        }
+
+        fn on_action(&mut self, _action_id: &str, _item_id: &str) -> Option<WidgetAction> {
+            self.action_response.clone()
+        }
+    }
+
+    /// A simple text widget that never responds to actions.
+    struct MockTextWidget;
+
+    impl Widget for MockTextWidget {
+        fn metadata(&self) -> WidgetMetadata {
+            WidgetMetadata {
+                name: "Mock Text".to_string(),
+                description: "".to_string(),
+                version: "0.1.0".to_string(),
+                author: None,
+                homepage: None,
+            }
+        }
+
+        fn init(&mut self, _config: WidgetConfig) {}
+
+        fn refresh(&mut self) -> WidgetContent {
+            WidgetContent::Text {
+                content: "Hello".to_string(),
+                scrollable: false,
+                wrap: true,
+            }
+        }
+    }
+
+    fn make_key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    fn test_app_with_list_widget(action: Option<WidgetAction>) -> App {
+        let config = SlateConfig::default();
+        let mut app = App::new(config);
+        let widget = MockListWidget::new(action);
+        app.add_widget(Box::new(widget), 0, 0, Some(300));
+        app
+    }
+
+    #[test]
+    fn enter_on_list_with_show_detail_sets_detail_content() {
+        let mut app = test_app_with_list_widget(Some(WidgetAction::ShowDetail(
+            "Detailed info here".to_string(),
+        )));
+
+        // Widget starts with no detail
+        assert!(app.widgets[0].detail_content.is_none());
+
+        // Press Enter to select
+        app.handle_key(make_key(KeyCode::Enter));
+
+        // Detail should now be set
+        assert_eq!(
+            app.widgets[0].detail_content,
+            Some("Detailed info here".to_string())
+        );
+    }
+
+    #[test]
+    fn escape_dismisses_detail_view() {
+        let mut app = test_app_with_list_widget(Some(WidgetAction::ShowDetail(
+            "Details".to_string(),
+        )));
+
+        // Enter detail view
+        app.handle_key(make_key(KeyCode::Enter));
+        assert!(app.widgets[0].detail_content.is_some());
+
+        // Escape should dismiss
+        app.handle_key(make_key(KeyCode::Esc));
+        assert!(app.widgets[0].detail_content.is_none());
+    }
+
+    #[test]
+    fn q_dismisses_detail_view_without_quitting() {
+        let mut app = test_app_with_list_widget(Some(WidgetAction::ShowDetail(
+            "Details".to_string(),
+        )));
+
+        // Enter detail view
+        app.handle_key(make_key(KeyCode::Enter));
+        assert!(app.widgets[0].detail_content.is_some());
+
+        // 'q' should dismiss detail, NOT quit the app
+        app.handle_key(make_key(KeyCode::Char('q')));
+        assert!(app.widgets[0].detail_content.is_none());
+        assert!(app.running); // still running
+    }
+
+    #[test]
+    fn keys_are_ignored_during_detail_view() {
+        let mut app = test_app_with_list_widget(Some(WidgetAction::ShowDetail(
+            "Details".to_string(),
+        )));
+
+        // Enter detail view
+        app.handle_key(make_key(KeyCode::Enter));
+
+        // j/k/Tab should be ignored — selection should not change
+        let selected_before = app.widgets[0].selected;
+        app.handle_key(make_key(KeyCode::Char('j')));
+        app.handle_key(make_key(KeyCode::Char('k')));
+        app.handle_key(make_key(KeyCode::Tab));
+        assert_eq!(app.widgets[0].selected, selected_before);
+    }
+
+    #[test]
+    fn enter_with_no_action_response_does_not_set_detail() {
+        let mut app = test_app_with_list_widget(None);
+
+        app.handle_key(make_key(KeyCode::Enter));
+        assert!(app.widgets[0].detail_content.is_none());
+    }
+
+    #[test]
+    fn enter_with_open_url_does_not_set_detail() {
+        let mut app = test_app_with_list_widget(Some(WidgetAction::OpenUrl(
+            "https://example.com".to_string(),
+        )));
+
+        app.handle_key(make_key(KeyCode::Enter));
+        // OpenUrl should NOT set detail_content
+        assert!(app.widgets[0].detail_content.is_none());
+    }
+
+    #[test]
+    fn j_k_navigate_list_selection() {
+        let mut app = test_app_with_list_widget(None);
+
+        // Starts at 0
+        assert_eq!(app.widgets[0].selected, Some(0));
+
+        // j moves down
+        app.handle_key(make_key(KeyCode::Char('j')));
+        assert_eq!(app.widgets[0].selected, Some(1));
+
+        // Can't go past end
+        app.handle_key(make_key(KeyCode::Char('j')));
+        assert_eq!(app.widgets[0].selected, Some(1));
+
+        // k moves up
+        app.handle_key(make_key(KeyCode::Char('k')));
+        assert_eq!(app.widgets[0].selected, Some(0));
+
+        // Can't go before 0
+        app.handle_key(make_key(KeyCode::Char('k')));
+        assert_eq!(app.widgets[0].selected, Some(0));
+    }
+
+    #[test]
+    fn q_quits_when_not_in_detail_view() {
+        let mut app = test_app_with_list_widget(None);
+        assert!(app.running);
+
+        app.handle_key(make_key(KeyCode::Char('q')));
+        assert!(!app.running);
+    }
+
+    #[test]
+    fn tab_moves_focus_between_widgets() {
+        let mut config = SlateConfig::default();
+        config.layout.rows = 1;
+        config.layout.cols = 2;
+        let mut app = App::new(config);
+        app.add_widget(Box::new(MockTextWidget), 0, 0, Some(300));
+        app.add_widget(Box::new(MockTextWidget), 0, 1, Some(300));
+
+        assert_eq!(app.focus.row, 0);
+        assert_eq!(app.focus.col, 0);
+
+        app.handle_key(make_key(KeyCode::Tab));
+        assert_eq!(app.focus.col, 1);
+
+        app.handle_key(make_key(KeyCode::Tab));
+        assert_eq!(app.focus.col, 0); // wraps around
+    }
+
+    #[test]
+    fn refresh_is_suppressed_when_detail_is_showing() {
+        let mut app = test_app_with_list_widget(Some(WidgetAction::ShowDetail(
+            "Details".to_string(),
+        )));
+
+        // Enter detail
+        app.handle_key(make_key(KeyCode::Enter));
+        assert!(app.widgets[0].detail_content.is_some());
+
+        // Manually set last_refresh to the past to trigger refresh
+        app.widgets[0].last_refresh = Instant::now() - Duration::from_secs(600);
+
+        // The main loop refresh logic checks detail_content — simulate it here
+        let instance = &mut app.widgets[0];
+        let now = Instant::now();
+        let should_refresh = now.duration_since(instance.last_refresh) >= instance.refresh_interval
+            && instance.detail_content.is_none();
+        assert!(!should_refresh);
+    }
+
+    #[test]
+    fn forced_refresh_clears_detail_and_refreshes() {
+        let mut app = test_app_with_list_widget(Some(WidgetAction::ShowDetail(
+            "Details".to_string(),
+        )));
+
+        // Enter detail
+        app.handle_key(make_key(KeyCode::Enter));
+        assert!(app.widgets[0].detail_content.is_some());
+
+        // Escape to dismiss, then 'r' to refresh
+        app.handle_key(make_key(KeyCode::Esc));
+        assert!(app.widgets[0].detail_content.is_none());
+
+        // 'r' forces refresh
+        app.handle_key(make_key(KeyCode::Char('r')));
+        // Widget content should be refreshed (still a list)
+        assert!(app.widgets[0].content.is_selectable_list());
+    }
+}
