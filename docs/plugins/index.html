@@ -85,6 +85,7 @@ header p { color: var(--text-muted); font-size: 1.1rem; margin-top: 0.5rem; }
   border-radius: 8px;
   padding: 1.2rem;
   transition: border-color 0.2s, transform 0.1s;
+  cursor: pointer;
 }
 .plugin-card:hover { border-color: var(--accent); transform: translateY(-2px); }
 .plugin-card.hidden { display: none; }
@@ -157,6 +158,81 @@ header p { color: var(--text-muted); font-size: 1.1rem; margin-top: 0.5rem; }
   padding: 3rem;
   display: none;
 }
+/* Modal styles */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.7);
+  z-index: 1000;
+  padding: 2rem;
+  overflow-y: auto;
+}
+.modal-overlay.active { display: flex; justify-content: center; align-items: flex-start; }
+.modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  max-width: 700px;
+  width: 100%;
+  padding: 2rem;
+  margin-top: 3rem;
+  position: relative;
+}
+.modal-close {
+  position: absolute;
+  top: 1rem; right: 1rem;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.5rem;
+  cursor: pointer;
+}
+.modal-close:hover { color: var(--text); }
+.modal h2 { color: var(--accent); margin-bottom: 0.5rem; font-size: 1.6rem; }
+.modal .meta-line { color: var(--text-muted); margin-bottom: 1rem; }
+.modal .section { margin-bottom: 1.5rem; }
+.modal .section h4 {
+  color: var(--text);
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.5rem;
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid var(--border);
+}
+.modal pre {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 1rem;
+  overflow-x: auto;
+  font-family: 'SF Mono', Menlo, monospace;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+.modal code { color: var(--green); }
+.modal .os-list { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.modal .os-item {
+  padding: 0.3rem 0.8rem;
+  border-radius: 6px;
+  background: #21262d;
+  font-size: 0.9rem;
+}
+.modal .perm-list { display: flex; flex-direction: column; gap: 0.4rem; }
+.modal .perm-item {
+  padding: 0.3rem 0.6rem;
+  border-radius: 4px;
+  background: #2d1b00;
+  color: var(--orange);
+  font-size: 0.85rem;
+  font-family: monospace;
+}
+.modal .install-text {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  white-space: pre-wrap;
+}
 </style>
 </head>
 <body>
@@ -184,7 +260,7 @@ header p { color: var(--text-muted); font-size: 1.1rem; margin-top: 0.5rem; }
 </div>
 
 <div class="grid" id="grid">
-<div class="plugin-card" data-os="macos linux" data-lang="go" data-kind="plugin" data-name="brew-outdated" data-desc="Shows outdated Homebrew packages">
+<div class="plugin-card" data-os="macos linux" data-lang="go" data-kind="plugin" data-name="brew-outdated" data-desc="Shows outdated Homebrew packages" onclick="showDetail(0)">
   <div class="card-header">
     <h3>brew-outdated</h3>
     <div class="badges"><span class="kind-badge plugin">plugin</span> <span class="lang-badge lang-go">go</span></div>
@@ -196,7 +272,7 @@ header p { color: var(--text-muted); font-size: 1.1rem; margin-top: 0.5rem; }
     <div class="version-row">v0.1.0 · Slate Community</div>
   </div>
 </div>
-<div class="plugin-card" data-os="macos linux windows" data-lang="rust" data-kind="plugin" data-name="clock" data-desc="Displays the current time">
+<div class="plugin-card" data-os="macos linux windows" data-lang="rust" data-kind="plugin" data-name="clock" data-desc="Displays the current time" onclick="showDetail(1)">
   <div class="card-header">
     <h3>clock</h3>
     <div class="badges"><span class="kind-badge plugin">plugin</span> <span class="lang-badge lang-rust">rust</span></div>
@@ -208,7 +284,7 @@ header p { color: var(--text-muted); font-size: 1.1rem; margin-top: 0.5rem; }
     <div class="version-row">v0.1.0 · Slate Community</div>
   </div>
 </div>
-<div class="plugin-card" data-os="macos linux windows" data-lang="rust" data-kind="plugin" data-name="feedreader" data-desc="RSS/Atom feed reader with selectable items">
+<div class="plugin-card" data-os="macos linux windows" data-lang="rust" data-kind="plugin" data-name="feedreader" data-desc="RSS/Atom feed reader with selectable items" onclick="showDetail(2)">
   <div class="card-header">
     <h3>feedreader</h3>
     <div class="badges"><span class="kind-badge plugin">plugin</span> <span class="lang-badge lang-rust">rust</span></div>
@@ -220,7 +296,7 @@ header p { color: var(--text-muted); font-size: 1.1rem; margin-top: 0.5rem; }
     <div class="version-row">v0.1.0 · Slate Community</div>
   </div>
 </div>
-<div class="plugin-card" data-os="macos linux windows" data-lang="rust (native)" data-kind="builtin" data-name="firewall" data-desc="Firewall rules and status">
+<div class="plugin-card" data-os="macos linux windows" data-lang="rust (native)" data-kind="builtin" data-name="firewall" data-desc="Firewall rules and status" onclick="showDetail(3)">
   <div class="card-header">
     <h3>firewall</h3>
     <div class="badges"><span class="kind-badge builtin">built-in</span> <span class="lang-badge lang-rust">rust (native)</span></div>
@@ -232,7 +308,7 @@ header p { color: var(--text-muted); font-size: 1.1rem; margin-top: 0.5rem; }
     <div class="version-row">vbuilt-in · Slate</div>
   </div>
 </div>
-<div class="plugin-card" data-os="macos linux windows" data-lang="rust" data-kind="plugin" data-name="github" data-desc="GitHub PRs, issues, and repo stats">
+<div class="plugin-card" data-os="macos linux windows" data-lang="rust" data-kind="plugin" data-name="github" data-desc="GitHub PRs, issues, and repo stats" onclick="showDetail(4)">
   <div class="card-header">
     <h3>github</h3>
     <div class="badges"><span class="kind-badge plugin">plugin</span> <span class="lang-badge lang-rust">rust</span></div>
@@ -244,7 +320,7 @@ header p { color: var(--text-muted); font-size: 1.1rem; margin-top: 0.5rem; }
     <div class="version-row">v0.1.0 · Slate Community</div>
   </div>
 </div>
-<div class="plugin-card" data-os="macos linux windows" data-lang="rust" data-kind="plugin" data-name="hackernews" data-desc="Hacker News top stories">
+<div class="plugin-card" data-os="macos linux windows" data-lang="rust" data-kind="plugin" data-name="hackernews" data-desc="Hacker News top stories" onclick="showDetail(5)">
   <div class="card-header">
     <h3>hackernews</h3>
     <div class="badges"><span class="kind-badge plugin">plugin</span> <span class="lang-badge lang-rust">rust</span></div>
@@ -256,7 +332,7 @@ header p { color: var(--text-muted); font-size: 1.1rem; margin-top: 0.5rem; }
     <div class="version-row">v0.1.0 · Slate Community</div>
   </div>
 </div>
-<div class="plugin-card" data-os="macos linux windows" data-lang="rust (native)" data-kind="builtin" data-name="ipaddresses" data-desc="Network interface IP addresses">
+<div class="plugin-card" data-os="macos linux windows" data-lang="rust (native)" data-kind="builtin" data-name="ipaddresses" data-desc="Network interface IP addresses" onclick="showDetail(6)">
   <div class="card-header">
     <h3>ipaddresses</h3>
     <div class="badges"><span class="kind-badge builtin">built-in</span> <span class="lang-badge lang-rust">rust (native)</span></div>
@@ -268,7 +344,7 @@ header p { color: var(--text-muted); font-size: 1.1rem; margin-top: 0.5rem; }
     <div class="version-row">vbuilt-in · Slate</div>
   </div>
 </div>
-<div class="plugin-card" data-os="macos linux windows" data-lang="rust" data-kind="plugin" data-name="ipinfo" data-desc="Shows your public IP and geolocation info">
+<div class="plugin-card" data-os="macos linux windows" data-lang="rust" data-kind="plugin" data-name="ipinfo" data-desc="Shows your public IP and geolocation info" onclick="showDetail(7)">
   <div class="card-header">
     <h3>ipinfo</h3>
     <div class="badges"><span class="kind-badge plugin">plugin</span> <span class="lang-badge lang-rust">rust</span></div>
@@ -280,7 +356,7 @@ header p { color: var(--text-muted); font-size: 1.1rem; margin-top: 0.5rem; }
     <div class="version-row">v0.1.0 · Slate Community</div>
   </div>
 </div>
-<div class="plugin-card" data-os="macos" data-lang="zig" data-kind="plugin" data-name="istats" data-desc="System stats via iStats (macOS) - CPU temp, fan speeds, battery">
+<div class="plugin-card" data-os="macos" data-lang="zig" data-kind="plugin" data-name="istats" data-desc="System stats via iStats (macOS) - CPU temp, fan speeds, battery" onclick="showDetail(8)">
   <div class="card-header">
     <h3>istats</h3>
     <div class="badges"><span class="kind-badge plugin">plugin</span> <span class="lang-badge lang-zig">zig</span></div>
@@ -292,7 +368,7 @@ header p { color: var(--text-muted); font-size: 1.1rem; margin-top: 0.5rem; }
     <div class="version-row">v0.1.0 · Slate Community</div>
   </div>
 </div>
-<div class="plugin-card" data-os="macos linux windows" data-lang="rust (native)" data-kind="builtin" data-name="power" data-desc="Battery status and power source">
+<div class="plugin-card" data-os="macos linux windows" data-lang="rust (native)" data-kind="builtin" data-name="power" data-desc="Battery status and power source" onclick="showDetail(9)">
   <div class="card-header">
     <h3>power</h3>
     <div class="badges"><span class="kind-badge builtin">built-in</span> <span class="lang-badge lang-rust">rust (native)</span></div>
@@ -304,7 +380,7 @@ header p { color: var(--text-muted); font-size: 1.1rem; margin-top: 0.5rem; }
     <div class="version-row">vbuilt-in · Slate</div>
   </div>
 </div>
-<div class="plugin-card" data-os="macos linux windows" data-lang="rust (native)" data-kind="builtin" data-name="resource_usage" data-desc="CPU, memory, swap, and temperature monitoring">
+<div class="plugin-card" data-os="macos linux windows" data-lang="rust (native)" data-kind="builtin" data-name="resource_usage" data-desc="CPU, memory, swap, and temperature monitoring" onclick="showDetail(10)">
   <div class="card-header">
     <h3>resource_usage</h3>
     <div class="badges"><span class="kind-badge builtin">built-in</span> <span class="lang-badge lang-rust">rust (native)</span></div>
@@ -316,7 +392,7 @@ header p { color: var(--text-muted); font-size: 1.1rem; margin-top: 0.5rem; }
     <div class="version-row">vbuilt-in · Slate</div>
   </div>
 </div>
-<div class="plugin-card" data-os="macos linux windows" data-lang="typescript" data-kind="plugin" data-name="status-pages" data-desc="Monitor service status pages (Atlassian Statuspage, custom APIs)">
+<div class="plugin-card" data-os="macos linux windows" data-lang="typescript" data-kind="plugin" data-name="status-pages" data-desc="Monitor service status pages (Atlassian Statuspage, custom APIs)" onclick="showDetail(11)">
   <div class="card-header">
     <h3>status-pages</h3>
     <div class="badges"><span class="kind-badge plugin">plugin</span> <span class="lang-badge lang-ts">typescript</span></div>
@@ -328,7 +404,7 @@ header p { color: var(--text-muted); font-size: 1.1rem; margin-top: 0.5rem; }
     <div class="version-row">v0.1.0 · Slate Community</div>
   </div>
 </div>
-<div class="plugin-card" data-os="macos linux windows" data-lang="rust (native)" data-kind="builtin" data-name="vcs" data-desc="Version control status (Git/Mercurial)">
+<div class="plugin-card" data-os="macos linux windows" data-lang="rust (native)" data-kind="builtin" data-name="vcs" data-desc="Version control status (Git/Mercurial)" onclick="showDetail(12)">
   <div class="card-header">
     <h3>vcs</h3>
     <div class="badges"><span class="kind-badge builtin">built-in</span> <span class="lang-badge lang-rust">rust (native)</span></div>
@@ -340,7 +416,7 @@ header p { color: var(--text-muted); font-size: 1.1rem; margin-top: 0.5rem; }
     <div class="version-row">vbuilt-in · Slate</div>
   </div>
 </div>
-<div class="plugin-card" data-os="macos linux windows" data-lang="rust" data-kind="plugin" data-name="weather" data-desc="Current weather conditions via OpenWeatherMap API">
+<div class="plugin-card" data-os="macos linux windows" data-lang="rust" data-kind="plugin" data-name="weather" data-desc="Current weather conditions via OpenWeatherMap API" onclick="showDetail(13)">
   <div class="card-header">
     <h3>weather</h3>
     <div class="badges"><span class="kind-badge plugin">plugin</span> <span class="lang-badge lang-rust">rust</span></div>
@@ -352,7 +428,7 @@ header p { color: var(--text-muted); font-size: 1.1rem; margin-top: 0.5rem; }
     <div class="version-row">v0.1.0 · Slate Community</div>
   </div>
 </div>
-<div class="plugin-card" data-os="macos linux windows" data-lang="assemblyscript" data-kind="plugin" data-name="wego" data-desc="Weather display via wego CLI (ASCII art weather)">
+<div class="plugin-card" data-os="macos linux windows" data-lang="assemblyscript" data-kind="plugin" data-name="wego" data-desc="Weather display via wego CLI (ASCII art weather)" onclick="showDetail(14)">
   <div class="card-header">
     <h3>wego</h3>
     <div class="badges"><span class="kind-badge plugin">plugin</span> <span class="lang-badge lang-ts">assemblyscript</span></div>
@@ -370,12 +446,56 @@ header p { color: var(--text-muted); font-size: 1.1rem; margin-top: 0.5rem; }
 <div id="no-results">No plugins match your filters.</div>
 </div>
 
+<!-- Detail modal -->
+<div class="modal-overlay" id="modal-overlay" onclick="if(event.target===this)closeDetail()">
+  <div class="modal">
+    <button class="modal-close" onclick="closeDetail()">&times;</button>
+    <h2 id="modal-name"></h2>
+    <div class="meta-line" id="modal-meta"></div>
+    <p class="description" id="modal-desc" style="margin-bottom:1.5rem"></p>
+    <div class="section">
+      <h4>Configuration</h4>
+      <pre><code id="modal-config"></code></pre>
+    </div>
+    <div class="section">
+      <h4>Platform Support</h4>
+      <div class="os-list" id="modal-os"></div>
+    </div>
+    <div class="section">
+      <h4>Permissions</h4>
+      <div class="perm-list" id="modal-perms"></div>
+    </div>
+    <div class="section">
+      <h4>Installation</h4>
+      <div class="install-text" id="modal-install"></div>
+    </div>
+  </div>
+</div>
+
 <script>
+const pluginData = [
+  {name:"brew-outdated",desc:"Shows outdated Homebrew packages",version:"0.1.0",author:"Slate Community",lang:"go",kind:"plugin",os:["macos","linux"],perms:["exec: brew"],config:"[[widget]]\ntype = \"github.com/slate-community/slate-brew-outdated\"\nposition = { row = 0, col = 0 }",install:"Build: see plugins/brew-outdated/README.md\nOr add pre-built: type = \"wasm:path/to/plugin.wasm\""},
+  {name:"clock",desc:"Displays the current time",version:"0.1.0",author:"Slate Community",lang:"rust",kind:"plugin",os:["All platforms"],perms:[],config:"[[widget]]\ntype = \"github.com/slate-community/slate-clock\"\nposition = { row = 0, col = 0 }",install:"Add to slate.toml:\n  type = \"github.com/slate-community/slate-clock\""},
+  {name:"feedreader",desc:"RSS/Atom feed reader with selectable items",version:"0.1.0",author:"Slate Community",lang:"rust",kind:"plugin",os:["All platforms"],perms:["network: *"],config:"[[widget]]\ntype = \"github.com/slate-community/slate-feedreader\"\nposition = { row = 0, col = 0 }",install:"Add to slate.toml:\n  type = \"github.com/slate-community/slate-feedreader\""},
+  {name:"firewall",desc:"Firewall rules and status",version:"built-in",author:"Slate",lang:"rust (native)",kind:"builtin",os:["macos","linux","windows"],perms:["system (native access)"],config:"[[widget]]\ntype = \"builtin:firewall\"\nposition = { row = 0, col = 2 }",install:"Built-in — no installation needed. Just add to slate.toml."},
+  {name:"github",desc:"GitHub PRs, issues, and repo stats",version:"0.1.0",author:"Slate Community",lang:"rust",kind:"plugin",os:["All platforms"],perms:["network: api.github.com","secrets: token","storage"],config:"[[widget]]\ntype = \"github.com/slate-community/slate-github\"\nposition = { row = 0, col = 0 }\ntoken = \"${TOKEN}\"",install:"Add to slate.toml:\n  type = \"github.com/slate-community/slate-github\""},
+  {name:"hackernews",desc:"Hacker News top stories",version:"0.1.0",author:"Slate Community",lang:"rust",kind:"plugin",os:["All platforms"],perms:["network: hacker-news.firebaseio.com"],config:"[[widget]]\ntype = \"github.com/slate-community/slate-hackernews\"\nposition = { row = 0, col = 0 }",install:"Add to slate.toml:\n  type = \"github.com/slate-community/slate-hackernews\""},
+  {name:"ipaddresses",desc:"Network interface IP addresses",version:"built-in",author:"Slate",lang:"rust (native)",kind:"builtin",os:["macos","linux","windows"],perms:["system (native access)"],config:"[[widget]]\ntype = \"builtin:ipaddresses\"\nposition = { row = 1, col = 0 }",install:"Built-in — no installation needed. Just add to slate.toml."},
+  {name:"ipinfo",desc:"Shows your public IP and geolocation info",version:"0.1.0",author:"Slate Community",lang:"rust",kind:"plugin",os:["All platforms"],perms:["network: ipinfo.io"],config:"[[widget]]\ntype = \"github.com/slate-community/slate-ipinfo\"\nposition = { row = 0, col = 0 }",install:"Add to slate.toml:\n  type = \"github.com/slate-community/slate-ipinfo\""},
+  {name:"istats",desc:"System stats via iStats (macOS) - CPU temp, fan speeds, battery",version:"0.1.0",author:"Slate Community",lang:"zig",kind:"plugin",os:["macos"],perms:["exec: istats"],config:"[[widget]]\ntype = \"github.com/slate-community/slate-istats\"\nposition = { row = 0, col = 0 }",install:"Build: see plugins/istats/README.md\nOr add pre-built: type = \"wasm:path/to/plugin.wasm\""},
+  {name:"power",desc:"Battery status and power source",version:"built-in",author:"Slate",lang:"rust (native)",kind:"builtin",os:["macos","linux","windows"],perms:["system (native access)"],config:"[[widget]]\ntype = \"builtin:power\"\nposition = { row = 0, col = 1 }",install:"Built-in — no installation needed. Just add to slate.toml."},
+  {name:"resource_usage",desc:"CPU, memory, swap, and temperature monitoring",version:"built-in",author:"Slate",lang:"rust (native)",kind:"builtin",os:["macos","linux","windows"],perms:["system (native access)"],config:"[[widget]]\ntype = \"builtin:resource_usage\"\nposition = { row = 0, col = 0 }",install:"Built-in — no installation needed. Just add to slate.toml."},
+  {name:"status-pages",desc:"Monitor service status pages (Atlassian Statuspage, custom APIs)",version:"0.1.0",author:"Slate Community",lang:"typescript",kind:"plugin",os:["All platforms"],perms:["network: www.githubstatus.com, status.slack.com"],config:"[[widget]]\ntype = \"github.com/slate-community/slate-status-pages\"\nposition = { row = 0, col = 0 }",install:"Build: see plugins/status-pages/README.md\nOr add pre-built: type = \"wasm:path/to/plugin.wasm\""},
+  {name:"vcs",desc:"Version control status (Git/Mercurial)",version:"built-in",author:"Slate",lang:"rust (native)",kind:"builtin",os:["macos","linux","windows"],perms:["system (native access)"],config:"[[widget]]\ntype = \"builtin:vcs\"\nposition = { row = 1, col = 1 }\nengine = \"git\"\nrepo_path = \"/path/to/repo\"",install:"Built-in — no installation needed. Just add to slate.toml."},
+  {name:"weather",desc:"Current weather conditions via OpenWeatherMap API",version:"0.1.0",author:"Slate Community",lang:"rust",kind:"plugin",os:["All platforms"],perms:["network: api.openweathermap.org","secrets: api_key"],config:"[[widget]]\ntype = \"github.com/slate-community/slate-weather\"\nposition = { row = 0, col = 0 }\napi_key = \"${API_KEY}\"\nprovider = \"openweathermap\"\nlocation = \"San Francisco\"",install:"Add to slate.toml:\n  type = \"github.com/slate-community/slate-weather\""},
+  {name:"wego",desc:"Weather display via wego CLI (ASCII art weather)",version:"0.1.0",author:"Slate Community",lang:"assemblyscript",kind:"plugin",os:["macos","linux","windows"],perms:["exec: wego"],config:"[[widget]]\ntype = \"github.com/slate-community/slate-wego\"\nposition = { row = 0, col = 0 }\ndays = \"1\"",install:"Build: see plugins/wego/README.md\nOr add pre-built: type = \"wasm:path/to/plugin.wasm\""}
+];
+
 const cards = document.querySelectorAll('.plugin-card');
 const search = document.getElementById('search');
-const grid = document.getElementById('grid');
 const noResults = document.getElementById('no-results');
 const stats = document.getElementById('stats');
+const modal = document.getElementById('modal-overlay');
 
 let osFilter = 'all';
 let kindFilter = 'all';
@@ -402,6 +522,36 @@ function applyFilters() {
   });
   updateStats();
 }
+
+function showDetail(idx) {
+  const p = pluginData[idx];
+  document.getElementById('modal-name').textContent = p.name;
+  document.getElementById('modal-meta').textContent = 'v' + p.version + ' · ' + p.author + ' · ' + p.lang;
+  document.getElementById('modal-desc').textContent = p.desc;
+  document.getElementById('modal-config').textContent = p.config;
+
+  const osEl = document.getElementById('modal-os');
+  const osIcons = {macos: '🍎', linux: '🐧', windows: '🪟'};
+  osEl.innerHTML = p.os.map(o => '<span class="os-item">' + (osIcons[o]||'') + ' ' + o + '</span>').join('');
+
+  const permsEl = document.getElementById('modal-perms');
+  if (p.perms.length === 0) {
+    permsEl.innerHTML = '<em style="color:var(--text-muted)">None required</em>';
+  } else {
+    permsEl.innerHTML = p.perms.map(perm => '<span class="perm-item">' + perm + '</span>').join('');
+  }
+
+  document.getElementById('modal-install').textContent = p.install;
+  modal.classList.add('active');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeDetail() {
+  modal.classList.remove('active');
+  document.body.style.overflow = '';
+}
+
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDetail(); });
 
 search.addEventListener('input', applyFilters);
 

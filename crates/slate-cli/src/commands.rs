@@ -714,6 +714,8 @@ struct PluginInfo {
     os: Vec<String>,
     permissions: Vec<String>,
     kind: &'static str, // "plugin" or "builtin"
+    config_example: String,
+    install_hint: String,
 }
 
 /// Generate plugin documentation website.
@@ -757,6 +759,13 @@ pub async fn docs(output_dir: Option<&str>) -> Result<()> {
                             perms.push("raw_network".to_string());
                         }
 
+                        let config_example = generate_config_example(&p.name, "plugin", &manifest);
+                        let install_hint = if p.language.is_empty() || p.language == "rust" {
+                            format!("Add to slate.toml:\n  type = \"github.com/slate-community/slate-{}\"", p.name)
+                        } else {
+                            format!("Build: see plugins/{}/README.md\nOr add pre-built: type = \"wasm:path/to/plugin.wasm\"", p.name)
+                        };
+
                         plugins.push(PluginInfo {
                             name: p.name.clone(),
                             description: p.description.clone(),
@@ -766,6 +775,8 @@ pub async fn docs(output_dir: Option<&str>) -> Result<()> {
                             os: p.os.clone(),
                             permissions: perms,
                             kind: "plugin",
+                            config_example,
+                            install_hint,
                         });
                     }
                 }
@@ -774,14 +785,14 @@ pub async fn docs(output_dir: Option<&str>) -> Result<()> {
     }
 
     // Add built-in widgets
-    let builtins = [
-        ("resource_usage", "CPU, memory, swap, and temperature monitoring", "Real-time system resource usage with configurable refresh rates"),
-        ("power", "Battery status and power source", "Shows charge level, charging state, and power source (AC/battery)"),
-        ("firewall", "Firewall rules and status", "Displays active firewall rules (Windows/macOS/Linux)"),
-        ("ipaddresses", "Network interface IP addresses", "Lists all network interfaces with their IPv4/IPv6 addresses"),
-        ("vcs", "Version control status (Git/Mercurial)", "Branch, status, and recent commits for a repository"),
+    let builtins: &[(&str, &str, &str, &str)] = &[
+        ("resource_usage", "CPU, memory, swap, and temperature monitoring", "Real-time system resource usage with configurable refresh rates. Shows CPU percentage, memory used/total, swap usage, CPU count, and hottest temperature sensor.", "[[widget]]\ntype = \"builtin:resource_usage\"\nposition = { row = 0, col = 0 }"),
+        ("power", "Battery status and power source", "Shows charge level, charging state, and power source. On desktops without a battery, displays 'AC Power (100%)'. Supports Windows (WMI), macOS (pmset), and Linux (sysfs).", "[[widget]]\ntype = \"builtin:power\"\nposition = { row = 0, col = 1 }"),
+        ("firewall", "Firewall rules and status", "Displays active firewall rules. Uses netsh on Windows, pfctl on macOS, and iptables/nftables on Linux.", "[[widget]]\ntype = \"builtin:firewall\"\nposition = { row = 0, col = 2 }"),
+        ("ipaddresses", "Network interface IP addresses", "Lists all network interfaces with their IPv4/IPv6 addresses. Shows interface name, IP, and status. Defaults to all interfaces if none specified.", "[[widget]]\ntype = \"builtin:ipaddresses\"\nposition = { row = 1, col = 0 }"),
+        ("vcs", "Version control status (Git/Mercurial)", "Branch, modified files, and recent commit log for a repository. Set engine to 'git' or 'hg'. Multiple instances supported for different repos.", "[[widget]]\ntype = \"builtin:vcs\"\nposition = { row = 1, col = 1 }\nengine = \"git\"\nrepo_path = \"/path/to/repo\""),
     ];
-    for (name, desc, _long) in &builtins {
+    for (name, desc, _long_desc, config) in builtins {
         plugins.push(PluginInfo {
             name: name.to_string(),
             description: desc.to_string(),
@@ -791,6 +802,8 @@ pub async fn docs(output_dir: Option<&str>) -> Result<()> {
             os: vec!["macos".to_string(), "linux".to_string(), "windows".to_string()],
             permissions: vec!["system (native access)".to_string()],
             kind: "builtin",
+            config_example: config.to_string(),
+            install_hint: "Built-in — no installation needed. Just add to slate.toml.".to_string(),
         });
     }
 
@@ -810,9 +823,44 @@ pub async fn docs(output_dir: Option<&str>) -> Result<()> {
     Ok(())
 }
 
+fn generate_config_example(name: &str, _kind: &str, manifest: &DocsManifest) -> String {
+    let mut lines = vec![
+        "[[widget]]".to_string(),
+        format!("type = \"github.com/slate-community/slate-{}\"", name),
+        "position = { row = 0, col = 0 }".to_string(),
+    ];
+
+    // Add settings hints from permissions
+    if !manifest.permissions.secrets.is_empty() {
+        for secret in &manifest.permissions.secrets {
+            lines.push(format!("{} = \"${{{}}}\"", secret, secret.to_uppercase()));
+        }
+    }
+    if !manifest.permissions.network.is_empty() && manifest.permissions.network[0] != "*" {
+        // Suggest URL-related config
+        match name {
+            "feedreader" => lines.push("feed_url = \"https://example.com/rss.xml\"".to_string()),
+            "weather" => {
+                lines.push("provider = \"openweathermap\"".to_string());
+                lines.push("location = \"San Francisco\"".to_string());
+            }
+            _ => {}
+        }
+    }
+    if !manifest.permissions.exec.is_empty() {
+        // Suggest any relevant config
+        match name {
+            "wego" => lines.push("days = \"1\"".to_string()),
+            _ => {}
+        }
+    }
+
+    lines.join("\n")
+}
+
 fn generate_docs_html(plugins: &[PluginInfo]) -> String {
     let mut cards = String::new();
-    for p in plugins {
+    for (idx, p) in plugins.iter().enumerate() {
         let os_badges = if p.os.is_empty() {
             r#"<span class="os-badge all" title="All platforms">🌐 All</span>"#.to_string()
         } else {
@@ -856,7 +904,7 @@ fn generate_docs_html(plugins: &[PluginInfo]) -> String {
         };
 
         cards.push_str(&format!(
-            r#"<div class="plugin-card" data-os="{os_data}" data-lang="{lang}" data-kind="{kind}" data-name="{name}" data-desc="{desc}">
+            r#"<div class="plugin-card" data-os="{os_data}" data-lang="{lang}" data-kind="{kind}" data-name="{name}" data-desc="{desc}" onclick="showDetail({idx})">
   <div class="card-header">
     <h3>{name}</h3>
     <div class="badges">{kind_badge} <span class="lang-badge {lang_class}">{lang}</span></div>
@@ -869,6 +917,7 @@ fn generate_docs_html(plugins: &[PluginInfo]) -> String {
   </div>
 </div>
 "#,
+            idx = idx,
             os_data = os_data,
             lang = p.language,
             kind = p.kind,
@@ -883,6 +932,34 @@ fn generate_docs_html(plugins: &[PluginInfo]) -> String {
             author = html_escape(&p.author),
         ));
     }
+
+    // Generate the JS data array for detail modal
+    let mut plugin_data = String::from("[\n");
+    for (i, p) in plugins.iter().enumerate() {
+        if i > 0 { plugin_data.push_str(",\n"); }
+        let os_list = if p.os.is_empty() {
+            "\"All platforms\"".to_string()
+        } else {
+            p.os.iter().map(|o| format!("\"{}\"", o)).collect::<Vec<_>>().join(",")
+        };
+        let perms_list = p.permissions.iter()
+            .map(|perm| format!("\"{}\"", js_escape(perm)))
+            .collect::<Vec<_>>().join(",");
+        plugin_data.push_str(&format!(
+            r#"  {{name:"{}",desc:"{}",version:"{}",author:"{}",lang:"{}",kind:"{}",os:[{}],perms:[{}],config:"{}",install:"{}"}}"#,
+            js_escape(&p.name),
+            js_escape(&p.description),
+            js_escape(&p.version),
+            js_escape(&p.author),
+            js_escape(&p.language),
+            p.kind,
+            os_list,
+            perms_list,
+            js_escape(&p.config_example),
+            js_escape(&p.install_hint),
+        ));
+    }
+    plugin_data.push_str("\n]");
 
     format!(r##"<!DOCTYPE html>
 <html lang="en">
@@ -971,6 +1048,7 @@ header p {{ color: var(--text-muted); font-size: 1.1rem; margin-top: 0.5rem; }}
   border-radius: 8px;
   padding: 1.2rem;
   transition: border-color 0.2s, transform 0.1s;
+  cursor: pointer;
 }}
 .plugin-card:hover {{ border-color: var(--accent); transform: translateY(-2px); }}
 .plugin-card.hidden {{ display: none; }}
@@ -1043,6 +1121,81 @@ header p {{ color: var(--text-muted); font-size: 1.1rem; margin-top: 0.5rem; }}
   padding: 3rem;
   display: none;
 }}
+/* Modal styles */
+.modal-overlay {{
+  display: none;
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.7);
+  z-index: 1000;
+  padding: 2rem;
+  overflow-y: auto;
+}}
+.modal-overlay.active {{ display: flex; justify-content: center; align-items: flex-start; }}
+.modal {{
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  max-width: 700px;
+  width: 100%;
+  padding: 2rem;
+  margin-top: 3rem;
+  position: relative;
+}}
+.modal-close {{
+  position: absolute;
+  top: 1rem; right: 1rem;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.5rem;
+  cursor: pointer;
+}}
+.modal-close:hover {{ color: var(--text); }}
+.modal h2 {{ color: var(--accent); margin-bottom: 0.5rem; font-size: 1.6rem; }}
+.modal .meta-line {{ color: var(--text-muted); margin-bottom: 1rem; }}
+.modal .section {{ margin-bottom: 1.5rem; }}
+.modal .section h4 {{
+  color: var(--text);
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.5rem;
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid var(--border);
+}}
+.modal pre {{
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 1rem;
+  overflow-x: auto;
+  font-family: 'SF Mono', Menlo, monospace;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}}
+.modal code {{ color: var(--green); }}
+.modal .os-list {{ display: flex; gap: 0.5rem; flex-wrap: wrap; }}
+.modal .os-item {{
+  padding: 0.3rem 0.8rem;
+  border-radius: 6px;
+  background: #21262d;
+  font-size: 0.9rem;
+}}
+.modal .perm-list {{ display: flex; flex-direction: column; gap: 0.4rem; }}
+.modal .perm-item {{
+  padding: 0.3rem 0.6rem;
+  border-radius: 4px;
+  background: #2d1b00;
+  color: var(--orange);
+  font-size: 0.85rem;
+  font-family: monospace;
+}}
+.modal .install-text {{
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  white-space: pre-wrap;
+}}
 </style>
 </head>
 <body>
@@ -1076,12 +1229,40 @@ header p {{ color: var(--text-muted); font-size: 1.1rem; margin-top: 0.5rem; }}
 <div id="no-results">No plugins match your filters.</div>
 </div>
 
+<!-- Detail modal -->
+<div class="modal-overlay" id="modal-overlay" onclick="if(event.target===this)closeDetail()">
+  <div class="modal">
+    <button class="modal-close" onclick="closeDetail()">&times;</button>
+    <h2 id="modal-name"></h2>
+    <div class="meta-line" id="modal-meta"></div>
+    <p class="description" id="modal-desc" style="margin-bottom:1.5rem"></p>
+    <div class="section">
+      <h4>Configuration</h4>
+      <pre><code id="modal-config"></code></pre>
+    </div>
+    <div class="section">
+      <h4>Platform Support</h4>
+      <div class="os-list" id="modal-os"></div>
+    </div>
+    <div class="section">
+      <h4>Permissions</h4>
+      <div class="perm-list" id="modal-perms"></div>
+    </div>
+    <div class="section">
+      <h4>Installation</h4>
+      <div class="install-text" id="modal-install"></div>
+    </div>
+  </div>
+</div>
+
 <script>
+const pluginData = {plugin_data};
+
 const cards = document.querySelectorAll('.plugin-card');
 const search = document.getElementById('search');
-const grid = document.getElementById('grid');
 const noResults = document.getElementById('no-results');
 const stats = document.getElementById('stats');
+const modal = document.getElementById('modal-overlay');
 
 let osFilter = 'all';
 let kindFilter = 'all';
@@ -1109,6 +1290,36 @@ function applyFilters() {{
   updateStats();
 }}
 
+function showDetail(idx) {{
+  const p = pluginData[idx];
+  document.getElementById('modal-name').textContent = p.name;
+  document.getElementById('modal-meta').textContent = 'v' + p.version + ' · ' + p.author + ' · ' + p.lang;
+  document.getElementById('modal-desc').textContent = p.desc;
+  document.getElementById('modal-config').textContent = p.config;
+
+  const osEl = document.getElementById('modal-os');
+  const osIcons = {{macos: '🍎', linux: '🐧', windows: '🪟'}};
+  osEl.innerHTML = p.os.map(o => '<span class="os-item">' + (osIcons[o]||'') + ' ' + o + '</span>').join('');
+
+  const permsEl = document.getElementById('modal-perms');
+  if (p.perms.length === 0) {{
+    permsEl.innerHTML = '<em style="color:var(--text-muted)">None required</em>';
+  }} else {{
+    permsEl.innerHTML = p.perms.map(perm => '<span class="perm-item">' + perm + '</span>').join('');
+  }}
+
+  document.getElementById('modal-install').textContent = p.install;
+  modal.classList.add('active');
+  document.body.style.overflow = 'hidden';
+}}
+
+function closeDetail() {{
+  modal.classList.remove('active');
+  document.body.style.overflow = '';
+}}
+
+document.addEventListener('keydown', e => {{ if (e.key === 'Escape') closeDetail(); }});
+
 search.addEventListener('input', applyFilters);
 
 document.querySelectorAll('#os-filters .filter-btn').forEach(btn => {{
@@ -1132,7 +1343,7 @@ document.querySelectorAll('#kind-filters .filter-btn').forEach(btn => {{
 updateStats();
 </script>
 </body>
-</html>"##, cards = cards)
+</html>"##, cards = cards, plugin_data = plugin_data)
 }
 
 fn html_escape(s: &str) -> String {
@@ -1140,6 +1351,14 @@ fn html_escape(s: &str) -> String {
      .replace('<', "&lt;")
      .replace('>', "&gt;")
      .replace('"', "&quot;")
+}
+
+fn js_escape(s: &str) -> String {
+    s.replace('\\', "\\\\")
+     .replace('"', "\\\"")
+     .replace('\n', "\\n")
+     .replace('\r', "")
+     .replace('\t', "\\t")
 }
 
 /// Create a built-in widget by name.
