@@ -2,6 +2,14 @@
 
 A terminal info dashboard with a plugin ecosystem. Think [wtfutil](https://wtfutil.com/) rewritten with first-class plugin support — WASM-sandboxed modules, vim-plug style management, and update notifications.
 
+## Why Slate?
+
+We loved wtfutil but wanted to start from a **blank slate** (pun intended) to address two things it never quite got right:
+
+1. **Code coverage** — wtfutil has minimal test coverage, making contributions risky and regressions hard to catch. Slate is built test-first: plugins gate their logic behind testable pure functions, the host runtime has comprehensive unit tests, and CI enforces coverage on every PR.
+
+2. **Plugins with real third-party support** — wtfutil's modules are compiled into the binary. Adding a widget means forking the whole project. Slate uses WASM sandboxing (via [Extism](https://extism.org/)) so anyone can write a plugin in Rust, Go, JavaScript, Zig, or AssemblyScript, publish it to a GitHub repo, and users install it with one line in their config — no recompilation, no forks, no trust issues (capabilities are explicitly granted).
+
 ## Features
 
 - **WASM-sandboxed plugins** — Community plugins run in an Extism sandbox with capability-gated permissions
