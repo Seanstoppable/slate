@@ -33,9 +33,7 @@ pub fn render_widget(
     frame.render_widget(block, area);
 
     match content {
-        WidgetContent::Text {
-            content, wrap, ..
-        } => {
+        WidgetContent::Text { content, wrap, .. } => {
             let paragraph = Paragraph::new(content.as_str());
             let paragraph = if *wrap {
                 paragraph.wrap(Wrap { trim: true })
@@ -44,9 +42,7 @@ pub fn render_widget(
             };
             frame.render_widget(paragraph, inner);
         }
-        WidgetContent::Table {
-            headers, rows, ..
-        } => {
+        WidgetContent::Table { headers, rows, .. } => {
             let header_cells: Vec<Span> = headers
                 .iter()
                 .map(|h| Span::styled(h.as_str(), Style::default().add_modifier(Modifier::BOLD)))
@@ -88,7 +84,9 @@ pub fn render_widget(
             let paragraph = Paragraph::new(lines);
             frame.render_widget(paragraph, inner);
         }
-        WidgetContent::List { items, selectable, .. } => {
+        WidgetContent::List {
+            items, selectable, ..
+        } => {
             let list_items: Vec<ListItem> = items
                 .iter()
                 .map(|item| {
@@ -148,8 +146,8 @@ pub fn render_widget(
             frame.render_widget(paragraph, inner);
         }
         WidgetContent::Empty { message } => {
-            let paragraph = Paragraph::new(message.as_str())
-                .style(Style::default().fg(RatColor::DarkGray));
+            let paragraph =
+                Paragraph::new(message.as_str()).style(Style::default().fg(RatColor::DarkGray));
             frame.render_widget(paragraph, inner);
         }
     }
@@ -168,8 +166,8 @@ pub fn render_status_bar(
         " Slate │ {} widgets │ Focus: ({},{}) {}│ q: quit │ Tab: next │ ←↑↓→: navigate ",
         widget_count, focus.row, focus.col, update_part
     );
-    let paragraph = Paragraph::new(status)
-        .style(Style::default().bg(RatColor::DarkGray).fg(RatColor::White));
+    let paragraph =
+        Paragraph::new(status).style(Style::default().bg(RatColor::DarkGray).fg(RatColor::White));
     frame.render_widget(paragraph, area);
 }
 

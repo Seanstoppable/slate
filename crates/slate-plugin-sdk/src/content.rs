@@ -131,7 +131,13 @@ pub enum ChartType {
 impl WidgetContent {
     /// Returns true if this is a selectable list.
     pub fn is_selectable_list(&self) -> bool {
-        matches!(self, WidgetContent::List { selectable: true, .. })
+        matches!(
+            self,
+            WidgetContent::List {
+                selectable: true,
+                ..
+            }
+        )
     }
 
     /// Returns the number of items in a list, or 0 if not a list.
@@ -342,7 +348,9 @@ mod tests {
                     assert_eq!(selectable, expected_selectable);
                 }
                 (
-                    WidgetContent::KeyValue { pairs: expected_pairs },
+                    WidgetContent::KeyValue {
+                        pairs: expected_pairs,
+                    },
                     WidgetContent::KeyValue { pairs },
                 ) => {
                     assert_eq!(pairs.len(), expected_pairs.len());

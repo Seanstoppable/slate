@@ -94,7 +94,11 @@ impl UpdateNotifications {
             return None;
         }
         let count = self.available_updates.len();
-        Some(format!("│ 📦 {} update{} available ", count, if count == 1 { "" } else { "s" }))
+        Some(format!(
+            "│ 📦 {} update{} available ",
+            count,
+            if count == 1 { "" } else { "s" }
+        ))
     }
 
     fn cache_path() -> Option<PathBuf> {

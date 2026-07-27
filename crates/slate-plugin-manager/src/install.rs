@@ -135,7 +135,10 @@ fn parse_github_source(source: &str) -> Result<(String, String)> {
         .collect();
 
     if parts.len() < 2 {
-        anyhow::bail!("Invalid GitHub source: {}. Expected format: github.com/owner/repo", source);
+        anyhow::bail!(
+            "Invalid GitHub source: {}. Expected format: github.com/owner/repo",
+            source
+        );
     }
 
     Ok((parts[0].to_string(), parts[1].to_string()))
@@ -163,8 +166,7 @@ mod tests {
 
     #[test]
     fn test_parse_github_source_with_https() {
-        let (owner, repo) =
-            parse_github_source("https://github.com/user/plugin").unwrap();
+        let (owner, repo) = parse_github_source("https://github.com/user/plugin").unwrap();
         assert_eq!(owner, "user");
         assert_eq!(repo, "plugin");
     }

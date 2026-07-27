@@ -7,7 +7,9 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use ratatui::{backend::CrosstermBackend, layout::Constraint, layout::Direction, layout::Layout, Terminal};
+use ratatui::{
+    backend::CrosstermBackend, layout::Constraint, layout::Direction, layout::Layout, Terminal,
+};
 use slate_plugin_sdk::{BoxedWidget, WidgetAction, WidgetContent, WidgetMetadata};
 
 use crate::config::SlateConfig;
@@ -50,11 +52,21 @@ impl App {
     }
 
     /// Register a widget into the application.
-    pub fn add_widget(&mut self, mut widget: BoxedWidget, row: u16, col: u16, refresh_interval: Option<u64>) {
+    pub fn add_widget(
+        &mut self,
+        mut widget: BoxedWidget,
+        row: u16,
+        col: u16,
+        refresh_interval: Option<u64>,
+    ) {
         let metadata = widget.metadata();
         let interval = refresh_interval.unwrap_or(self.config.global.refresh_interval);
         let content = widget.refresh();
-        let selected = if content.is_selectable_list() { Some(0) } else { None };
+        let selected = if content.is_selectable_list() {
+            Some(0)
+        } else {
+            None
+        };
         self.widgets.push(WidgetInstance {
             widget,
             metadata,
@@ -101,7 +113,8 @@ impl App {
             for instance in &mut self.widgets {
                 if now.duration_since(instance.last_refresh) >= instance.refresh_interval {
                     // Don't auto-refresh a focused selectable list (user is navigating)
-                    let is_focused = instance.row == self.focus.row && instance.col == self.focus.col;
+                    let is_focused =
+                        instance.row == self.focus.row && instance.col == self.focus.col;
                     if is_focused && instance.content.is_selectable_list() {
                         continue;
                     }
@@ -118,28 +131,40 @@ impl App {
             terminal.draw(|frame| {
                 let chunks = Layout::default()
                     .direction(Direction::Vertical)
-                    .constraints([
-                        Constraint::Min(1),
-                        Constraint::Length(1),
-                    ])
+                    .constraints([Constraint::Min(1), Constraint::Length(1)])
                     .split(frame.area());
 
                 let main_area = chunks[0];
                 let status_area = chunks[1];
 
-                let grid = compute_grid(main_area, self.config.layout.rows, self.config.layout.cols);
+                let grid =
+                    compute_grid(main_area, self.config.layout.rows, self.config.layout.cols);
 
                 for instance in &self.widgets {
                     let row = instance.row as usize;
                     let col = instance.col as usize;
                     if row < grid.len() && col < grid[row].len() {
                         let area = grid[row][col];
-                        let focused = self.focus.row == instance.row && self.focus.col == instance.col;
-                        render_widget(frame, area, &instance.content, &instance.metadata, focused, instance.selected);
+                        let focused =
+                            self.focus.row == instance.row && self.focus.col == instance.col;
+                        render_widget(
+                            frame,
+                            area,
+                            &instance.content,
+                            &instance.metadata,
+                            focused,
+                            instance.selected,
+                        );
                     }
                 }
 
-                render_status_bar(frame, status_area, &self.focus, self.widgets.len(), self.notifications.status_message().as_deref());
+                render_status_bar(
+                    frame,
+                    status_area,
+                    &self.focus,
+                    self.widgets.len(),
+                    self.notifications.status_message().as_deref(),
+                );
             })?;
 
             // Handle input (poll with timeout for refresh)
@@ -158,7 +183,8 @@ impl App {
 
     fn handle_key(&mut self, key: KeyEvent) {
         // Check if focused widget is a selectable list
-        let focused_is_list = self.focused_widget()
+        let focused_is_list = self
+            .focused_widget()
             .map(|w| w.content.is_selectable_list())
             .unwrap_or(false);
 
@@ -169,11 +195,13 @@ impl App {
             }
             KeyCode::Tab => {
                 // Move focus to next widget in reading order
-                self.focus.move_next(self.config.layout.rows, self.config.layout.cols);
+                self.focus
+                    .move_next(self.config.layout.rows, self.config.layout.cols);
             }
             KeyCode::BackTab => {
                 // Move focus to previous widget
-                self.focus.move_prev(self.config.layout.rows, self.config.layout.cols);
+                self.focus
+                    .move_prev(self.config.layout.rows, self.config.layout.cols);
             }
             KeyCode::Left | KeyCode::Char('h') => {
                 self.focus.move_left(self.config.layout.cols);
@@ -211,7 +239,9 @@ impl App {
             KeyCode::Enter => {
                 // Forward to focused widget with selected item
                 if let Some(instance) = self.focused_widget_mut() {
-                    if let (Some(sel), WidgetContent::List { items, .. }) = (instance.selected, &instance.content) {
+                    if let (Some(sel), WidgetContent::List { items, .. }) =
+                        (instance.selected, &instance.content)
+                    {
                         if let Some(item) = items.get(sel) {
                             let item_id = item.id.clone();
                             if let Some(action) = instance.widget.on_action("select", &item_id) {
@@ -247,11 +277,19 @@ impl App {
             WidgetAction::OpenUrl(url) => {
                 // Open URL in system browser
                 #[cfg(target_os = "windows")]
-                { let _ = std::process::Command::new("cmd").args(["/C", "start", &url]).spawn(); }
+                {
+                    let _ = std::process::Command::new("cmd")
+                        .args(["/C", "start", &url])
+                        .spawn();
+                }
                 #[cfg(target_os = "macos")]
-                { let _ = std::process::Command::new("open").arg(&url).spawn(); }
+                {
+                    let _ = std::process::Command::new("open").arg(&url).spawn();
+                }
                 #[cfg(target_os = "linux")]
-                { let _ = std::process::Command::new("xdg-open").arg(&url).spawn(); }
+                {
+                    let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
+                }
             }
             WidgetAction::Notify(msg) => {
                 // For now, just log it

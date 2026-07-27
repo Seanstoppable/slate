@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main, seanstoppable-slate-terminal-dashboard]
+  push:
+    branches: [main, seanstoppable-slate-terminal-dashboard]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: Tests
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --workspace
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets
+
+  coverage:
+    name: Code Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-tarpaulin
+        run: cargo install cargo-tarpaulin
+
+      - name: Run coverage
+        run: cargo tarpaulin --workspace --out xml --output-dir coverage/
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/cobertura.xml
+
+      - name: Coverage summary
+        run: cargo tarpaulin --workspace --out stdout --skip-clean | tail -20

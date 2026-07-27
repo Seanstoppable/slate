@@ -184,7 +184,12 @@ fn interpolate_string(s: &str) -> String {
         if let Some(end) = result[start..].find('}') {
             let var_name = &result[start + 2..start + end];
             let replacement = std::env::var(var_name).unwrap_or_default();
-            result = format!("{}{}{}", &result[..start], replacement, &result[start + end + 1..]);
+            result = format!(
+                "{}{}{}",
+                &result[..start],
+                replacement,
+                &result[start + end + 1..]
+            );
         } else {
             break;
         }
@@ -228,7 +233,10 @@ repos = ["myorg/myrepo"]
         assert_eq!(config.global.refresh_interval, 60);
         assert_eq!(config.widget.len(), 2);
         assert_eq!(config.widget[0].widget_type, "builtin:resource_usage");
-        assert_eq!(config.widget[1].widget_type, "github.com/slate-community/slate-github");
+        assert_eq!(
+            config.widget[1].widget_type,
+            "github.com/slate-community/slate-github"
+        );
     }
 
     #[test]
@@ -303,10 +311,19 @@ nested = { color = "green", compact = false }
         let config = SlateConfig::parse(toml).unwrap();
         let settings = &config.widget[0].settings;
 
-        assert_eq!(settings.get("title").and_then(toml::Value::as_str), Some("Resources"));
-        assert_eq!(settings.get("show_swap").and_then(toml::Value::as_bool), Some(true));
         assert_eq!(
-            settings.get("thresholds").and_then(toml::Value::as_array).map(Vec::len),
+            settings.get("title").and_then(toml::Value::as_str),
+            Some("Resources")
+        );
+        assert_eq!(
+            settings.get("show_swap").and_then(toml::Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            settings
+                .get("thresholds")
+                .and_then(toml::Value::as_array)
+                .map(Vec::len),
             Some(2)
         );
         assert_eq!(

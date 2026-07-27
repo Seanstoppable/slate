@@ -1,8 +1,6 @@
 use anyhow::{Context, Result};
 use extism::{Function, Manifest, Plugin, UserData, Val, Wasm, PTR};
-use slate_plugin_sdk::{
-    Permissions, WidgetConfig, WidgetContent, WidgetMetadata,
-};
+use slate_plugin_sdk::{Permissions, WidgetConfig, WidgetContent, WidgetMetadata};
 use std::path::Path;
 
 use crate::permissions::PermissionGuard;
@@ -47,9 +45,7 @@ fn make_exec_function() -> Function {
                 return Ok(());
             }
 
-            let output = std::process::Command::new(cmd)
-                .args(&args)
-                .output();
+            let output = std::process::Command::new(cmd).args(&args).output();
 
             let result = match output {
                 Ok(out) => {
@@ -190,11 +186,18 @@ fn parse_widget_content(json_str: &str) -> WidgetContent {
                 .map(|arr| {
                     arr.iter()
                         .filter_map(|item| {
-                            let title = item["title"].as_str().or_else(|| item["text"].as_str()).or_else(|| item.as_str()).unwrap_or("");
+                            let title = item["title"]
+                                .as_str()
+                                .or_else(|| item["text"].as_str())
+                                .or_else(|| item.as_str())
+                                .unwrap_or("");
                             Some(slate_plugin_sdk::ListItem {
                                 id: item["id"].as_str().unwrap_or("").to_string(),
                                 title: title.to_string(),
-                                subtitle: item["subtitle"].as_str().or_else(|| item["secondary"].as_str()).map(String::from),
+                                subtitle: item["subtitle"]
+                                    .as_str()
+                                    .or_else(|| item["secondary"].as_str())
+                                    .map(String::from),
                                 icon: item["icon"].as_str().map(String::from),
                                 style: Default::default(),
                             })
@@ -269,16 +272,19 @@ impl slate_plugin_sdk::Widget for WasmPlugin {
         // Build clocks array if locations are configured
         if let Some(locations) = settings.get("locations").cloned() {
             if let Some(locations_obj) = locations.as_object() {
-                let clocks: Vec<serde_json::Value> = locations_obj.iter().map(|(label, tz_val)| {
-                    let tz_str = tz_val.as_str().unwrap_or("UTC");
-                    let (time, date) = format_tz_time(tz_str);
-                    serde_json::json!({
-                        "label": label,
-                        "time": time,
-                        "date": date,
-                        "zone": tz_str
+                let clocks: Vec<serde_json::Value> = locations_obj
+                    .iter()
+                    .map(|(label, tz_val)| {
+                        let tz_str = tz_val.as_str().unwrap_or("UTC");
+                        let (time, date) = format_tz_time(tz_str);
+                        serde_json::json!({
+                            "label": label,
+                            "time": time,
+                            "date": date,
+                            "zone": tz_str
+                        })
                     })
-                }).collect();
+                    .collect();
                 settings.insert("clocks".to_string(), serde_json::json!(clocks));
             }
         }
@@ -300,7 +306,11 @@ impl slate_plugin_sdk::Widget for WasmPlugin {
         let _ = self.plugin.call::<&str, String>("on_key", &input);
     }
 
-    fn on_action(&mut self, action_id: &str, item_id: &str) -> Option<slate_plugin_sdk::WidgetAction> {
+    fn on_action(
+        &mut self,
+        action_id: &str,
+        item_id: &str,
+    ) -> Option<slate_plugin_sdk::WidgetAction> {
         let input = serde_json::json!({ "action_id": action_id, "item_id": item_id }).to_string();
         match self.plugin.call::<&str, String>("on_action", &input) {
             Ok(response) => {
@@ -469,5 +479,31 @@ mod tests {
             }
             other => panic!("expected list content, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn format_tz_time_returns_time_for_valid_timezone() {
+        let (time, date) = format_tz_time("America/New_York");
+        // Should look like HH:MM:SS
+        assert_eq!(time.len(), 8);
+        assert_eq!(&time[2..3], ":");
+        assert_eq!(&time[5..6], ":");
+        // Date should be non-empty
+        assert!(!date.is_empty());
+    }
+
+    #[test]
+    fn format_tz_time_returns_fallback_for_invalid_timezone() {
+        let (time, date) = format_tz_time("Not/A/Real/Zone");
+        assert_eq!(time, "--:--:--");
+        assert_eq!(date, "Not/A/Real/Zone");
+    }
+
+    #[test]
+    fn format_local_time_returns_valid_strings() {
+        let (time, date, tz) = format_local_time(0);
+        assert_eq!(time.len(), 8); // HH:MM:SS
+        assert!(!date.is_empty());
+        assert!(!tz.is_empty());
     }
 }

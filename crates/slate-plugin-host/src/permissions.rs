@@ -13,7 +13,12 @@ impl PermissionGuard {
 
     /// Check if HTTP access to a specific host is permitted.
     pub fn check_network(&self, host: &str) -> Result<(), PermissionError> {
-        if self.permissions.network.iter().any(|allowed| host.contains(allowed)) {
+        if self
+            .permissions
+            .network
+            .iter()
+            .any(|allowed| host.contains(allowed))
+        {
             Ok(())
         } else {
             Err(PermissionError::NetworkDenied(host.to_string()))
@@ -31,7 +36,12 @@ impl PermissionGuard {
 
     /// Check if a system info category is permitted.
     pub fn check_system(&self, category: &str) -> Result<(), PermissionError> {
-        if self.permissions.system.iter().any(|allowed| category == allowed) {
+        if self
+            .permissions
+            .system
+            .iter()
+            .any(|allowed| category == allowed)
+        {
             Ok(())
         } else {
             Err(PermissionError::SystemDenied(category.to_string()))

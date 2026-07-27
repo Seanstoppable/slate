@@ -5,7 +5,10 @@ use tracing_subscriber::EnvFilter;
 mod commands;
 
 #[derive(Parser)]
-#[command(name = "slate", about = "A terminal info dashboard with plugin ecosystem")]
+#[command(
+    name = "slate",
+    about = "A terminal info dashboard with plugin ecosystem"
+)]
 #[command(version, long_about = None)]
 struct Cli {
     #[command(subcommand)]

@@ -58,7 +58,9 @@ impl Registry {
             .filter(|p| {
                 p.name.to_lowercase().contains(&query_lower)
                     || p.description.to_lowercase().contains(&query_lower)
-                    || p.tags.iter().any(|t| t.to_lowercase().contains(&query_lower))
+                    || p.tags
+                        .iter()
+                        .any(|t| t.to_lowercase().contains(&query_lower))
             })
             .collect()
     }

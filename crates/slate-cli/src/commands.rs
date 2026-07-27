@@ -5,7 +5,7 @@ use std::process::Command;
 use slate_core::{App, SlateConfig};
 use slate_plugin_host::{LuaPlugin, WasmPlugin};
 use slate_plugin_manager::{Lockfile, PluginInstaller, Registry};
-use slate_plugin_sdk::{Permissions, WidgetConfig, WidgetMetadata, WidgetContent};
+use slate_plugin_sdk::{Permissions, WidgetConfig, WidgetContent, WidgetMetadata};
 
 /// A placeholder widget shown when a plugin fails to load.
 struct ErrorWidget {
@@ -43,7 +43,10 @@ fn load_widget_or_error(
     match try_load_widget(entry, widget_config.clone()) {
         Ok(widget) => widget,
         Err(e) => {
-            let name = entry.widget_type.split('/').last()
+            let name = entry
+                .widget_type
+                .split('/')
+                .last()
                 .or_else(|| entry.widget_type.split(':').last())
                 .unwrap_or(&entry.widget_type)
                 .to_string();
@@ -81,7 +84,10 @@ fn try_load_widget(
             slate_plugin_sdk::Widget::init(&mut widget, widget_config);
             Ok(Box::new(widget))
         } else {
-            anyhow::bail!("WASM file not found: '{}'. Build it first.", wasm_path.display())
+            anyhow::bail!(
+                "WASM file not found: '{}'. Build it first.",
+                wasm_path.display()
+            )
         }
     } else {
         // GitHub-sourced WASM plugin
@@ -92,7 +98,9 @@ fn try_load_widget(
             .unwrap_or(&entry.widget_type);
 
         let plugins_dir = PluginInstaller::default_dir()?;
-        let wasm_path = plugins_dir.join(plugin_name).join(format!("{}.wasm", plugin_name));
+        let wasm_path = plugins_dir
+            .join(plugin_name)
+            .join(format!("{}.wasm", plugin_name));
 
         if wasm_path.exists() {
             check_os_support(&wasm_path)?;
@@ -100,7 +108,10 @@ fn try_load_widget(
             slate_plugin_sdk::Widget::init(&mut widget, widget_config);
             Ok(Box::new(widget))
         } else {
-            anyhow::bail!("Plugin '{}' not installed. Run `slate install` first.", entry.widget_type)
+            anyhow::bail!(
+                "Plugin '{}' not installed. Run `slate install` first.",
+                entry.widget_type
+            )
         }
     }
 }
@@ -124,7 +135,12 @@ struct PluginManifestPlugin {
 fn read_plugin_manifest(wasm_path: &std::path::Path) -> Option<PluginManifest> {
     let dir = wasm_path.parent()?;
     // Check same directory first, then parent (for plugins with target/ subdirs)
-    for candidate in [dir.join("plugin.toml"), dir.parent().map(|p| p.join("plugin.toml")).unwrap_or_default()] {
+    for candidate in [
+        dir.join("plugin.toml"),
+        dir.parent()
+            .map(|p| p.join("plugin.toml"))
+            .unwrap_or_default(),
+    ] {
         if candidate.exists() {
             if let Ok(content) = std::fs::read_to_string(&candidate) {
                 if let Ok(manifest) = toml::from_str::<PluginManifest>(&content) {
@@ -154,14 +170,15 @@ fn check_os_support(wasm_path: &std::path::Path) -> Result<()> {
             if !manifest.plugin.os.iter().any(|s| s == os) {
                 let supported = manifest.plugin.os.join(", ");
                 let _name = if manifest.plugin.name.is_empty() {
-                    wasm_path.file_stem().and_then(|s| s.to_str()).unwrap_or("plugin").to_string()
+                    wasm_path
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("plugin")
+                        .to_string()
                 } else {
                     manifest.plugin.name.clone()
                 };
-                anyhow::bail!(
-                    "Not available on {} (supports: {})",
-                    os, supported
-                );
+                anyhow::bail!("Not available on {} (supports: {})", os, supported);
             }
         }
     }
@@ -193,7 +210,12 @@ pub async fn run(config_path: Option<&str>) -> Result<()> {
         };
 
         let widget = load_widget_or_error(entry, widget_config);
-        app.add_widget(widget, entry.position.row, entry.position.col, entry.refresh_interval);
+        app.add_widget(
+            widget,
+            entry.position.row,
+            entry.position.col,
+            entry.refresh_interval,
+        );
     }
 
     // If no widgets configured, show a welcome message
@@ -247,7 +269,11 @@ pub async fn update() -> Result<()> {
 
     for entry in &config.widget {
         if !entry.widget_type.starts_with("builtin:") && !entry.widget_type.starts_with("lua:") {
-            let plugin_name = entry.widget_type.split('/').last().unwrap_or(&entry.widget_type);
+            let plugin_name = entry
+                .widget_type
+                .split('/')
+                .last()
+                .unwrap_or(&entry.widget_type);
             print!("Updating {}...", plugin_name);
             match installer.install(&entry.widget_type, None).await {
                 Ok(installed) => {
@@ -287,7 +313,10 @@ pub async fn outdated() -> Result<()> {
     if updates.is_empty() {
         println!("All plugins are up to date.");
     } else {
-        println!("{:<20} {:<12} {:<12} {}", "Plugin", "Current", "Latest", "Source");
+        println!(
+            "{:<20} {:<12} {:<12} {}",
+            "Plugin", "Current", "Latest", "Source"
+        );
         println!("{}", "-".repeat(70));
         for update in &updates {
             println!(
@@ -517,7 +546,11 @@ fn validate_wasm_binary(path: &std::path::Path) -> Vec<String> {
     if !info_missing.is_empty() {
         issues.push(format!(
             "Optional exports not found (plugin may have limited interactivity): {}",
-            info_missing.iter().map(|s| format!("'{}'", s)).collect::<Vec<_>>().join(", ")
+            info_missing
+                .iter()
+                .map(|s| format!("'{}'", s))
+                .collect::<Vec<_>>()
+                .join(", ")
         ));
     }
 
@@ -531,12 +564,11 @@ fn resolve_wasm_path(widget_type: &str) -> Result<std::path::PathBuf> {
         let path = shellexpand::tilde(path);
         Ok(std::path::PathBuf::from(path.as_ref()))
     } else {
-        let plugin_name = widget_type
-            .split('/')
-            .last()
-            .unwrap_or(widget_type);
+        let plugin_name = widget_type.split('/').last().unwrap_or(widget_type);
         let plugins_dir = PluginInstaller::default_dir()?;
-        Ok(plugins_dir.join(plugin_name).join(format!("{}.wasm", plugin_name)))
+        Ok(plugins_dir
+            .join(plugin_name)
+            .join(format!("{}.wasm", plugin_name)))
     }
 }
 
@@ -594,7 +626,12 @@ pub async fn check(config_path: Option<&str>) -> Result<()> {
             match resolve_wasm_path(&entry.widget_type) {
                 Ok(wasm_path) => {
                     if !wasm_path.exists() {
-                        println!("  {:2}. {} ✗ WASM file not found: {}", i + 1, label, wasm_path.display());
+                        println!(
+                            "  {:2}. {} ✗ WASM file not found: {}",
+                            i + 1,
+                            label,
+                            wasm_path.display()
+                        );
                         errors += 1;
                         continue;
                     }
@@ -605,7 +642,13 @@ pub async fn check(config_path: Option<&str>) -> Result<()> {
                             let os = current_os();
                             if !manifest.plugin.os.iter().any(|s| s == os) {
                                 let supported = manifest.plugin.os.join(", ");
-                                println!("  {:2}. {} ⊘ Not available on {} (supports: {})", i + 1, label, os, supported);
+                                println!(
+                                    "  {:2}. {} ⊘ Not available on {} (supports: {})",
+                                    i + 1,
+                                    label,
+                                    os,
+                                    supported
+                                );
                                 warnings += 1;
                                 continue;
                             }
@@ -653,7 +696,10 @@ pub async fn check(config_path: Option<&str>) -> Result<()> {
     }
 
     println!();
-    println!("Results: {} ok, {} warnings, {} errors", ok, warnings, errors);
+    println!(
+        "Results: {} ok, {} warnings, {} errors",
+        ok, warnings, errors
+    );
     if errors > 0 {
         println!("Fix errors above before running `slate run`.");
     }
@@ -755,19 +801,28 @@ pub async fn docs(output_dir: Option<&str>) -> Result<()> {
                         };
                         let mut perms = Vec::new();
                         if !manifest.permissions.network.is_empty() {
-                            perms.push(format!("network: {}", manifest.permissions.network.join(", ")));
+                            perms.push(format!(
+                                "network: {}",
+                                manifest.permissions.network.join(", ")
+                            ));
                         }
                         if !manifest.permissions.exec.is_empty() {
                             perms.push(format!("exec: {}", manifest.permissions.exec.join(", ")));
                         }
                         if !manifest.permissions.secrets.is_empty() {
-                            perms.push(format!("secrets: {}", manifest.permissions.secrets.join(", ")));
+                            perms.push(format!(
+                                "secrets: {}",
+                                manifest.permissions.secrets.join(", ")
+                            ));
                         }
                         if manifest.permissions.storage == Some(true) {
                             perms.push("storage".to_string());
                         }
                         if !manifest.permissions.filesystem_read.is_empty() {
-                            perms.push(format!("filesystem_read: {}", manifest.permissions.filesystem_read.join(", ")));
+                            perms.push(format!(
+                                "filesystem_read: {}",
+                                manifest.permissions.filesystem_read.join(", ")
+                            ));
                         }
                         if manifest.permissions.raw_network == Some(true) {
                             perms.push("raw_network".to_string());
@@ -785,7 +840,11 @@ pub async fn docs(output_dir: Option<&str>) -> Result<()> {
                             description: p.description.clone(),
                             version: p.version.clone(),
                             author: p.author.clone(),
-                            language: if p.language.is_empty() { "rust".to_string() } else { p.language.clone() },
+                            language: if p.language.is_empty() {
+                                "rust".to_string()
+                            } else {
+                                p.language.clone()
+                            },
                             os: p.os.clone(),
                             permissions: perms,
                             kind: "plugin",
@@ -813,7 +872,11 @@ pub async fn docs(output_dir: Option<&str>) -> Result<()> {
             version: "built-in".to_string(),
             author: "Slate".to_string(),
             language: "rust (native)".to_string(),
-            os: vec!["macos".to_string(), "linux".to_string(), "windows".to_string()],
+            os: vec![
+                "macos".to_string(),
+                "linux".to_string(),
+                "windows".to_string(),
+            ],
             permissions: vec!["system (native access)".to_string()],
             kind: "builtin",
             config_example: config.to_string(),
@@ -829,12 +892,22 @@ pub async fn docs(output_dir: Option<&str>) -> Result<()> {
             let path = entry.path();
             if path.extension().and_then(|e| e.to_str()) == Some("lua") {
                 if let Ok(content) = std::fs::read_to_string(&path) {
-                    let name = extract_lua_field(&content, "name")
-                        .unwrap_or_else(|| path.file_stem().unwrap_or_default().to_string_lossy().to_string());
-                    let description = extract_lua_field(&content, "description").unwrap_or_default();
-                    let version = extract_lua_field(&content, "version").unwrap_or_else(|| "0.1.0".to_string());
+                    let name = extract_lua_field(&content, "name").unwrap_or_else(|| {
+                        path.file_stem()
+                            .unwrap_or_default()
+                            .to_string_lossy()
+                            .to_string()
+                    });
+                    let description =
+                        extract_lua_field(&content, "description").unwrap_or_default();
+                    let version = extract_lua_field(&content, "version")
+                        .unwrap_or_else(|| "0.1.0".to_string());
 
-                    let filename = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+                    let filename = path
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_string();
                     let config_example = format!(
                         "[[widget]]\ntype = \"lua:scripts/{}\"\nposition = {{ row = 0, col = 0 }}",
                         filename
@@ -846,11 +919,18 @@ pub async fn docs(output_dir: Option<&str>) -> Result<()> {
                         version,
                         author: "Slate Community".to_string(),
                         language: "lua".to_string(),
-                        os: vec!["macos".to_string(), "linux".to_string(), "windows".to_string()],
+                        os: vec![
+                            "macos".to_string(),
+                            "linux".to_string(),
+                            "windows".to_string(),
+                        ],
                         permissions: vec!["unsandboxed (full io access)".to_string()],
                         kind: "script",
                         config_example,
-                        install_hint: format!("Copy {} to your scripts/ folder and add to slate.toml.", filename),
+                        install_hint: format!(
+                            "Copy {} to your scripts/ folder and add to slate.toml.",
+                            filename
+                        ),
                     });
                 }
             }
@@ -865,7 +945,8 @@ pub async fn docs(output_dir: Option<&str>) -> Result<()> {
     std::fs::write(&out_file, &html)?;
 
     println!("Generated plugin docs: {}", out_file.display());
-    println!("  {} plugins, {} builtins, {} scripts",
+    println!(
+        "  {} plugins, {} builtins, {} scripts",
         plugins.iter().filter(|p| p.kind == "plugin").count(),
         plugins.iter().filter(|p| p.kind == "builtin").count(),
         plugins.iter().filter(|p| p.kind == "script").count(),
@@ -894,7 +975,11 @@ fn generate_config_example(name: &str, _kind: &str, manifest: &DocsManifest) -> 
                 _ => format!("\"...\""),
             };
             let comment = if !field.description.is_empty() {
-                format!("  # {}{}", field.description, if required { " (required)" } else { "" })
+                format!(
+                    "  # {}{}",
+                    field.description,
+                    if required { " (required)" } else { "" }
+                )
             } else if required {
                 "  # (required)".to_string()
             } else {
@@ -958,14 +1043,20 @@ fn generate_docs_html(plugins: &[PluginInfo]) -> String {
         let os_badges = if p.os.is_empty() {
             r#"<span class="os-badge all" title="All platforms">🌐 All</span>"#.to_string()
         } else {
-            p.os.iter().map(|os| {
-                match os.as_str() {
-                    "macos" => r#"<span class="os-badge macos" title="macOS">🍎 macOS</span>"#,
-                    "linux" => r#"<span class="os-badge linux" title="Linux">🐧 Linux</span>"#,
-                    "windows" => r#"<span class="os-badge windows" title="Windows">🪟 Windows</span>"#,
-                    other => return format!(r#"<span class="os-badge">{}</span>"#, other),
-                }.to_string()
-            }).collect::<Vec<_>>().join(" ")
+            p.os.iter()
+                .map(|os| {
+                    match os.as_str() {
+                        "macos" => r#"<span class="os-badge macos" title="macOS">🍎 macOS</span>"#,
+                        "linux" => r#"<span class="os-badge linux" title="Linux">🐧 Linux</span>"#,
+                        "windows" => {
+                            r#"<span class="os-badge windows" title="Windows">🪟 Windows</span>"#
+                        }
+                        other => return format!(r#"<span class="os-badge">{}</span>"#, other),
+                    }
+                    .to_string()
+                })
+                .collect::<Vec<_>>()
+                .join(" ")
         };
 
         let lang_class = match p.language.as_str() {
@@ -987,7 +1078,8 @@ fn generate_docs_html(plugins: &[PluginInfo]) -> String {
         let perms_html = if p.permissions.is_empty() {
             "<em>None required</em>".to_string()
         } else {
-            p.permissions.iter()
+            p.permissions
+                .iter()
                 .map(|perm| format!(r#"<span class="perm-tag">{}</span>"#, html_escape(perm)))
                 .collect::<Vec<_>>()
                 .join(" ")
@@ -1032,15 +1124,23 @@ fn generate_docs_html(plugins: &[PluginInfo]) -> String {
     // Generate the JS data array for detail modal
     let mut plugin_data = String::from("[\n");
     for (i, p) in plugins.iter().enumerate() {
-        if i > 0 { plugin_data.push_str(",\n"); }
+        if i > 0 {
+            plugin_data.push_str(",\n");
+        }
         let os_list = if p.os.is_empty() {
             "\"All platforms\"".to_string()
         } else {
-            p.os.iter().map(|o| format!("\"{}\"", o)).collect::<Vec<_>>().join(",")
+            p.os.iter()
+                .map(|o| format!("\"{}\"", o))
+                .collect::<Vec<_>>()
+                .join(",")
         };
-        let perms_list = p.permissions.iter()
+        let perms_list = p
+            .permissions
+            .iter()
             .map(|perm| format!("\"{}\"", js_escape(perm)))
-            .collect::<Vec<_>>().join(",");
+            .collect::<Vec<_>>()
+            .join(",");
         plugin_data.push_str(&format!(
             r#"  {{name:"{}",desc:"{}",version:"{}",author:"{}",lang:"{}",kind:"{}",os:[{}],perms:[{}],config:"{}",install:"{}"}}"#,
             js_escape(&p.name),
@@ -1057,7 +1157,8 @@ fn generate_docs_html(plugins: &[PluginInfo]) -> String {
     }
     plugin_data.push_str("\n]");
 
-    format!(r##"<!DOCTYPE html>
+    format!(
+        r##"<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -1441,22 +1542,25 @@ document.querySelectorAll('#kind-filters .filter-btn').forEach(btn => {{
 updateStats();
 </script>
 </body>
-</html>"##, cards = cards, plugin_data = plugin_data)
+</html>"##,
+        cards = cards,
+        plugin_data = plugin_data
+    )
 }
 
 fn html_escape(s: &str) -> String {
     s.replace('&', "&amp;")
-     .replace('<', "&lt;")
-     .replace('>', "&gt;")
-     .replace('"', "&quot;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }
 
 fn js_escape(s: &str) -> String {
     s.replace('\\', "\\\\")
-     .replace('"', "\\\"")
-     .replace('\n', "\\n")
-     .replace('\r', "")
-     .replace('\t', "\\t")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\r', "")
+        .replace('\t', "\\t")
 }
 
 /// Create a built-in widget by name.
@@ -1496,7 +1600,8 @@ impl slate_plugin_sdk::Widget for WelcomeWidget {
                 "Run `slate search` to find plugins.\n",
                 "Run `slate install` to install declared plugins.\n\n",
                 "Press 'q' to quit."
-            ).to_string(),
+            )
+            .to_string(),
             scrollable: false,
             wrap: true,
         }
@@ -1568,18 +1673,31 @@ impl slate_plugin_sdk::Widget for ResourceUsageWidget {
         };
 
         let mut pairs = vec![
-            ("CPU".to_string(), slate_plugin_sdk::Cell::colored(
-                format!("{:.1}%", cpu_usage), cpu_color
-            )),
-            ("Memory".to_string(), slate_plugin_sdk::Cell::colored(
-                format!("{:.1}/{:.1} GB ({:.0}%)", used_mem_gb, total_mem_gb, mem_pct), mem_color
-            )),
-            ("Swap".to_string(), slate_plugin_sdk::Cell::plain(
-                format!("{:.1}/{:.1} GB", used_swap_gb, total_swap_gb)
-            )),
-            ("CPUs".to_string(), slate_plugin_sdk::Cell::plain(
-                format!("{} cores", self.sys.cpus().len())
-            )),
+            (
+                "CPU".to_string(),
+                slate_plugin_sdk::Cell::colored(format!("{:.1}%", cpu_usage), cpu_color),
+            ),
+            (
+                "Memory".to_string(),
+                slate_plugin_sdk::Cell::colored(
+                    format!(
+                        "{:.1}/{:.1} GB ({:.0}%)",
+                        used_mem_gb, total_mem_gb, mem_pct
+                    ),
+                    mem_color,
+                ),
+            ),
+            (
+                "Swap".to_string(),
+                slate_plugin_sdk::Cell::plain(format!(
+                    "{:.1}/{:.1} GB",
+                    used_swap_gb, total_swap_gb
+                )),
+            ),
+            (
+                "CPUs".to_string(),
+                slate_plugin_sdk::Cell::plain(format!("{} cores", self.sys.cpus().len())),
+            ),
         ];
 
         // Add temperature readings if available
@@ -1591,10 +1709,10 @@ impl slate_plugin_sdk::Widget for ResourceUsageWidget {
             .collect();
         if !temps.is_empty() {
             // Show hottest component
-            if let Some((hottest, temp)) = temps.iter().max_by(|a, b| {
-                a.1.partial_cmp(&b.1)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            }) {
+            if let Some((hottest, temp)) = temps
+                .iter()
+                .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+            {
                 let temp = *temp;
                 let temp_color = if temp > 80.0 {
                     slate_plugin_sdk::Color::Red
@@ -1603,9 +1721,13 @@ impl slate_plugin_sdk::Widget for ResourceUsageWidget {
                 } else {
                     slate_plugin_sdk::Color::Green
                 };
-                pairs.push(("Temp".to_string(), slate_plugin_sdk::Cell::colored(
-                    format!("{:.0}°C ({})", temp, hottest.label()), temp_color
-                )));
+                pairs.push((
+                    "Temp".to_string(),
+                    slate_plugin_sdk::Cell::colored(
+                        format!("{:.0}°C ({})", temp, hottest.label()),
+                        temp_color,
+                    ),
+                ));
             }
         }
 
@@ -1642,30 +1764,45 @@ impl slate_plugin_sdk::Widget for PowerWidget {
         let state_color = match state.as_str() {
             "Charging" => slate_plugin_sdk::Color::Green,
             "Discharging" => {
-                if percent < 20 { slate_plugin_sdk::Color::Red }
-                else if percent < 50 { slate_plugin_sdk::Color::Yellow }
-                else { slate_plugin_sdk::Color::Green }
+                if percent < 20 {
+                    slate_plugin_sdk::Color::Red
+                } else if percent < 50 {
+                    slate_plugin_sdk::Color::Yellow
+                } else {
+                    slate_plugin_sdk::Color::Green
+                }
             }
             "Critical" | "Low" => slate_plugin_sdk::Color::Red,
             _ => slate_plugin_sdk::Color::White,
         };
 
-        let mut pairs = vec![
-            ("Status".to_string(), slate_plugin_sdk::Cell::colored(state.clone(), state_color)),
-        ];
+        let mut pairs = vec![(
+            "Status".to_string(),
+            slate_plugin_sdk::Cell::colored(state.clone(), state_color),
+        )];
 
         if has_battery {
-            let pct_color = if percent < 20 { slate_plugin_sdk::Color::Red }
-                else if percent < 50 { slate_plugin_sdk::Color::Yellow }
-                else { slate_plugin_sdk::Color::Green };
-            pairs.push(("Battery".to_string(), slate_plugin_sdk::Cell::colored(
-                format!("{}%", percent), pct_color
-            )));
+            let pct_color = if percent < 20 {
+                slate_plugin_sdk::Color::Red
+            } else if percent < 50 {
+                slate_plugin_sdk::Color::Yellow
+            } else {
+                slate_plugin_sdk::Color::Green
+            };
+            pairs.push((
+                "Battery".to_string(),
+                slate_plugin_sdk::Cell::colored(format!("{}%", percent), pct_color),
+            ));
         }
 
-        pairs.push(("Source".to_string(), slate_plugin_sdk::Cell::plain(
-            if has_battery && state == "Discharging" { "Battery".to_string() } else { "AC Power".to_string() }
-        )));
+        pairs.push((
+            "Source".to_string(),
+            slate_plugin_sdk::Cell::plain(if has_battery && state == "Discharging" {
+                "Battery".to_string()
+            } else {
+                "AC Power".to_string()
+            }),
+        ));
 
         WidgetContent::KeyValue { pairs }
     }
@@ -1707,13 +1844,18 @@ fn get_power_info() -> (bool, String, u64) {
             for line in text.lines() {
                 if line.contains("InternalBattery") {
                     let parts: Vec<&str> = line.split_whitespace().collect();
-                    let percent = parts.iter()
+                    let percent = parts
+                        .iter()
                         .find(|p| p.ends_with("%;"))
                         .map(|p| p.trim_end_matches("%;").parse::<u64>().unwrap_or(0))
                         .unwrap_or(0);
-                    let state = if line.contains("charging") { "Charging" }
-                        else if line.contains("discharging") { "Discharging" }
-                        else { "Fully Charged" };
+                    let state = if line.contains("charging") {
+                        "Charging"
+                    } else if line.contains("discharging") {
+                        "Discharging"
+                    } else {
+                        "Fully Charged"
+                    };
                     return (true, state.to_string(), percent);
                 }
             }
@@ -1727,7 +1869,10 @@ fn get_power_info() -> (bool, String, u64) {
             .output();
         if let Ok(out) = output {
             if out.status.success() {
-                let percent: u64 = String::from_utf8_lossy(&out.stdout).trim().parse().unwrap_or(0);
+                let percent: u64 = String::from_utf8_lossy(&out.stdout)
+                    .trim()
+                    .parse()
+                    .unwrap_or(0);
                 let status_out = Command::new("cat")
                     .arg("/sys/class/power_supply/BAT0/status")
                     .output();
@@ -1767,16 +1912,21 @@ impl slate_plugin_sdk::Widget for FirewallWidget {
     fn refresh(&mut self) -> WidgetContent {
         let (platform, enabled, rules) = get_firewall_info();
 
-        let status_color = if enabled { slate_plugin_sdk::Color::Green } else { slate_plugin_sdk::Color::Red };
-        let mut items = vec![
-            slate_plugin_sdk::ListItem {
-                id: "status".to_string(),
-                title: format!("Firewall: {}", if enabled { "Enabled" } else { "Disabled" }),
-                subtitle: Some(format!("Platform: {}", platform)),
-                icon: None,
-                style: slate_plugin_sdk::CellStyle { fg: Some(status_color), ..Default::default() },
-            }
-        ];
+        let status_color = if enabled {
+            slate_plugin_sdk::Color::Green
+        } else {
+            slate_plugin_sdk::Color::Red
+        };
+        let mut items = vec![slate_plugin_sdk::ListItem {
+            id: "status".to_string(),
+            title: format!("Firewall: {}", if enabled { "Enabled" } else { "Disabled" }),
+            subtitle: Some(format!("Platform: {}", platform)),
+            icon: None,
+            style: slate_plugin_sdk::CellStyle {
+                fg: Some(status_color),
+                ..Default::default()
+            },
+        }];
 
         for (i, rule) in rules.iter().enumerate() {
             items.push(slate_plugin_sdk::ListItem {
@@ -1809,7 +1959,14 @@ fn get_firewall_info() -> (String, bool, Vec<String>) {
         };
 
         let rules_output = Command::new("netsh")
-            .args(["advfirewall", "firewall", "show", "rule", "name=all", "dir=in"])
+            .args([
+                "advfirewall",
+                "firewall",
+                "show",
+                "rule",
+                "name=all",
+                "dir=in",
+            ])
             .output();
         let mut rules = Vec::new();
         if let Ok(out) = rules_output {
@@ -1831,7 +1988,9 @@ fn get_firewall_info() -> (String, bool, Vec<String>) {
                 } else if trimmed.starts_with("LocalPort:") {
                     port = trimmed.trim_start_matches("LocalPort:").trim().to_string();
                 }
-                if rules.len() >= 15 { break; }
+                if rules.len() >= 15 {
+                    break;
+                }
             }
             if !name.is_empty() && rules.len() < 15 {
                 rules.push(format!("{} {} IN/{}", action.to_uppercase(), name, port));
@@ -1846,16 +2005,24 @@ fn get_firewall_info() -> (String, bool, Vec<String>) {
         if let Ok(out) = output {
             let text = String::from_utf8_lossy(&out.stdout);
             let enabled = text.contains("Status: active");
-            let rules: Vec<String> = text.lines().skip(4).take(15)
+            let rules: Vec<String> = text
+                .lines()
+                .skip(4)
+                .take(15)
                 .map(|l| l.trim().to_string())
                 .filter(|l| !l.is_empty())
                 .collect();
             return ("Linux (ufw)".to_string(), enabled, rules);
         }
-        let ipt = Command::new("iptables").args(["-L", "-n", "--line-numbers"]).output();
+        let ipt = Command::new("iptables")
+            .args(["-L", "-n", "--line-numbers"])
+            .output();
         if let Ok(out) = ipt {
             let text = String::from_utf8_lossy(&out.stdout);
-            let rules: Vec<String> = text.lines().skip(2).take(15)
+            let rules: Vec<String> = text
+                .lines()
+                .skip(2)
+                .take(15)
                 .map(|l| l.trim().to_string())
                 .filter(|l| !l.is_empty())
                 .collect();
@@ -1867,7 +2034,9 @@ fn get_firewall_info() -> (String, bool, Vec<String>) {
     {
         let output = Command::new("pfctl").args(["-sr"]).output();
         let rules: Vec<String> = if let Ok(out) = output {
-            String::from_utf8_lossy(&out.stdout).lines().take(15)
+            String::from_utf8_lossy(&out.stdout)
+                .lines()
+                .take(15)
                 .map(|l| l.trim().to_string())
                 .filter(|l| !l.is_empty())
                 .collect()
@@ -1986,11 +2155,15 @@ struct VcsWidget {
 
 impl VcsWidget {
     fn new(config: WidgetConfig) -> Self {
-        let engine = config.settings.get("engine")
+        let engine = config
+            .settings
+            .get("engine")
             .and_then(|v| v.as_str())
             .unwrap_or("git")
             .to_string();
-        let repo_path = config.settings.get("repo_path")
+        let repo_path = config
+            .settings
+            .get("repo_path")
             .and_then(|v| v.as_str())
             .unwrap_or(".")
             .to_string();
@@ -2056,10 +2229,18 @@ impl slate_plugin_sdk::Widget for VcsWidget {
         }
 
         let mut summary_parts = Vec::new();
-        if modified > 0 { summary_parts.push(format!("{modified} modified")); }
-        if added > 0 { summary_parts.push(format!("{added} added")); }
-        if deleted > 0 { summary_parts.push(format!("{deleted} deleted")); }
-        if untracked > 0 { summary_parts.push(format!("{untracked} untracked")); }
+        if modified > 0 {
+            summary_parts.push(format!("{modified} modified"));
+        }
+        if added > 0 {
+            summary_parts.push(format!("{added} added"));
+        }
+        if deleted > 0 {
+            summary_parts.push(format!("{deleted} deleted"));
+        }
+        if untracked > 0 {
+            summary_parts.push(format!("{untracked} untracked"));
+        }
 
         let status_summary = if summary_parts.is_empty() {
             "clean".to_string()
@@ -2074,15 +2255,30 @@ impl slate_plugin_sdk::Widget for VcsWidget {
         };
 
         let mut pairs = vec![
-            ("Engine".to_string(), slate_plugin_sdk::Cell::plain(self.engine.clone())),
-            ("Branch".to_string(), slate_plugin_sdk::Cell::plain(
-                if branch.is_empty() { "(detached)".to_string() } else { branch }
-            )),
-            ("Status".to_string(), slate_plugin_sdk::Cell::colored(status_summary, status_color)),
+            (
+                "Engine".to_string(),
+                slate_plugin_sdk::Cell::plain(self.engine.clone()),
+            ),
+            (
+                "Branch".to_string(),
+                slate_plugin_sdk::Cell::plain(if branch.is_empty() {
+                    "(detached)".to_string()
+                } else {
+                    branch
+                }),
+            ),
+            (
+                "Status".to_string(),
+                slate_plugin_sdk::Cell::colored(status_summary, status_color),
+            ),
         ];
 
         for (i, (hash, message, author, date)) in log_entries.iter().take(5).enumerate() {
-            let key = if i == 0 { "Last commit".to_string() } else { format!("Recent {}", i + 1) };
+            let key = if i == 0 {
+                "Last commit".to_string()
+            } else {
+                format!("Recent {}", i + 1)
+            };
             let mut val = format!("{} {}", hash, message);
             if !author.is_empty() || !date.is_empty() {
                 let extra: Vec<&str> = [author.as_str(), date.as_str()]
@@ -2096,7 +2292,10 @@ impl slate_plugin_sdk::Widget for VcsWidget {
         }
 
         if log_entries.is_empty() {
-            pairs.push(("Last commit".to_string(), slate_plugin_sdk::Cell::plain("No commits available".to_string())));
+            pairs.push((
+                "Last commit".to_string(),
+                slate_plugin_sdk::Cell::plain("No commits available".to_string()),
+            ));
         }
 
         WidgetContent::KeyValue { pairs }
@@ -2104,7 +2303,13 @@ impl slate_plugin_sdk::Widget for VcsWidget {
 }
 
 /// Returns (branch, status_entries[(state, file)], log_entries[(hash, message, author, date)])
-fn get_git_info(repo_path: &str) -> (String, Vec<(String, String)>, Vec<(String, String, String, String)>) {
+fn get_git_info(
+    repo_path: &str,
+) -> (
+    String,
+    Vec<(String, String)>,
+    Vec<(String, String, String, String)>,
+) {
     let branch = Command::new("git")
         .args(["rev-parse", "--abbrev-ref", "HEAD"])
         .current_dir(repo_path)
@@ -2117,16 +2322,20 @@ fn get_git_info(repo_path: &str) -> (String, Vec<(String, String)>, Vec<(String,
         .current_dir(repo_path)
         .output()
         .map(|o| {
-            String::from_utf8_lossy(&o.stdout).lines().filter(|l| l.len() >= 3).map(|line| {
-                let state = match &line[..2] {
-                    " M" | "M " | "MM" => "modified",
-                    "A " | "AM" => "added",
-                    " D" | "D " => "deleted",
-                    "??" => "untracked",
-                    _ => "other",
-                };
-                (state.to_string(), line[3..].to_string())
-            }).collect()
+            String::from_utf8_lossy(&o.stdout)
+                .lines()
+                .filter(|l| l.len() >= 3)
+                .map(|line| {
+                    let state = match &line[..2] {
+                        " M" | "M " | "MM" => "modified",
+                        "A " | "AM" => "added",
+                        " D" | "D " => "deleted",
+                        "??" => "untracked",
+                        _ => "other",
+                    };
+                    (state.to_string(), line[3..].to_string())
+                })
+                .collect()
         })
         .unwrap_or_default();
 
@@ -2135,22 +2344,32 @@ fn get_git_info(repo_path: &str) -> (String, Vec<(String, String)>, Vec<(String,
         .current_dir(repo_path)
         .output()
         .map(|o| {
-            String::from_utf8_lossy(&o.stdout).lines().filter(|l| !l.is_empty()).map(|line| {
-                let parts: Vec<&str> = line.splitn(4, '|').collect();
-                (
-                    parts.first().unwrap_or(&"").to_string(),
-                    parts.get(1).unwrap_or(&"").to_string(),
-                    parts.get(2).unwrap_or(&"").to_string(),
-                    parts.get(3).unwrap_or(&"").to_string(),
-                )
-            }).collect()
+            String::from_utf8_lossy(&o.stdout)
+                .lines()
+                .filter(|l| !l.is_empty())
+                .map(|line| {
+                    let parts: Vec<&str> = line.splitn(4, '|').collect();
+                    (
+                        parts.first().unwrap_or(&"").to_string(),
+                        parts.get(1).unwrap_or(&"").to_string(),
+                        parts.get(2).unwrap_or(&"").to_string(),
+                        parts.get(3).unwrap_or(&"").to_string(),
+                    )
+                })
+                .collect()
         })
         .unwrap_or_default();
 
     (branch, status, log)
 }
 
-fn get_hg_info(repo_path: &str) -> (String, Vec<(String, String)>, Vec<(String, String, String, String)>) {
+fn get_hg_info(
+    repo_path: &str,
+) -> (
+    String,
+    Vec<(String, String)>,
+    Vec<(String, String, String, String)>,
+) {
     let branch = Command::new("hg")
         .args(["branch"])
         .current_dir(repo_path)
@@ -2163,33 +2382,47 @@ fn get_hg_info(repo_path: &str) -> (String, Vec<(String, String)>, Vec<(String, 
         .current_dir(repo_path)
         .output()
         .map(|o| {
-            String::from_utf8_lossy(&o.stdout).lines().filter(|l| l.len() >= 2).map(|line| {
-                let state = match line.chars().next().unwrap_or(' ') {
-                    'M' => "modified",
-                    'A' => "added",
-                    'R' => "deleted",
-                    '?' => "untracked",
-                    _ => "other",
-                };
-                (state.to_string(), line.get(2..).unwrap_or("").to_string())
-            }).collect()
+            String::from_utf8_lossy(&o.stdout)
+                .lines()
+                .filter(|l| l.len() >= 2)
+                .map(|line| {
+                    let state = match line.chars().next().unwrap_or(' ') {
+                        'M' => "modified",
+                        'A' => "added",
+                        'R' => "deleted",
+                        '?' => "untracked",
+                        _ => "other",
+                    };
+                    (state.to_string(), line.get(2..).unwrap_or("").to_string())
+                })
+                .collect()
         })
         .unwrap_or_default();
 
     let log: Vec<(String, String, String, String)> = Command::new("hg")
-        .args(["log", "-l", "10", "--template", "{short(node)}|{desc|firstline}|{author|user}|{date|age}\n"])
+        .args([
+            "log",
+            "-l",
+            "10",
+            "--template",
+            "{short(node)}|{desc|firstline}|{author|user}|{date|age}\n",
+        ])
         .current_dir(repo_path)
         .output()
         .map(|o| {
-            String::from_utf8_lossy(&o.stdout).lines().filter(|l| !l.is_empty()).map(|line| {
-                let parts: Vec<&str> = line.splitn(4, '|').collect();
-                (
-                    parts.first().unwrap_or(&"").to_string(),
-                    parts.get(1).unwrap_or(&"").to_string(),
-                    parts.get(2).unwrap_or(&"").to_string(),
-                    parts.get(3).unwrap_or(&"").to_string(),
-                )
-            }).collect()
+            String::from_utf8_lossy(&o.stdout)
+                .lines()
+                .filter(|l| !l.is_empty())
+                .map(|line| {
+                    let parts: Vec<&str> = line.splitn(4, '|').collect();
+                    (
+                        parts.first().unwrap_or(&"").to_string(),
+                        parts.get(1).unwrap_or(&"").to_string(),
+                        parts.get(2).unwrap_or(&"").to_string(),
+                        parts.get(3).unwrap_or(&"").to_string(),
+                    )
+                })
+                .collect()
         })
         .unwrap_or_default();
 
@@ -2202,9 +2435,7 @@ fn toml_to_json(value: &toml::Value) -> serde_json::Value {
         toml::Value::Integer(i) => serde_json::json!(*i),
         toml::Value::Float(f) => serde_json::json!(*f),
         toml::Value::Boolean(b) => serde_json::Value::Bool(*b),
-        toml::Value::Array(arr) => {
-            serde_json::Value::Array(arr.iter().map(toml_to_json).collect())
-        }
+        toml::Value::Array(arr) => serde_json::Value::Array(arr.iter().map(toml_to_json).collect()),
         toml::Value::Table(table) => {
             let map: serde_json::Map<String, serde_json::Value> = table
                 .iter()
@@ -2240,7 +2471,10 @@ mod tests {
             serde_json::json!("value")
         );
         assert_eq!(toml_to_json(&toml::Value::Integer(7)), serde_json::json!(7));
-        assert_eq!(toml_to_json(&toml::Value::Float(2.5)), serde_json::json!(2.5));
+        assert_eq!(
+            toml_to_json(&toml::Value::Float(2.5)),
+            serde_json::json!(2.5)
+        );
         assert_eq!(
             toml_to_json(&toml::Value::Boolean(false)),
             serde_json::json!(false)
@@ -2276,6 +2510,107 @@ mod tests {
                 assert!(pairs.iter().all(|(_, cell)| !cell.text.is_empty()));
             }
             other => panic!("expected key-value content, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn extract_lua_field_finds_string_values() {
+        let source = "name = \"My Widget\"\ndescription = \"Does stuff\"\nversion = \"2.0.0\"";
+        assert_eq!(
+            extract_lua_field(source, "name"),
+            Some("My Widget".to_string())
+        );
+        assert_eq!(
+            extract_lua_field(source, "description"),
+            Some("Does stuff".to_string())
+        );
+        assert_eq!(
+            extract_lua_field(source, "version"),
+            Some("2.0.0".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_lua_field_returns_none_for_missing() {
+        let source = "name = \"Hello\"\nfunction refresh() end";
+        assert_eq!(extract_lua_field(source, "version"), None);
+        assert_eq!(extract_lua_field(source, "missing"), None);
+    }
+
+    #[test]
+    fn generate_config_example_uses_config_section() {
+        let manifest = DocsManifest {
+            plugin: DocsManifestPlugin {
+                name: "test".to_string(),
+                ..Default::default()
+            },
+            metadata: DocsManifestPlugin::default(),
+            permissions: DocsManifestPermissions::default(),
+            config: [
+                (
+                    "url".to_string(),
+                    DocsConfigField {
+                        field_type: "string".to_string(),
+                        required: Some(true),
+                        description: "The API URL".to_string(),
+                        default: None,
+                    },
+                ),
+                (
+                    "count".to_string(),
+                    DocsConfigField {
+                        field_type: "integer".to_string(),
+                        required: Some(false),
+                        description: "Number of items".to_string(),
+                        default: None,
+                    },
+                ),
+            ]
+            .into_iter()
+            .collect(),
+        };
+
+        let example = generate_config_example("test", "plugin", &manifest);
+        assert!(example.contains("[[widget]]"));
+        assert!(example.contains("type = \"github.com/slate-community/slate-test\""));
+        assert!(example.contains("# Configuration"));
+        assert!(example.contains("(required)"));
+        assert!(example.contains("The API URL"));
+    }
+
+    #[test]
+    fn generate_config_example_falls_back_to_permissions() {
+        let manifest = DocsManifest {
+            plugin: DocsManifestPlugin::default(),
+            metadata: DocsManifestPlugin::default(),
+            permissions: DocsManifestPermissions {
+                secrets: vec!["token".to_string()],
+                ..Default::default()
+            },
+            config: std::collections::HashMap::new(),
+        };
+
+        let example = generate_config_example("github", "plugin", &manifest);
+        assert!(example.contains("token = \"${TOKEN}\""));
+    }
+
+    #[test]
+    fn error_widget_displays_error_message() {
+        let mut widget = ErrorWidget {
+            name: "test".to_string(),
+            error: "something broke".to_string(),
+        };
+        let meta = widget.metadata();
+        assert_eq!(meta.name, "test");
+        assert_eq!(meta.description, "Failed to load");
+
+        let content = widget.refresh();
+        match content {
+            WidgetContent::Text { content, .. } => {
+                assert!(content.contains("something broke"));
+                assert!(content.contains("Plugin load error"));
+            }
+            other => panic!("expected text, got {:?}", other),
         }
     }
 }

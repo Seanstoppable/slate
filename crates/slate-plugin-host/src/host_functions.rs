@@ -29,10 +29,7 @@ pub struct HttpResponse {
 }
 
 /// Execute an HTTP request, checking permissions first.
-pub async fn http_request(
-    guard: &PermissionGuard,
-    req: HttpRequest,
-) -> Result<HttpResponse> {
+pub async fn http_request(guard: &PermissionGuard, req: HttpRequest) -> Result<HttpResponse> {
     // Extract host from URL for permission check
     let host = extract_host(&req.url)?;
     guard.check_network(&host)?;
