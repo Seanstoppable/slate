@@ -87,8 +87,6 @@ Environment variable interpolation: `token = "${GITHUB_TOKEN}"`
 
 | Name | Config Type | Output |
 |------|-------------|--------|
-| clock | `builtin:clock` | KeyValue (time, date, timezone, unix) |
-| digital_clock | `builtin:digital_clock` | Text (ASCII art time) |
 | resource_usage | `builtin:resource_usage` | KeyValue (CPU, memory, swap, temp) |
 | power | `builtin:power` | KeyValue (battery, charge state) |
 | firewall | `builtin:firewall` | KeyValue (status, rule count) |
@@ -99,12 +97,14 @@ Environment variable interpolation: `token = "${GITHUB_TOKEN}"`
 
 | Plugin | Language | Permissions |
 |--------|----------|-------------|
-| clock | Rust | None |
-| ipinfo | Rust | `network: [ipinfo.io]` |
+| clock | Rust | None (uses WASI clock) |
+| ipinfo | Rust | `network: [ip-api.com]` |
 | hackernews | Rust | `network: [hacker-news.firebaseio.com]` |
 | github | Rust | `network: [api.github.com]`, `secrets: [token]` |
 | weather | Rust | `network: [api.openweathermap.org]`, `secrets: [api_key]` |
 | feedreader | Rust | `network: ["*"]` |
+| docker | Rust | `exec: [docker]` |
+| lunarphase | Rust | None |
 | status-pages | TypeScript | `network: [www.githubstatus.com, status.slack.com]` |
 | brew-outdated | Go (TinyGo) | `exec: [brew]` |
 | istats | Zig | `exec: [istats]` |
