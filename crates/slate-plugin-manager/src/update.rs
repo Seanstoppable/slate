@@ -287,6 +287,33 @@ mod tests {
         assert!(updates.is_empty());
     }
 
+    #[tokio::test]
+    async fn check_outdated_warn_branch_handles_invalid_request_urls() {
+        let checker = UpdateChecker::new(PluginInstaller::new(PathBuf::from("plugins")));
+        let mut lockfile = Lockfile::default();
+        lockfile.lock(
+            "broken",
+            LockedPlugin {
+                source: "github.com/owner/bad repo".to_string(),
+                version: "0.0.0".to_string(),
+                sha256: "hash".to_string(),
+                permissions_hash: None,
+            },
+        );
+        lockfile.lock(
+            "local-only",
+            LockedPlugin {
+                source: "invalid".to_string(),
+                version: "1.0.0".to_string(),
+                sha256: "hash".to_string(),
+                permissions_hash: None,
+            },
+        );
+
+        let updates = checker.check_outdated(&lockfile).await.unwrap();
+        assert!(updates.is_empty());
+    }
+
     #[test]
     fn helper_functions_parse_sources_and_tags() {
         assert_eq!(

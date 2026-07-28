@@ -1294,8 +1294,11 @@ position = {{ row = 0, col = 0 }}
 
     #[test]
     fn load_widget_or_error_uses_repo_name_for_uninstalled_github_plugins() {
+        let _lock = env_lock().lock().unwrap_or_else(|e| e.into_inner());
+        let dir = tempdir().unwrap();
+        let _env = EnvGuard::redirect_to(dir.path());
         let entry = WidgetEntry {
-            widget_type: "github.com/example/slate-clock".to_string(),
+            widget_type: "github.com/example/slate-weather".to_string(),
             position: Position {
                 row: 0,
                 col: 0,
@@ -1307,7 +1310,7 @@ position = {{ row = 0, col = 0 }}
         };
 
         let mut widget = load_widget_or_error(&entry, widget_config());
-        assert_eq!(widget.metadata().name, "slate-clock");
+        assert_eq!(widget.metadata().name, "slate-weather");
         match widget.refresh() {
             WidgetContent::Text { content, .. } => {
                 assert!(content.contains("Plugin load error"));
@@ -1442,6 +1445,9 @@ position = {{ row = 0, col = 0 }}
 
     #[test]
     fn try_load_widget_rejects_uninstalled_github_plugins() {
+        let _lock = env_lock().lock().unwrap_or_else(|e| e.into_inner());
+        let dir = tempdir().unwrap();
+        let _env = EnvGuard::redirect_to(dir.path());
         let entry = WidgetEntry {
             widget_type: "github.com/example/slate-weather".to_string(),
             position: Position {
@@ -1459,6 +1465,82 @@ position = {{ row = 0, col = 0 }}
             Err(error) => error,
         };
         assert!(error.to_string().contains("not installed"));
+    }
+
+    #[test]
+    fn try_load_widget_loads_local_stub_wasm_plugin() {
+        let dir = tempdir().unwrap();
+        let wasm_path = dir.path().join("stub.wasm");
+        write_wasm(
+            &wasm_path,
+            r#"
+                (module
+                    (memory (export "memory") 1)
+                    (func (export "metadata") (result i32) (i32.const 0))
+                    (func (export "refresh") (result i32) (i32.const 0))
+                )
+            "#,
+        );
+
+        let entry = WidgetEntry {
+            widget_type: format!("wasm:{}", wasm_path.display()),
+            position: Position {
+                row: 0,
+                col: 0,
+                row_span: 1,
+                col_span: 1,
+            },
+            refresh_interval: None,
+            settings: Default::default(),
+        };
+
+        let mut widget = try_load_widget(&entry, widget_config()).unwrap();
+        assert_eq!(widget.metadata().name, "stub");
+        match widget.refresh() {
+            WidgetContent::Text { content, .. } => assert_eq!(content, ""),
+            other => panic!("expected text content, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn try_load_widget_loads_installed_github_stub_wasm_plugin() {
+        let _lock = env_lock().lock().unwrap_or_else(|e| e.into_inner());
+        let dir = tempdir().unwrap();
+        let _env = EnvGuard::redirect_to(dir.path());
+
+        let plugin_name = "slate-clock";
+        let plugin_dir = PluginInstaller::default_dir().unwrap().join(plugin_name);
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+        let wasm_path = plugin_dir.join(format!("{plugin_name}.wasm"));
+        write_wasm(
+            &wasm_path,
+            r#"
+                (module
+                    (memory (export "memory") 1)
+                    (func (export "metadata") (result i32) (i32.const 0))
+                    (func (export "refresh") (result i32) (i32.const 0))
+                )
+            "#,
+        );
+
+        let entry = WidgetEntry {
+            widget_type: format!("github.com/example/{plugin_name}"),
+            position: Position {
+                row: 0,
+                col: 0,
+                row_span: 1,
+                col_span: 1,
+            },
+            refresh_interval: None,
+            settings: Default::default(),
+        };
+
+        let mut widget = try_load_widget(&entry, widget_config()).unwrap();
+        assert_eq!(widget.metadata().name, plugin_name);
+        match widget.refresh() {
+            WidgetContent::Text { content, .. } => assert_eq!(content, ""),
+            other => panic!("expected text content, got {other:?}"),
+        }
     }
 
     #[tokio::test]
@@ -1565,6 +1647,73 @@ position = {{ row = 3, col = 1 }}
         .unwrap();
 
         check(Some(config_path.to_str().unwrap())).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn check_uses_default_config_and_handles_wasm_success_and_extism_failure() {
+        let _lock = env_lock().lock().unwrap_or_else(|e| e.into_inner());
+        let dir = tempdir().unwrap();
+        let _env = EnvGuard::redirect_to(dir.path());
+        let config_path = SlateConfig::default_path().unwrap();
+        let _restore = FileRestoreGuard::new(config_path.clone());
+
+        let ok_wasm = dir.path().join("ok.wasm");
+        write_wasm(
+            &ok_wasm,
+            r#"
+                (module
+                    (memory (export "memory") 1)
+                    (func (export "metadata") (result i32) (i32.const 0))
+                    (func (export "refresh") (result i32) (i32.const 0))
+                )
+            "#,
+        );
+
+        let failing_wasm = dir.path().join("failing.wasm");
+        write_wasm(
+            &failing_wasm,
+            r#"
+                (module
+                    (import "env" "missing_host" (func))
+                    (memory (export "memory") 1)
+                    (func (export "metadata") (result i32) (i32.const 0))
+                    (func (export "refresh") (result i32) (i32.const 0))
+                )
+            "#,
+        );
+
+        write_default_config(&format!(
+            r#"
+[[widget]]
+type = "wasm:{}"
+position = {{ row = 0, col = 0 }}
+
+[[widget]]
+type = "wasm:{}"
+position = {{ row = 0, col = 1 }}
+"#,
+            escape_path(&ok_wasm),
+            escape_path(&failing_wasm)
+        ));
+
+        check(None).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn list_handles_empty_and_unlocked_plugins_in_default_directory() {
+        let _lock = env_lock().lock().unwrap_or_else(|e| e.into_inner());
+        let dir = tempdir().unwrap();
+        let _env = EnvGuard::redirect_to(dir.path());
+        let _restore = FileRestoreGuard::new(Lockfile::default_path().unwrap());
+        Lockfile::default().save_default().unwrap();
+
+        list().await.unwrap();
+
+        let plugin_name = "orphan-plugin";
+        let plugins_dir = PluginInstaller::default_dir().unwrap();
+        std::fs::create_dir_all(plugins_dir.join(plugin_name)).unwrap();
+
+        list().await.unwrap();
     }
 
     #[tokio::test]

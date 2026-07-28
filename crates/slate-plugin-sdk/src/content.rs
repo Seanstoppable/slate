@@ -169,6 +169,17 @@ mod tests {
     }
 
     #[test]
+    fn list_len_returns_zero_for_non_list_content() {
+        let content = WidgetContent::Text {
+            content: "hello".to_string(),
+            scrollable: false,
+            wrap: true,
+        };
+
+        assert_eq!(content.list_len(), 0);
+    }
+
+    #[test]
     fn selectable_list_only_returns_true_for_selectable_lists() {
         let variants = vec![
             WidgetContent::Text {

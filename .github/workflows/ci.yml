@@ -62,7 +62,7 @@ jobs:
         run: |
           COVERAGE=$(cargo tarpaulin --workspace --skip-clean 2>&1 | grep -oP '[\d.]+(?=% coverage)')
           echo "Coverage: ${COVERAGE}%"
-          THRESHOLD=75
+          THRESHOLD=85
           if [ "$(echo "$COVERAGE < $THRESHOLD" | bc -l)" -eq 1 ]; then
             echo "::error::Coverage ${COVERAGE}% is below threshold ${THRESHOLD}%"
             exit 1
