@@ -5,7 +5,7 @@ tags = ["dev", "macos", "packages"]
 version = "0.1.0"
 author = "Slate Community"
 language = "go"
-os = ["macos", "linux"]
+os = ["linux", "macos"]
 
 [permissions]
 exec = ["brew"]

@@ -239,7 +239,7 @@ pub async fn docs(output_dir: Option<&str>) -> Result<()> {
         }
     }
 
-    plugins.sort_by(|a, b| a.name.cmp(&b.name));
+    plugins.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
 
     let html = generate_docs_html(&plugins)?;
     let out_file = out.join("index.html");

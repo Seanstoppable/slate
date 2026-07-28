@@ -5,7 +5,7 @@ tags = ["utility", "weather"]
 version = "0.1.0"
 author = "Slate Community"
 language = "assemblyscript"
-os = ["macos", "linux", "windows"]
+os = ["linux", "macos", "windows"]
 
 [permissions]
 exec = ["wego"]

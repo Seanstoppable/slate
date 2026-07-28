@@ -32,7 +32,7 @@ Modules that have been fully implemented in Slate.
 | textfile | Builtin | `logfile` | — | No | Display/tail any text file | |
 | weatherservices | Plugin | `weather` | network | Yes | Weather forecast | OpenWeatherMap API |
 
-## Planned (43)
+## Planned (47)
 
 Modules that are feasible but not yet implemented.
 
@@ -45,7 +45,10 @@ Modules that are feasible but not yet implemented.
 | bamboohr | network | Yes | HR time-off/directory | |
 | buildkite | network | Yes | CI build status | |
 | circleci | network | Yes | CI pipeline status | |
-| cryptocurrency | network | No | Crypto price ticker | Public APIs available |
+| cryptocurrency/bittrex | network | Yes | Bittrex exchange prices | |
+| cryptocurrency/blockfolio | network | Yes | Blockfolio portfolio tracker | |
+| cryptocurrency/cryptolive | network | No | Live crypto prices | Public APIs available |
+| cryptocurrency/mempool | network | No | Bitcoin mempool stats | Public API |
 | datadog | network | Yes | Monitoring dashboard | |
 | digitalocean | network | Yes | Cloud droplet status | |
 | football | network | Yes | Sports scores | |
@@ -71,7 +74,8 @@ Modules that are feasible but not yet implemented.
 | pocket | network | Yes (OAuth) | Saved articles list | Needs OAuth flow |
 | rollbar | network | Yes | Error tracking dashboard | |
 | steam | network | Yes | Game library/friends | |
-| stocks | network | Yes | Stock price ticker | Most APIs require keys |
+| stocks/finnhub | network | Yes | Stock prices via Finnhub API | |
+| stocks/yfinance | network | No | Stock prices via Yahoo Finance | Public API |
 | todo | storage | No | Local todo list | Needs KV storage |
 | todo_plus | storage | No | Enhanced todo with priorities | |
 | transmission | network | Yes | Torrent client status | |
@@ -105,16 +109,16 @@ Modules that are deprecated, internal, or not applicable.
 | Category | Count |
 |----------|-------|
 | ✅ Migrated | 22 |
-| 🔲 Planned | 41 |
+| 🔲 Planned | 47 |
 | ➖ Not Planned | 10 |
-| **Total** | 73 |
+| **Total** | 79 |
 
 ## Slate-Only Features (not in wtfutil)
 
 | Plugin/Feature | Type | Permissions Needed | Needs API Token | Description |
 |----------------|------|--------------------|-----------------| ------------|
-| `ipinfo` | Plugin | network | No | Public IP geolocation (ip-api.com) |
 | `brew-outdated` | Plugin | exec | No | Outdated Homebrew packages |
+| `ipinfo` | Plugin | network | No | Public IP geolocation (ip-api.com) |
 | `istats` | Plugin | exec | No | macOS hardware temps via iStats |
 | `wego` | Plugin | exec | No | Weather via wego CLI |
 
