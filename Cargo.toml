@@ -15,6 +15,7 @@ exclude = [
     "plugins/hackernews",
     "plugins/github",
     "plugins/lunarphase",
+    "plugins/pihole",
     "plugins/vcs",
 ]
 resolver = "2"
