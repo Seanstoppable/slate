@@ -98,7 +98,11 @@ impl PluginStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::permissions::PermissionGuard;
     use serde_json::json;
+    use slate_plugin_sdk::Permissions;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
 
     #[test]
     fn plugin_store_starts_empty() {
@@ -210,5 +214,78 @@ mod tests {
             Some("application/json")
         );
         assert_eq!(request.body.as_deref(), Some("{\"ok\":true}"));
+    }
+
+    #[tokio::test]
+    async fn http_request_denies_unauthorized_host() {
+        let guard = PermissionGuard::new(Permissions {
+            network: vec!["allowed.com".to_string()],
+            ..Default::default()
+        });
+        let request = HttpRequest {
+            url: "https://denied.com/api".to_string(),
+            method: "GET".to_string(),
+            headers: HashMap::new(),
+            body: None,
+        };
+
+        let error = http_request(&guard, request).await.unwrap_err();
+        assert!(error.to_string().contains("network access denied"));
+    }
+
+    #[tokio::test]
+    async fn http_request_rejects_unsupported_methods_before_sending() {
+        let guard = PermissionGuard::new(Permissions {
+            network: vec!["example.com".to_string()],
+            ..Default::default()
+        });
+        let request = HttpRequest {
+            url: "https://example.com/api".to_string(),
+            method: "TRACE".to_string(),
+            headers: HashMap::new(),
+            body: None,
+        };
+
+        let error = http_request(&guard, request).await.unwrap_err();
+        assert!(error.to_string().contains("Unsupported HTTP method"));
+    }
+
+    #[tokio::test]
+    async fn http_request_sends_headers_and_body_to_allowed_host() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let response =
+            "HTTP/1.1 200 OK\r\ncontent-length: 5\r\nx-test: ok\r\nconnection: close\r\n\r\nhello";
+
+        tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = vec![0_u8; 2048];
+            let read = stream.read(&mut request).await.unwrap();
+            let request_text = String::from_utf8_lossy(&request[..read]);
+            assert!(request_text.contains("POST /api HTTP/1.1"));
+            assert!(request_text.contains("x-demo: yes"));
+            assert!(request_text.ends_with("payload"));
+            stream.write_all(response.as_bytes()).await.unwrap();
+        });
+
+        let guard = PermissionGuard::new(Permissions {
+            network: vec!["127.0.0.1".to_string()],
+            ..Default::default()
+        });
+        let result = http_request(
+            &guard,
+            HttpRequest {
+                url: format!("http://{addr}/api"),
+                method: "POST".to_string(),
+                headers: HashMap::from([("x-demo".to_string(), "yes".to_string())]),
+                body: Some("payload".to_string()),
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(result.status, 200);
+        assert_eq!(result.body, "hello");
+        assert_eq!(result.headers.get("x-test").map(String::as_str), Some("ok"));
     }
 }

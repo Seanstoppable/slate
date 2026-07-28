@@ -24,8 +24,12 @@ impl Lockfile {
     /// Load the lockfile from the default path.
     pub fn load_default() -> Result<Self> {
         let path = Self::default_path()?;
+        Self::load_default_from_path(&path)
+    }
+
+    fn load_default_from_path(path: &Path) -> Result<Self> {
         if path.exists() {
-            Self::load_from(&path)
+            Self::load_from(path)
         } else {
             Ok(Self::default())
         }
@@ -170,5 +174,15 @@ mod tests {
         lockfile.save_to(&path).unwrap();
 
         assert!(path.exists());
+    }
+
+    #[test]
+    fn load_default_from_path_returns_default_when_file_is_missing() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("missing").join("slate-lock.toml");
+
+        let loaded = Lockfile::load_default_from_path(&path).unwrap();
+
+        assert!(loaded.plugins.is_empty());
     }
 }

@@ -44,6 +44,29 @@ pub type BoxedWidget = Box<dyn Widget>;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{Position, WidgetConfig, WidgetContent, WidgetMetadata};
+
+    struct DefaultBehaviorWidget;
+
+    impl Widget for DefaultBehaviorWidget {
+        fn metadata(&self) -> WidgetMetadata {
+            WidgetMetadata {
+                name: "Default".to_string(),
+                description: String::new(),
+                version: "0.1.0".to_string(),
+                author: None,
+                homepage: None,
+            }
+        }
+
+        fn init(&mut self, _config: WidgetConfig) {}
+
+        fn refresh(&mut self) -> WidgetContent {
+            WidgetContent::Empty {
+                message: "empty".to_string(),
+            }
+        }
+    }
 
     #[test]
     fn show_detail_actions_compare_equal() {
@@ -67,5 +90,25 @@ mod tests {
             WidgetAction::ShowDetail("details".to_string()),
             WidgetAction::OpenUrl("details".to_string())
         );
+    }
+
+    #[test]
+    fn default_widget_hooks_are_noops() {
+        let mut widget = DefaultBehaviorWidget;
+        widget.on_key("Enter", "press");
+        assert_eq!(widget.on_action("select", "item-1"), None);
+        widget.on_focus();
+        widget.on_blur();
+        widget.init(WidgetConfig {
+            position: Position {
+                row: 0,
+                col: 0,
+                row_span: 1,
+                col_span: 1,
+            },
+            settings: Default::default(),
+            refresh_interval: None,
+        });
+        assert!(matches!(widget.refresh(), WidgetContent::Empty { .. }));
     }
 }

@@ -729,8 +729,10 @@ fn toml_to_json(value: &toml::Value) -> serde_json::Value {
 mod tests {
     use super::*;
     use crate::builtins;
+    use slate_core::config::WidgetEntry;
     use slate_plugin_sdk::Position;
     use slate_plugin_sdk::Widget;
+    use std::sync::{Mutex, OnceLock};
     use tempfile::tempdir;
 
     fn widget_config() -> WidgetConfig {
@@ -748,6 +750,48 @@ mod tests {
 
     fn write_wasm(path: &std::path::Path, source: &str) {
         std::fs::write(path, wat::parse_str(source).unwrap()).unwrap();
+    }
+
+    fn escape_path(path: &std::path::Path) -> String {
+        path.display().to_string().replace('\\', "\\\\")
+    }
+
+    fn env_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    struct EnvGuard {
+        vars: Vec<(&'static str, Option<String>)>,
+    }
+
+    impl EnvGuard {
+        fn redirect_to(path: &std::path::Path) -> Self {
+            let mut vars = Vec::new();
+            let value = path.display().to_string();
+            for key in [
+                "APPDATA",
+                "LOCALAPPDATA",
+                "XDG_CONFIG_HOME",
+                "XDG_DATA_HOME",
+            ] {
+                vars.push((key, std::env::var(key).ok()));
+                std::env::set_var(key, &value);
+            }
+            Self { vars }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            for (key, value) in &self.vars {
+                if let Some(value) = value {
+                    std::env::set_var(key, value);
+                } else {
+                    std::env::remove_var(key);
+                }
+            }
+        }
     }
 
     #[test]
@@ -972,11 +1016,9 @@ mod tests {
             .filter(|issue| !issue.starts_with("Optional"))
             .collect();
         assert!(errors.is_empty(), "unexpected issues: {:?}", errors);
-        assert!(
-            issues
-                .iter()
-                .any(|issue| issue.contains("Optional exports not found"))
-        );
+        assert!(issues
+            .iter()
+            .any(|issue| issue.contains("Optional exports not found")));
     }
 
     #[test]
@@ -1144,11 +1186,228 @@ position = { row = 0, col = 0 }
 type = "lua:{}"
 position = {{ row = 0, col = 0 }}
 "#,
-            lua_path.display()
+            escape_path(&lua_path)
         );
         std::fs::write(&config_path, config).unwrap();
 
         check(Some(config_path.to_str().unwrap())).await.unwrap();
+    }
+
+    #[test]
+    fn load_widget_or_error_wraps_failures_in_error_widget() {
+        let entry = WidgetEntry {
+            widget_type: "builtin:not-real".to_string(),
+            position: Position {
+                row: 0,
+                col: 0,
+                row_span: 1,
+                col_span: 1,
+            },
+            refresh_interval: None,
+            settings: Default::default(),
+        };
+
+        let mut widget = load_widget_or_error(&entry, widget_config());
+        assert_eq!(widget.metadata().name, "builtin:not-real");
+        match widget.refresh() {
+            WidgetContent::Text { content, .. } => {
+                assert!(content.contains("Plugin load error"));
+                assert!(content.contains("Unknown builtin widget"));
+            }
+            other => panic!("expected text content, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn try_load_widget_loads_existing_lua_script() {
+        let dir = tempdir().unwrap();
+        let script_path = dir.path().join("greeting.lua");
+        std::fs::write(
+            &script_path,
+            r#"
+name = "Greeting"
+description = "Greets"
+version = "1.0.0"
+function refresh()
+  return '{"type":"text","content":"Hello from Lua","scrollable":false,"wrap":true}'
+end
+"#,
+        )
+        .unwrap();
+
+        let entry = WidgetEntry {
+            widget_type: format!("lua:{}", script_path.display()),
+            position: Position {
+                row: 0,
+                col: 0,
+                row_span: 1,
+                col_span: 1,
+            },
+            refresh_interval: None,
+            settings: Default::default(),
+        };
+
+        let mut widget = try_load_widget(&entry, widget_config()).unwrap();
+        assert_eq!(widget.metadata().name, "Greeting");
+        match widget.refresh() {
+            WidgetContent::Text { content, .. } => assert_eq!(content, "Hello from Lua"),
+            other => panic!("expected text content, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn check_handles_mixed_widget_types() {
+        let dir = tempdir().unwrap();
+        let config_path = dir.path().join("slate.toml");
+
+        let lua_path = dir.path().join("ok.lua");
+        std::fs::write(
+            &lua_path,
+            r#"
+name = "Check Lua"
+function refresh()
+  return '{"type":"text","content":"ok","scrollable":false,"wrap":true}'
+end
+"#,
+        )
+        .unwrap();
+
+        let valid_wasm_path = dir.path().join("valid.wasm");
+        write_wasm(
+            &valid_wasm_path,
+            r#"
+                (module
+                    (memory (export "memory") 1)
+                    (func (export "metadata") (result i32) (i32.const 0))
+                    (func (export "refresh") (result i32) (i32.const 0))
+                )
+            "#,
+        );
+
+        let unsupported_dir = dir.path().join("unsupported");
+        std::fs::create_dir_all(&unsupported_dir).unwrap();
+        let unsupported_wasm_path = unsupported_dir.join("unsupported.wasm");
+        write_wasm(
+            &unsupported_wasm_path,
+            r#"
+                (module
+                    (memory (export "memory") 1)
+                    (func (export "metadata") (result i32) (i32.const 0))
+                    (func (export "refresh") (result i32) (i32.const 0))
+                )
+            "#,
+        );
+        let unsupported_os = ["linux", "macos", "windows"]
+            .into_iter()
+            .find(|os| *os != current_os())
+            .unwrap();
+        std::fs::write(
+            unsupported_dir.join("plugin.toml"),
+            format!(
+                "[plugin]\nname = \"unsupported\"\nos = [\"{}\"]\n",
+                unsupported_os
+            ),
+        )
+        .unwrap();
+
+        let invalid_wasm_path = dir.path().join("invalid.wasm");
+        std::fs::write(&invalid_wasm_path, b"not wasm").unwrap();
+
+        std::fs::write(
+            &config_path,
+            format!(
+                r#"
+[[widget]]
+type = "builtin:resource_usage"
+position = {{ row = 0, col = 0 }}
+
+[[widget]]
+type = "builtin:not-real"
+position = {{ row = 0, col = 1 }}
+
+[[widget]]
+type = "lua:{}"
+position = {{ row = 1, col = 0 }}
+
+[[widget]]
+type = "lua:{}"
+position = {{ row = 1, col = 1 }}
+
+[[widget]]
+type = "wasm:{}"
+position = {{ row = 2, col = 0 }}
+
+[[widget]]
+type = "wasm:{}"
+position = {{ row = 2, col = 1 }}
+
+[[widget]]
+type = "wasm:{}"
+position = {{ row = 3, col = 0 }}
+
+[[widget]]
+type = "github.com/example/not-installed"
+position = {{ row = 3, col = 1 }}
+"#,
+                escape_path(&lua_path),
+                escape_path(&dir.path().join("missing.lua")),
+                escape_path(&valid_wasm_path),
+                escape_path(&unsupported_wasm_path),
+                escape_path(&invalid_wasm_path),
+            ),
+        )
+        .unwrap();
+
+        check(Some(config_path.to_str().unwrap())).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn check_returns_ok_for_invalid_config_files() {
+        let dir = tempdir().unwrap();
+        let config_path = dir.path().join("slate.toml");
+        std::fs::write(&config_path, "[[widget]]\ntype = ").unwrap();
+
+        check(Some(config_path.to_str().unwrap())).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn list_and_remove_use_redirected_default_directories() {
+        let _lock = env_lock().lock().unwrap();
+        let dir = tempdir().unwrap();
+        let _env = EnvGuard::redirect_to(dir.path());
+
+        let plugins_dir = PluginInstaller::default_dir().unwrap();
+        std::fs::create_dir_all(plugins_dir.join("clock")).unwrap();
+        std::fs::write(plugins_dir.join("clock").join("clock.wasm"), b"wasm").unwrap();
+
+        let mut lockfile = Lockfile::default();
+        lockfile.lock(
+            "clock",
+            slate_plugin_manager::lockfile::LockedPlugin {
+                source: "github.com/slate-community/slate-clock".to_string(),
+                version: "1.0.0".to_string(),
+                sha256: "hash".to_string(),
+                permissions_hash: None,
+            },
+        );
+        let lockfile_path = Lockfile::default_path().unwrap();
+        lockfile.save_to(&lockfile_path).unwrap();
+
+        list().await.unwrap();
+        remove("clock").await.unwrap();
+
+        assert!(!plugins_dir.join("clock").exists());
+        let updated_lockfile = Lockfile::load_from(&lockfile_path).unwrap();
+        assert!(updated_lockfile.get("clock").is_none());
+    }
+
+    #[tokio::test]
+    async fn outdated_returns_clean_result_with_empty_redirected_lockfile() {
+        let _lock = env_lock().lock().unwrap();
+        let dir = tempdir().unwrap();
+        let _env = EnvGuard::redirect_to(dir.path());
+
+        outdated().await.unwrap();
     }
 
     #[tokio::test]

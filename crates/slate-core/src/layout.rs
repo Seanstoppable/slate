@@ -164,4 +164,23 @@ mod tests {
         assert_eq!(grid[1][1], Rect::new(30, 10, 30, 10));
         assert_eq!(grid[2][2], Rect::new(60, 20, 30, 10));
     }
+
+    #[test]
+    fn focus_movement_updates_when_not_at_edges() {
+        let mut focus = FocusPosition::new(1, 1);
+
+        focus.move_up(3);
+        focus.move_left(3);
+
+        assert_eq!((focus.row, focus.col), (0, 0));
+    }
+
+    #[test]
+    fn focus_move_prev_steps_to_previous_row_when_at_first_column() {
+        let mut focus = FocusPosition::new(1, 0);
+
+        focus.move_prev(3, 4);
+
+        assert_eq!((focus.row, focus.col), (0, 3));
+    }
 }

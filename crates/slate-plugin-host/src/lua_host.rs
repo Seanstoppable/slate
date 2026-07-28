@@ -344,6 +344,38 @@ mod tests {
     }
 
     #[test]
+    fn lua_plugin_refresh_wraps_plain_text_when_json_parsing_fails() {
+        let dir = std::env::temp_dir().join("slate_test_lua_plain_text");
+        std::fs::create_dir_all(&dir).unwrap();
+        let script_path = dir.join("plain_text.lua");
+        std::fs::write(
+            &script_path,
+            r#"
+            function refresh()
+                return "plain text"
+            end
+        "#,
+        )
+        .unwrap();
+
+        let mut plugin = LuaPlugin::from_file(&script_path).unwrap();
+        match plugin.refresh() {
+            WidgetContent::Text {
+                content,
+                scrollable,
+                wrap,
+            } => {
+                assert_eq!(content, "plain text");
+                assert!(!scrollable);
+                assert!(wrap);
+            }
+            other => panic!("expected text content, got {:?}", other),
+        }
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
     fn lua_host_slate_exec_runs_command() {
         let dir = std::env::temp_dir().join("slate_test_lua_exec");
         std::fs::create_dir_all(&dir).unwrap();
@@ -518,6 +550,77 @@ mod tests {
             WidgetContent::Text { content, .. } => assert_eq!(content, "ok"),
             other => panic!("expected 'ok', got {:?}", other),
         }
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn lua_plugin_on_key_invokes_script_handler() {
+        let dir = std::env::temp_dir().join("slate_test_lua_on_key");
+        std::fs::create_dir_all(&dir).unwrap();
+        let script_path = dir.join("on_key.lua");
+        std::fs::write(
+            &script_path,
+            r#"
+            function on_key(key, action)
+                last = key .. ":" .. action
+            end
+
+            function refresh()
+                return '{"type":"text","content":"' .. (last or "none") .. '","scrollable":false,"wrap":true}'
+            end
+        "#,
+        )
+        .unwrap();
+
+        let mut plugin = LuaPlugin::from_file(&script_path).unwrap();
+        plugin.on_key("Enter", "press");
+
+        match plugin.refresh() {
+            WidgetContent::Text { content, .. } => assert_eq!(content, "Enter:press"),
+            other => panic!("expected text content, got {:?}", other),
+        }
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn lua_plugin_focus_and_blur_invoke_optional_hooks() {
+        let dir = std::env::temp_dir().join("slate_test_lua_focus_blur");
+        std::fs::create_dir_all(&dir).unwrap();
+        let script_path = dir.join("focus_blur.lua");
+        std::fs::write(
+            &script_path,
+            r#"
+            state = "idle"
+
+            function on_focus()
+                state = "focused"
+            end
+
+            function on_blur()
+                state = "blurred"
+            end
+
+            function refresh()
+                return '{"type":"text","content":"' .. state .. '","scrollable":false,"wrap":true}'
+            end
+        "#,
+        )
+        .unwrap();
+
+        let mut plugin = LuaPlugin::from_file(&script_path).unwrap();
+        plugin.on_focus();
+        match plugin.refresh() {
+            WidgetContent::Text { content, .. } => assert_eq!(content, "focused"),
+            other => panic!("expected text content, got {:?}", other),
+        }
+
+        plugin.on_blur();
+        match plugin.refresh() {
+            WidgetContent::Text { content, .. } => assert_eq!(content, "blurred"),
+            other => panic!("expected text content, got {:?}", other),
+        }
+
         std::fs::remove_dir_all(&dir).ok();
     }
 

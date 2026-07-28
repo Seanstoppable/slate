@@ -34,11 +34,21 @@ impl slate_plugin_sdk::Widget for WelcomeWidget {
 #[cfg(test)]
 mod tests {
     use super::WelcomeWidget;
-    use slate_plugin_sdk::{Widget, WidgetContent};
+    use slate_plugin_sdk::{Position, Widget, WidgetConfig, WidgetContent};
 
     #[test]
     fn welcome_widget_returns_expected_metadata_and_content() {
         let mut widget = WelcomeWidget;
+        widget.init(WidgetConfig {
+            position: Position {
+                row: 0,
+                col: 0,
+                row_span: 1,
+                col_span: 1,
+            },
+            settings: Default::default(),
+            refresh_interval: None,
+        });
         let metadata = widget.metadata();
         assert_eq!(metadata.name, "Welcome");
         assert_eq!(metadata.description, "Welcome screen");

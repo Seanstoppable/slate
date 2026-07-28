@@ -494,6 +494,30 @@ fn js_escape(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::{Path, PathBuf};
+    use std::sync::{Mutex, OnceLock};
+    use tempfile::tempdir;
+
+    fn cwd_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    struct CwdReset(PathBuf);
+
+    impl CwdReset {
+        fn change_to(path: &Path) -> Self {
+            let old = std::env::current_dir().unwrap();
+            std::env::set_current_dir(path).unwrap();
+            Self(old)
+        }
+    }
+
+    impl Drop for CwdReset {
+        fn drop(&mut self) {
+            let _ = std::env::set_current_dir(&self.0);
+        }
+    }
 
     fn sample_plugin() -> PluginInfo {
         PluginInfo {
@@ -668,7 +692,8 @@ mod tests {
 
     #[test]
     fn generate_docs_html_renders_multiple_plugin_cards_and_badges() {
-        let html = generate_docs_html(&[sample_plugin(), sample_builtin(), sample_script()]).unwrap();
+        let html =
+            generate_docs_html(&[sample_plugin(), sample_builtin(), sample_script()]).unwrap();
         assert!(html.contains("kind-badge plugin"));
         assert!(html.contains("kind-badge builtin"));
         assert!(html.contains("kind-badge script"));
@@ -706,5 +731,93 @@ mod tests {
         assert!(template.contains("<!DOCTYPE html>"));
         assert!(template.contains("{{CARDS}}"));
         assert!(template.contains("{{PLUGIN_DATA}}"));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn docs_generates_from_plugin_builtin_and_script_directories() {
+        let _lock = cwd_lock().lock().unwrap();
+        let dir = tempdir().unwrap();
+
+        let plugin_dir = dir.path().join("plugins").join("clock");
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+        std::fs::write(
+            plugin_dir.join("plugin.toml"),
+            r#"
+[plugin]
+name = "clock"
+description = "World clocks"
+version = "0.1.0"
+author = "Test"
+language = "rust"
+os = ["macos", "linux", "windows"]
+
+[permissions]
+network = ["worldtimeapi.org"]
+storage = true
+raw_network = true
+filesystem_read = ["C:\\Users\\Public"]
+
+[config]
+timezone = { type = "string", required = true, description = "Timezone" }
+enabled = { type = "boolean", description = "Whether the clock is enabled" }
+"#,
+        )
+        .unwrap();
+
+        let legacy_dir = dir.path().join("plugins").join("legacy");
+        std::fs::create_dir_all(&legacy_dir).unwrap();
+        std::fs::write(
+            legacy_dir.join("plugin.toml"),
+            r#"
+[metadata]
+name = "legacy"
+description = "Legacy metadata plugin"
+version = "2.0.0"
+author = "Legacy"
+language = "go"
+"#,
+        )
+        .unwrap();
+
+        let scripts_dir = dir.path().join("scripts");
+        std::fs::create_dir_all(&scripts_dir).unwrap();
+        std::fs::write(
+            scripts_dir.join("greeting.lua"),
+            r#"
+name = "Greeting"
+description = "A greeting widget"
+version = "1.0.0"
+function refresh() return '{"type":"text","content":"Hello","scrollable":false,"wrap":true}' end
+"#,
+        )
+        .unwrap();
+
+        let template_dir = dir.path().join("docs");
+        std::fs::create_dir_all(&template_dir).unwrap();
+        let template = std::fs::read_to_string(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("..")
+                .join("..")
+                .join("docs")
+                .join("template.html"),
+        )
+        .unwrap();
+        std::fs::write(template_dir.join("template.html"), template).unwrap();
+
+        let output_dir = dir.path().join("output");
+        let _cwd = CwdReset::change_to(dir.path());
+
+        docs(Some(output_dir.to_str().unwrap())).await.unwrap();
+
+        let html = std::fs::read_to_string(output_dir.join("index.html")).unwrap();
+        assert!(html.contains("clock"));
+        assert!(html.contains("legacy"));
+        assert!(html.contains("greeting"));
+        assert!(html.contains("worldtimeapi.org"));
+        assert!(html.contains("filesystem_read"));
+        assert!(html.contains("raw_network"));
+        assert!(html.contains("builtin:vcs"));
+        assert!(html.contains("github.com/slate-community/slate-clock"));
+        assert!(html.contains("lua:scripts/greeting.lua"));
     }
 }

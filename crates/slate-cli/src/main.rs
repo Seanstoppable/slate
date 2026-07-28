@@ -107,3 +107,47 @@ async fn main() -> Result<()> {
         Some(Commands::Docs { output }) => docs::docs(output.as_deref()).await,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cli_parses_default_run_and_named_subcommands() {
+        let cli = Cli::parse_from(["slate"]);
+        assert!(matches!(cli.command, None));
+
+        let cli = Cli::parse_from(["slate", "run", "--config", "slate.toml"]);
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Run { config: Some(path) }) if path == "slate.toml"
+        ));
+
+        let cli = Cli::parse_from(["slate", "docs", "--output", "site"]);
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Docs { output: Some(path) }) if path == "site"
+        ));
+    }
+
+    #[test]
+    fn cli_parses_management_commands() {
+        let cli = Cli::parse_from(["slate", "remove", "clock"]);
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Remove { name }) if name == "clock"
+        ));
+
+        let cli = Cli::parse_from(["slate", "search", "github"]);
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Search { query }) if query == "github"
+        ));
+
+        let cli = Cli::parse_from(["slate", "check", "--config", "custom.toml"]);
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Check { config: Some(path) }) if path == "custom.toml"
+        ));
+    }
+}

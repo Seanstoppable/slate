@@ -201,3 +201,270 @@ fn convert_color(color: &Color) -> RatColor {
         Color::Rgb(r, g, b) => RatColor::Rgb(*r, *g, *b),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::{backend::TestBackend, Terminal};
+    use slate_plugin_sdk::{Cell, CellStyle, ChartType, DataPoint, ListItem as SlateListItem};
+
+    fn metadata() -> WidgetMetadata {
+        WidgetMetadata {
+            name: "Widget".to_string(),
+            description: "Rendered widget".to_string(),
+            version: "1.0.0".to_string(),
+            author: None,
+            homepage: None,
+        }
+    }
+
+    fn render_to_string(
+        content: &WidgetContent,
+        focused: bool,
+        selected: Option<usize>,
+        width: u16,
+        height: u16,
+    ) -> String {
+        let backend = TestBackend::new(width, height);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| {
+                render_widget(
+                    frame,
+                    Rect::new(0, 0, width, height),
+                    content,
+                    &metadata(),
+                    focused,
+                    selected,
+                );
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let mut rendered = String::new();
+        for y in 0..height {
+            for x in 0..width {
+                rendered.push_str(buffer.get(x, y).symbol());
+            }
+            rendered.push('\n');
+        }
+        rendered
+    }
+
+    fn render_status_to_string(
+        focus: FocusPosition,
+        widget_count: usize,
+        update: Option<&str>,
+    ) -> String {
+        let backend = TestBackend::new(80, 2);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| {
+                render_status_bar(frame, Rect::new(0, 1, 80, 1), &focus, widget_count, update);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let mut rendered = String::new();
+        for x in 0..80 {
+            rendered.push_str(buffer.get(x, 1).symbol());
+        }
+        rendered
+    }
+
+    #[test]
+    fn render_widget_renders_text_key_value_and_empty_content() {
+        let text = render_to_string(
+            &WidgetContent::Text {
+                content: "Hello Slate".to_string(),
+                scrollable: false,
+                wrap: true,
+            },
+            true,
+            None,
+            40,
+            6,
+        );
+        assert!(text.contains("Widget"));
+        assert!(text.contains("Hello Slate"));
+
+        let key_value = render_to_string(
+            &WidgetContent::KeyValue {
+                pairs: vec![
+                    (
+                        "CPU".to_string(),
+                        Cell {
+                            text: "12%".to_string(),
+                            style: CellStyle {
+                                fg: Some(Color::Green),
+                                bg: Some(Color::Rgb(1, 2, 3)),
+                                bold: true,
+                                italic: true,
+                            },
+                        },
+                    ),
+                    ("Memory".to_string(), Cell::plain("4 GB".to_string())),
+                ],
+            },
+            false,
+            None,
+            40,
+            6,
+        );
+        assert!(key_value.contains("CPU:"));
+        assert!(key_value.contains("12%"));
+        assert!(key_value.contains("Memory:"));
+
+        let empty = render_to_string(
+            &WidgetContent::Empty {
+                message: "Nothing here".to_string(),
+            },
+            false,
+            None,
+            40,
+            6,
+        );
+        assert!(empty.contains("Nothing here"));
+    }
+
+    #[test]
+    fn render_widget_renders_tables_lists_and_charts() {
+        let table = render_to_string(
+            &WidgetContent::Table {
+                headers: vec!["Name".to_string(), "Value".to_string()],
+                rows: vec![vec![Cell::plain("CPU"), Cell::plain("12%")]],
+                selectable: false,
+            },
+            false,
+            None,
+            40,
+            6,
+        );
+        assert!(table.contains("Name"));
+        assert!(table.contains("Value"));
+        assert!(table.contains("CPU"));
+
+        let list = render_to_string(
+            &WidgetContent::List {
+                items: vec![
+                    SlateListItem {
+                        id: "1".to_string(),
+                        title: "Issue 1".to_string(),
+                        subtitle: Some("open".to_string()),
+                        icon: None,
+                        style: Default::default(),
+                    },
+                    SlateListItem {
+                        id: "2".to_string(),
+                        title: "Issue 2".to_string(),
+                        subtitle: None,
+                        icon: None,
+                        style: Default::default(),
+                    },
+                ],
+                selectable: true,
+                actions: vec![],
+            },
+            false,
+            Some(0),
+            40,
+            6,
+        );
+        assert!(list.contains("Issue 1"));
+        assert!(list.contains("open"));
+        assert!(list.contains("Issue 2"));
+
+        let chart = render_to_string(
+            &WidgetContent::Chart {
+                data: vec![
+                    DataPoint {
+                        label: "CPU".to_string(),
+                        value: 10.0,
+                    },
+                    DataPoint {
+                        label: "Mem".to_string(),
+                        value: 20.0,
+                    },
+                ],
+                chart_type: ChartType::Bar,
+            },
+            false,
+            None,
+            40,
+            6,
+        );
+        assert!(chart.contains("CPU"));
+        assert!(chart.contains("Mem"));
+        assert!(chart.contains("█"));
+    }
+
+    #[test]
+    fn render_status_bar_includes_focus_widget_count_and_update_message() {
+        let status = render_status_to_string(FocusPosition::new(1, 2), 5, Some("Update ready "));
+        assert!(status.contains("5 widgets"));
+        assert!(status.contains("Focus: (1,2)"));
+        assert!(status.contains("Update ready"));
+        assert!(status.contains("q: quit"));
+    }
+
+    #[test]
+    fn render_widget_handles_unwrapped_text_nonselectable_lists_and_zero_value_charts() {
+        let text = render_to_string(
+            &WidgetContent::Text {
+                content: "Long line".to_string(),
+                scrollable: false,
+                wrap: false,
+            },
+            false,
+            None,
+            20,
+            4,
+        );
+        assert!(text.contains("Long line"));
+
+        let list = render_to_string(
+            &WidgetContent::List {
+                items: vec![SlateListItem {
+                    id: "1".to_string(),
+                    title: "Only item".to_string(),
+                    subtitle: None,
+                    icon: None,
+                    style: Default::default(),
+                }],
+                selectable: false,
+                actions: vec![],
+            },
+            false,
+            None,
+            20,
+            4,
+        );
+        assert!(list.contains("Only item"));
+
+        let chart = render_to_string(
+            &WidgetContent::Chart {
+                data: vec![DataPoint {
+                    label: "Idle".to_string(),
+                    value: 0.0,
+                }],
+                chart_type: ChartType::Sparkline,
+            },
+            false,
+            None,
+            20,
+            4,
+        );
+        assert!(chart.contains("Idle"));
+    }
+
+    #[test]
+    fn convert_color_supports_all_palette_variants() {
+        assert_eq!(convert_color(&Color::Red), RatColor::Red);
+        assert_eq!(convert_color(&Color::Yellow), RatColor::Yellow);
+        assert_eq!(convert_color(&Color::Blue), RatColor::Blue);
+        assert_eq!(convert_color(&Color::Magenta), RatColor::Magenta);
+        assert_eq!(convert_color(&Color::Cyan), RatColor::Cyan);
+        assert_eq!(convert_color(&Color::White), RatColor::White);
+        assert_eq!(convert_color(&Color::Gray), RatColor::Gray);
+    }
+}

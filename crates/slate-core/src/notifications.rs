@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use anyhow::Result;
@@ -28,20 +28,15 @@ pub struct UpdateInfo {
 impl UpdateNotifications {
     /// Load cached notification state from disk.
     pub fn load() -> Self {
-        Self::cache_path()
-            .and_then(|path| std::fs::read_to_string(&path).ok())
-            .and_then(|content| serde_json::from_str(&content).ok())
+        Self::effective_cache_path()
+            .map(|path| Self::load_from_path(&path))
             .unwrap_or_default()
     }
 
     /// Save notification state to disk.
     pub fn save(&self) -> Result<()> {
-        if let Some(path) = Self::cache_path() {
-            if let Some(parent) = path.parent() {
-                std::fs::create_dir_all(parent)?;
-            }
-            let content = serde_json::to_string(self)?;
-            std::fs::write(&path, content)?;
+        if let Some(path) = Self::effective_cache_path() {
+            self.save_to_path(&path)?;
         }
         Ok(())
     }
@@ -103,6 +98,39 @@ impl UpdateNotifications {
 
     fn cache_path() -> Option<PathBuf> {
         dirs::cache_dir().map(|d| d.join("slate").join("update-notifications.json"))
+    }
+
+    fn effective_cache_path() -> Option<PathBuf> {
+        #[cfg(test)]
+        if let Some(path) = Self::cache_path_override().lock().unwrap().clone() {
+            return Some(path);
+        }
+
+        Self::cache_path()
+    }
+
+    fn load_from_path(path: &Path) -> Self {
+        std::fs::read_to_string(path)
+            .ok()
+            .and_then(|content| serde_json::from_str(&content).ok())
+            .unwrap_or_default()
+    }
+
+    fn save_to_path(&self, path: &Path) -> Result<()> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let content = serde_json::to_string(self)?;
+        std::fs::write(path, content)?;
+        Ok(())
+    }
+
+    #[cfg(test)]
+    fn cache_path_override() -> &'static std::sync::Mutex<Option<PathBuf>> {
+        use std::sync::{Mutex, OnceLock};
+
+        static OVERRIDE: OnceLock<Mutex<Option<PathBuf>>> = OnceLock::new();
+        OVERRIDE.get_or_init(|| Mutex::new(None))
     }
 }
 
@@ -285,5 +313,69 @@ mod tests {
         assert_eq!(loaded.available_updates[1].name, "weather");
         assert_eq!(loaded.last_check, notifs.last_check);
         assert_eq!(loaded.dismissed, notifs.dismissed);
+    }
+
+    #[test]
+    fn test_save_and_load_round_trip_via_disk() {
+        let dir = std::env::temp_dir().join(format!("slate-notifications-{}", std::process::id()));
+        let path = dir.join("nested").join("update-notifications.json");
+        let mut notifs = UpdateNotifications::default();
+        notifs.mark_checked();
+        notifs.dismiss();
+        notifs.set_updates(vec![sample_update("github")]);
+
+        notifs.save_to_path(&path).unwrap();
+        let loaded = UpdateNotifications::load_from_path(&path);
+
+        assert_eq!(loaded.available_updates.len(), 1);
+        assert_eq!(loaded.available_updates[0].name, "github");
+        assert_eq!(loaded.dismissed, notifs.dismissed);
+        assert_eq!(loaded.last_check, notifs.last_check);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_load_from_path_returns_default_for_missing_or_invalid_files() {
+        let dir = std::env::temp_dir().join(format!(
+            "slate-notifications-invalid-{}",
+            std::process::id()
+        ));
+        let missing = dir.join("missing.json");
+        let invalid = dir.join("invalid.json");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(&invalid, "{not-json").unwrap();
+
+        assert!(UpdateNotifications::load_from_path(&missing)
+            .available_updates
+            .is_empty());
+        assert!(UpdateNotifications::load_from_path(&invalid)
+            .available_updates
+            .is_empty());
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_public_save_and_load_use_cache_path_override() {
+        let dir =
+            std::env::temp_dir().join(format!("slate-notifications-public-{}", std::process::id()));
+        let path = dir.join("cache").join("update-notifications.json");
+        let mut notifs = UpdateNotifications::default();
+        notifs.set_updates(vec![sample_update("weather")]);
+        notifs.mark_checked();
+
+        let previous = {
+            let mut override_path = UpdateNotifications::cache_path_override().lock().unwrap();
+            override_path.replace(path.clone())
+        };
+
+        notifs.save().unwrap();
+        let loaded = UpdateNotifications::load();
+
+        *UpdateNotifications::cache_path_override().lock().unwrap() = previous;
+
+        assert_eq!(loaded.available_updates.len(), 1);
+        assert_eq!(loaded.available_updates[0].name, "weather");
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

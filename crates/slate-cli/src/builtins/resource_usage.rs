@@ -99,7 +99,10 @@ fn build_resource_content(
         (
             "Memory".to_string(),
             slate_plugin_sdk::Cell::colored(
-                format!("{:.1}/{:.1} GB ({:.0}%)", used_mem_gb, total_mem_gb, mem_pct),
+                format!(
+                    "{:.1}/{:.1} GB ({:.0}%)",
+                    used_mem_gb, total_mem_gb, mem_pct
+                ),
                 mem_color,
             ),
         ),
@@ -148,10 +151,23 @@ mod tests {
             settings: Default::default(),
             refresh_interval: None,
         });
+        widget.init(WidgetConfig {
+            position: Position {
+                row: 0,
+                col: 0,
+                row_span: 1,
+                col_span: 1,
+            },
+            settings: Default::default(),
+            refresh_interval: None,
+        });
 
         match widget.refresh() {
             WidgetContent::KeyValue { pairs } => {
-                let keys: HashMap<_, _> = pairs.iter().map(|(key, value)| (key.as_str(), &value.text)).collect();
+                let keys: HashMap<_, _> = pairs
+                    .iter()
+                    .map(|(key, value)| (key.as_str(), &value.text))
+                    .collect();
                 assert!(keys.contains_key("CPU"));
                 assert!(keys.contains_key("Memory"));
                 assert!(keys.contains_key("Swap"));
@@ -215,10 +231,67 @@ mod tests {
 
         match content {
             WidgetContent::KeyValue { pairs } => {
-                let map: HashMap<_, _> =
-                    pairs.into_iter().map(|(key, value)| (key, value.text)).collect();
+                let map: HashMap<_, _> = pairs
+                    .into_iter()
+                    .map(|(key, value)| (key, value.text))
+                    .collect();
                 assert_eq!(map.get("Temp").map(String::as_str), Some("85°C (Package)"));
                 assert_eq!(map.get("CPUs").map(String::as_str), Some("16 cores"));
+            }
+            other => panic!("expected key-value content, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn build_resource_content_handles_zero_memory_and_lower_thresholds() {
+        let content = build_resource_content(55.0, 0, 0, 0, 0, 4, Some(("CPU".to_string(), 65.0)));
+
+        match content {
+            WidgetContent::KeyValue { pairs } => {
+                let map: HashMap<_, _> =
+                    pairs.into_iter().map(|(key, value)| (key, value)).collect();
+                assert_eq!(map.get("CPU").map(|cell| cell.text.as_str()), Some("55.0%"));
+                assert_eq!(
+                    map.get("Memory").map(|cell| cell.text.as_str()),
+                    Some("0.0/0.0 GB (0%)")
+                );
+                assert_eq!(
+                    map.get("Swap").map(|cell| cell.text.as_str()),
+                    Some("0.0/0.0 GB")
+                );
+                assert_eq!(
+                    map.get("Temp").map(|cell| cell.text.as_str()),
+                    Some("65°C (CPU)")
+                );
+            }
+            other => panic!("expected key-value content, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn build_resource_content_uses_yellow_and_green_thresholds() {
+        let content = build_resource_content(
+            25.0,
+            10 * 1_073_741_824,
+            7 * 1_073_741_824,
+            0,
+            0,
+            8,
+            Some(("CPU".to_string(), 45.0)),
+        );
+
+        match content {
+            WidgetContent::KeyValue { pairs } => {
+                let map: HashMap<_, _> =
+                    pairs.into_iter().map(|(key, value)| (key, value)).collect();
+                assert_eq!(
+                    map.get("Memory").map(|cell| cell.text.as_str()),
+                    Some("7.0/10.0 GB (70%)")
+                );
+                assert_eq!(
+                    map.get("Temp").map(|cell| cell.text.as_str()),
+                    Some("45°C (CPU)")
+                );
             }
             other => panic!("expected key-value content, got {other:?}"),
         }

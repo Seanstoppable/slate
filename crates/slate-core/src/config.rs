@@ -106,8 +106,12 @@ impl SlateConfig {
     /// Load config from the default path (~/.config/slate/slate.toml)
     pub fn load_default() -> Result<Self> {
         let path = Self::default_path()?;
+        Self::load_default_from_path(&path)
+    }
+
+    fn load_default_from_path(path: &Path) -> Result<Self> {
         if path.exists() {
-            Self::load_from(&path)
+            Self::load_from(path)
         } else {
             Ok(Self::default())
         }
@@ -356,5 +360,78 @@ position = { row = 0, col = 1 }
         assert_eq!(config.global.refresh_interval, 300);
         assert_eq!(config.widget[0].refresh_interval, Some(30));
         assert_eq!(config.widget[1].refresh_interval, None);
+    }
+
+    #[test]
+    fn test_interpolate_string_handles_multiple_variables_and_unclosed_patterns() {
+        std::env::set_var("SLATE_MULTI_ONE", "alpha");
+        std::env::set_var("SLATE_MULTI_TWO", "beta");
+
+        assert_eq!(
+            interpolate_string("${SLATE_MULTI_ONE}-${SLATE_MULTI_TWO}-${MISSING}"),
+            "alpha-beta-"
+        );
+        assert_eq!(
+            interpolate_string("prefix ${SLATE_MULTI_ONE"),
+            "prefix ${SLATE_MULTI_ONE"
+        );
+
+        std::env::remove_var("SLATE_MULTI_ONE");
+        std::env::remove_var("SLATE_MULTI_TWO");
+    }
+
+    #[test]
+    fn test_default_path_and_load_default_use_redirected_config_directory() {
+        let default_path = SlateConfig::default_path().unwrap();
+        assert!(default_path.ends_with(std::path::Path::new("slate").join("slate.toml")));
+        assert!(SlateConfig::load_default().is_ok());
+    }
+
+    #[test]
+    fn test_load_default_from_path_uses_default_when_file_is_missing() {
+        let missing = std::env::temp_dir()
+            .join(format!("slate-config-missing-{}", std::process::id()))
+            .join("slate.toml");
+
+        let config = SlateConfig::load_default_from_path(&missing).unwrap();
+
+        assert_eq!(config.global.refresh_interval, 300);
+        assert!(config.updates.notify);
+    }
+
+    #[test]
+    fn test_load_default_from_path_reads_existing_file() {
+        let dir =
+            std::env::temp_dir().join(format!("slate-config-existing-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("slate.toml");
+        std::fs::write(
+            &path,
+            r#"
+[global]
+refresh_interval = 42
+"#,
+        )
+        .unwrap();
+
+        let config = SlateConfig::load_default_from_path(&path).unwrap();
+
+        assert_eq!(config.global.refresh_interval, 42);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_update_config_defaults_notify_when_omitted() {
+        let config = SlateConfig::parse(
+            r#"
+[updates]
+check_interval = "weekly"
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(config.updates.check_interval, "weekly");
+        assert!(config.updates.notify);
+        assert!(!config.updates.auto_update);
     }
 }

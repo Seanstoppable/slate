@@ -17,6 +17,40 @@ pub struct WasmPlugin {
 /// Create the exec_command host function for WASM plugins.
 /// Plugins call this with a JSON string: {"cmd": "...", "args": ["..."]}
 /// Returns JSON: {"stdout": "...", "stderr": "...", "exit_code": 0}
+fn run_exec_request(input: &str) -> Result<String, extism::Error> {
+    let request: serde_json::Value = serde_json::from_str(input)
+        .map_err(|e| extism::Error::msg(format!("Invalid exec request JSON: {}", e)))?;
+
+    let cmd = request["cmd"].as_str().unwrap_or("");
+    let args: Vec<&str> = request["args"]
+        .as_array()
+        .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect())
+        .unwrap_or_default();
+
+    let result = if cmd.is_empty() {
+        serde_json::json!({
+            "stdout": "",
+            "stderr": "exec_command: 'cmd' field is required",
+            "exit_code": 1
+        })
+    } else {
+        match std::process::Command::new(cmd).args(&args).output() {
+            Ok(out) => serde_json::json!({
+                "stdout": String::from_utf8_lossy(&out.stdout).to_string(),
+                "stderr": String::from_utf8_lossy(&out.stderr).to_string(),
+                "exit_code": out.status.code().unwrap_or(-1)
+            }),
+            Err(e) => serde_json::json!({
+                "stdout": "",
+                "stderr": format!("Failed to execute '{}': {}", cmd, e),
+                "exit_code": -1
+            }),
+        }
+    };
+
+    Ok(result.to_string())
+}
+
 fn make_exec_function() -> Function {
     Function::new(
         "exec_command",
@@ -25,46 +59,8 @@ fn make_exec_function() -> Function {
         UserData::new(()),
         |plugin: &mut extism::CurrentPlugin, inputs: &[Val], outputs: &mut [Val], _user_data| {
             let input: String = plugin.memory_get_val(&inputs[0])?;
-            let request: serde_json::Value = serde_json::from_str(&input)
-                .map_err(|e| extism::Error::msg(format!("Invalid exec request JSON: {}", e)))?;
-
-            let cmd = request["cmd"].as_str().unwrap_or("");
-            let args: Vec<&str> = request["args"]
-                .as_array()
-                .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect())
-                .unwrap_or_default();
-
-            if cmd.is_empty() {
-                let result = serde_json::json!({
-                    "stdout": "",
-                    "stderr": "exec_command: 'cmd' field is required",
-                    "exit_code": 1
-                });
-                let handle = plugin.memory_new(result.to_string())?;
-                outputs[0] = plugin.memory_to_val(handle);
-                return Ok(());
-            }
-
-            let output = std::process::Command::new(cmd).args(&args).output();
-
-            let result = match output {
-                Ok(out) => {
-                    serde_json::json!({
-                        "stdout": String::from_utf8_lossy(&out.stdout).to_string(),
-                        "stderr": String::from_utf8_lossy(&out.stderr).to_string(),
-                        "exit_code": out.status.code().unwrap_or(-1)
-                    })
-                }
-                Err(e) => {
-                    serde_json::json!({
-                        "stdout": "",
-                        "stderr": format!("Failed to execute '{}': {}", cmd, e),
-                        "exit_code": -1
-                    })
-                }
-            };
-
-            let handle = plugin.memory_new(result.to_string())?;
+            let result = run_exec_request(&input)?;
+            let handle = plugin.memory_new(result)?;
             outputs[0] = plugin.memory_to_val(handle);
             Ok(())
         },
@@ -262,6 +258,67 @@ fn parse_widget_action(response: &str) -> Option<WidgetAction> {
     None
 }
 
+fn build_refresh_settings(
+    config: Option<&WidgetConfig>,
+) -> serde_json::Map<String, serde_json::Value> {
+    let mut settings = config
+        .map(|c| c.settings.clone())
+        .unwrap_or_default()
+        .into_iter()
+        .collect::<serde_json::Map<String, serde_json::Value>>();
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
+    let secs = now.as_secs() as i64;
+    let time_str = format_local_time(secs);
+    settings.insert("current_time".to_string(), serde_json::json!(time_str.0));
+    settings.insert("current_date".to_string(), serde_json::json!(time_str.1));
+    settings.insert("timezone".to_string(), serde_json::json!(time_str.2));
+
+    if let Some(locations) = settings.get("locations").cloned() {
+        if let Some(locations_obj) = locations.as_object() {
+            let clocks: Vec<serde_json::Value> = locations_obj
+                .iter()
+                .map(|(label, tz_val)| {
+                    let tz_str = tz_val.as_str().unwrap_or("UTC");
+                    let (time, date) = format_tz_time(tz_str);
+                    serde_json::json!({
+                        "label": label,
+                        "time": time,
+                        "date": date,
+                        "zone": tz_str
+                    })
+                })
+                .collect();
+            settings.insert("clocks".to_string(), serde_json::json!(clocks));
+        }
+    }
+
+    settings
+}
+
+fn widget_content_from_refresh_result(
+    result: Result<String, extism::Error>,
+    metadata_name: &str,
+) -> WidgetContent {
+    match result {
+        Ok(json_str) => parse_widget_content(&json_str),
+        Err(e) => WidgetContent::Text {
+            content: format!("[{}] Error: {}", metadata_name, e),
+            scrollable: false,
+            wrap: true,
+        },
+    }
+}
+
+fn widget_action_from_result(result: Result<String, extism::Error>) -> Option<WidgetAction> {
+    match result {
+        Ok(response) => parse_widget_action(&response),
+        Err(_) => None,
+    }
+}
+
 impl slate_plugin_sdk::Widget for WasmPlugin {
     fn metadata(&self) -> WidgetMetadata {
         self.metadata.clone()
@@ -272,53 +329,12 @@ impl slate_plugin_sdk::Widget for WasmPlugin {
     }
 
     fn refresh(&mut self) -> WidgetContent {
-        // Build input from config settings
-        let mut settings = self
-            .config
-            .as_ref()
-            .map(|c| c.settings.clone())
-            .unwrap_or_default();
-
-        // Inject current time (cheap, always available)
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default();
-        let secs = now.as_secs() as i64;
-        let time_str = format_local_time(secs);
-        settings.insert("current_time".to_string(), serde_json::json!(time_str.0));
-        settings.insert("current_date".to_string(), serde_json::json!(time_str.1));
-        settings.insert("timezone".to_string(), serde_json::json!(time_str.2));
-
-        // Build clocks array if locations are configured
-        if let Some(locations) = settings.get("locations").cloned() {
-            if let Some(locations_obj) = locations.as_object() {
-                let clocks: Vec<serde_json::Value> = locations_obj
-                    .iter()
-                    .map(|(label, tz_val)| {
-                        let tz_str = tz_val.as_str().unwrap_or("UTC");
-                        let (time, date) = format_tz_time(tz_str);
-                        serde_json::json!({
-                            "label": label,
-                            "time": time,
-                            "date": date,
-                            "zone": tz_str
-                        })
-                    })
-                    .collect();
-                settings.insert("clocks".to_string(), serde_json::json!(clocks));
-            }
-        }
-
+        let settings = build_refresh_settings(self.config.as_ref());
         let input = serde_json::to_string(&settings).unwrap_or_default();
-
-        match self.plugin.call::<&str, String>("refresh", &input) {
-            Ok(json_str) => parse_widget_content(&json_str),
-            Err(e) => WidgetContent::Text {
-                content: format!("[{}] Error: {}", self.metadata.name, e),
-                scrollable: false,
-                wrap: true,
-            },
-        }
+        widget_content_from_refresh_result(
+            self.plugin.call::<&str, String>("refresh", &input),
+            &self.metadata.name,
+        )
     }
 
     fn on_key(&mut self, key: &str, action: &str) {
@@ -332,10 +348,7 @@ impl slate_plugin_sdk::Widget for WasmPlugin {
         item_id: &str,
     ) -> Option<slate_plugin_sdk::WidgetAction> {
         let input = serde_json::json!({ "action_id": action_id, "item_id": item_id }).to_string();
-        match self.plugin.call::<&str, String>("on_action", &input) {
-            Ok(response) => parse_widget_action(&response),
-            Err(_) => None,
-        }
+        widget_action_from_result(self.plugin.call::<&str, String>("on_action", &input))
     }
 
     fn on_focus(&mut self) {}
@@ -345,7 +358,9 @@ impl slate_plugin_sdk::Widget for WasmPlugin {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use slate_plugin_sdk::Widget;
     use std::io::Write;
+    use tempfile::tempdir;
     use tempfile::NamedTempFile;
 
     #[test]
@@ -562,6 +577,79 @@ mod tests {
     }
 
     #[test]
+    fn helper_functions_cover_exec_refresh_and_action_paths() {
+        let missing_cmd = run_exec_request(r#"{}"#).unwrap();
+        assert!(missing_cmd.contains("\"exit_code\":1"));
+        assert!(missing_cmd.contains("cmd"));
+
+        let bad_json = run_exec_request("not-json");
+        assert!(bad_json.is_err());
+
+        #[cfg(windows)]
+        let ok = run_exec_request(r#"{"cmd":"cmd","args":["/c","echo hello"]}"#).unwrap();
+        #[cfg(not(windows))]
+        let ok = run_exec_request(r#"{"cmd":"echo","args":["hello"]}"#).unwrap();
+        assert!(ok.contains("hello"));
+
+        let missing = run_exec_request(r#"{"cmd":"definitely_missing_slate_command"}"#).unwrap();
+        assert!(missing.contains("\"exit_code\":-1"));
+
+        match widget_content_from_refresh_result(
+            Ok(r#"{"type":"text","content":"ok"}"#.to_string()),
+            "demo",
+        ) {
+            WidgetContent::Text { content, .. } => assert_eq!(content, "ok"),
+            other => panic!("expected text content, got {other:?}"),
+        }
+        match widget_content_from_refresh_result(Err(extism::Error::msg("boom")), "demo") {
+            WidgetContent::Text { content, .. } => assert!(content.contains("[demo] Error: boom")),
+            other => panic!("expected text error, got {other:?}"),
+        }
+
+        assert_eq!(
+            widget_action_from_result(Ok(r#"{"notify":"done"}"#.to_string())),
+            Some(WidgetAction::Notify("done".to_string()))
+        );
+        assert_eq!(
+            widget_action_from_result(Err(extism::Error::msg("boom"))),
+            None
+        );
+    }
+
+    #[test]
+    fn build_refresh_settings_includes_dynamic_time_and_clocks() {
+        let config = WidgetConfig {
+            position: slate_plugin_sdk::Position {
+                row: 0,
+                col: 0,
+                row_span: 1,
+                col_span: 1,
+            },
+            settings: std::collections::HashMap::from([
+                ("message".to_string(), serde_json::json!("hello")),
+                (
+                    "locations".to_string(),
+                    serde_json::json!({"UTC": "UTC", "Bad": 42}),
+                ),
+            ]),
+            refresh_interval: None,
+        };
+
+        let settings = build_refresh_settings(Some(&config));
+        assert_eq!(settings.get("message"), Some(&serde_json::json!("hello")));
+        assert!(settings.get("current_time").is_some());
+        assert!(settings.get("current_date").is_some());
+        assert!(settings.get("timezone").is_some());
+        let clocks = settings
+            .get("clocks")
+            .and_then(serde_json::Value::as_array)
+            .expect("clocks array");
+        assert_eq!(clocks.len(), 2);
+        assert_eq!(clocks[0]["label"].as_str().unwrap_or_default(), "Bad");
+        assert_eq!(clocks[0]["zone"].as_str().unwrap_or_default(), "UTC");
+    }
+
+    #[test]
     fn from_file_returns_error_for_nonexistent_file() {
         let path = std::path::Path::new("C:\\definitely-missing-slate-plugin.wasm");
         let err = match WasmPlugin::from_file(path, Permissions::default()) {
@@ -569,9 +657,7 @@ mod tests {
             Err(err) => err,
         };
 
-        assert!(err
-            .to_string()
-            .contains("Failed to read WASM file"));
+        assert!(err.to_string().contains("Failed to read WASM file"));
     }
 
     #[test]
@@ -583,9 +669,7 @@ mod tests {
             Ok(_) => panic!("expected plugin creation to fail"),
             Err(err) => err,
         };
-        assert!(err
-            .to_string()
-            .contains("Failed to create WASM plugin"));
+        assert!(err.to_string().contains("Failed to create WASM plugin"));
     }
 
     #[test]
@@ -612,5 +696,72 @@ mod tests {
         assert_eq!(time.len(), 8); // HH:MM:SS
         assert!(!date.is_empty());
         assert!(!tz.is_empty());
+    }
+
+    #[test]
+    fn from_file_loads_minimal_wasm_with_fallback_metadata_and_refresh_error() {
+        let dir = tempdir().unwrap();
+        let wasm_path = dir.path().join("minimal.wasm");
+        std::fs::write(
+            &wasm_path,
+            wat::parse_str(r#"(module (memory (export "memory") 1))"#).unwrap(),
+        )
+        .unwrap();
+
+        let mut plugin = WasmPlugin::from_file(&wasm_path, Permissions::default()).unwrap();
+        let metadata = plugin.metadata();
+        assert_eq!(metadata.name, "minimal");
+        assert_eq!(metadata.version, "0.1.0");
+
+        plugin.init(WidgetConfig {
+            position: slate_plugin_sdk::Position {
+                row: 0,
+                col: 0,
+                row_span: 1,
+                col_span: 1,
+            },
+            settings: std::collections::HashMap::from([
+                (
+                    "locations".to_string(),
+                    serde_json::json!({"NYC": "America/New_York"}),
+                ),
+                ("message".to_string(), serde_json::json!("hello")),
+            ]),
+            refresh_interval: Some(30),
+        });
+
+        match plugin.refresh() {
+            WidgetContent::Text { content, .. } => {
+                assert!(content.contains("[minimal] Error:"));
+            }
+            other => panic!("expected text content, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn from_bytes_loads_minimal_wasm_and_returns_none_for_actions() {
+        let bytes = wat::parse_str(r#"(module (memory (export "memory") 1))"#).unwrap();
+        let mut plugin = WasmPlugin::from_bytes(
+            bytes,
+            WidgetMetadata {
+                name: "bytes".to_string(),
+                description: "from bytes".to_string(),
+                version: "9.9.9".to_string(),
+                author: None,
+                homepage: None,
+            },
+            Permissions::default(),
+        )
+        .unwrap();
+
+        assert_eq!(plugin.metadata().name, "bytes");
+        plugin.on_key("Enter", "press");
+        plugin.on_focus();
+        plugin.on_blur();
+        assert_eq!(plugin.on_action("select", "item-1"), None);
+        match plugin.refresh() {
+            WidgetContent::Text { content, .. } => assert!(content.contains("[bytes] Error:")),
+            other => panic!("expected text content, got {other:?}"),
+        }
     }
 }

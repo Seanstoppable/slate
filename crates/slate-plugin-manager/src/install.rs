@@ -29,10 +29,7 @@ impl PluginInstaller {
         let version = resolve_version(version, latest_version.as_deref())?;
 
         // Download release asset (WASM file)
-        let download_url = format!(
-            "https://github.com/{}/{}/releases/download/v{}/{}.wasm",
-            owner, repo, version, repo
-        );
+        let download_url = build_download_url(&owner, &repo, &version);
 
         let dest_dir = self.plugins_dir.join(&repo);
         std::fs::create_dir_all(&dest_dir)?;
@@ -57,8 +54,7 @@ impl PluginInstaller {
         std::fs::write(&wasm_path, &bytes)?;
 
         // Compute SHA256 for lockfile integrity
-        use sha2::{Digest, Sha256};
-        let hash = format!("{:x}", Sha256::digest(&bytes));
+        let hash = compute_sha256(&bytes);
 
         Ok(InstalledPlugin {
             name: repo,
@@ -95,10 +91,7 @@ impl PluginInstaller {
     }
 
     async fn fetch_latest_version(&self, owner: &str, repo: &str) -> Result<String> {
-        let url = format!(
-            "https://api.github.com/repos/{}/{}/releases/latest",
-            owner, repo
-        );
+        let url = latest_release_api_url(owner, repo);
         let client = reqwest::Client::new();
         let response: serde_json::Value = client
             .get(&url)
@@ -108,11 +101,7 @@ impl PluginInstaller {
             .json()
             .await?;
 
-        let tag = response["tag_name"]
-            .as_str()
-            .context("No tag_name in latest release")?;
-
-        Ok(tag.trim_start_matches('v').to_string())
+        parse_latest_release_tag(&response)
     }
 }
 
@@ -151,6 +140,27 @@ fn resolve_version(requested: Option<&str>, latest: Option<&str>) -> Result<Stri
             .map(str::to_string)
             .context("No latest version available"),
     }
+}
+
+fn latest_release_api_url(owner: &str, repo: &str) -> String {
+    format!("https://api.github.com/repos/{owner}/{repo}/releases/latest")
+}
+
+fn build_download_url(owner: &str, repo: &str, version: &str) -> String {
+    format!("https://github.com/{owner}/{repo}/releases/download/v{version}/{repo}.wasm")
+}
+
+fn parse_latest_release_tag(response: &serde_json::Value) -> Result<String> {
+    let tag = response["tag_name"]
+        .as_str()
+        .context("No tag_name in latest release")?;
+
+    Ok(tag.trim_start_matches('v').to_string())
+}
+
+fn compute_sha256(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    format!("{:x}", Sha256::digest(bytes))
 }
 
 #[cfg(test)]
@@ -251,5 +261,32 @@ mod tests {
         let installer = PluginInstaller::new(dir.path().join("plugins"));
 
         installer.remove("missing-plugin").unwrap();
+    }
+
+    #[test]
+    fn test_default_dir_ends_with_slate_plugins() {
+        let dir = PluginInstaller::default_dir().unwrap();
+        assert!(dir.ends_with(std::path::Path::new("slate").join("plugins")));
+    }
+
+    #[test]
+    fn helper_functions_build_urls_and_hashes() {
+        assert_eq!(
+            latest_release_api_url("owner", "repo"),
+            "https://api.github.com/repos/owner/repo/releases/latest"
+        );
+        assert_eq!(
+            build_download_url("owner", "repo", "1.2.3"),
+            "https://github.com/owner/repo/releases/download/v1.2.3/repo.wasm"
+        );
+        assert_eq!(
+            parse_latest_release_tag(&serde_json::json!({"tag_name":"v2.0.0"})).unwrap(),
+            "2.0.0"
+        );
+        assert!(parse_latest_release_tag(&serde_json::json!({})).is_err());
+        assert_eq!(
+            compute_sha256(b"abc"),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
     }
 }

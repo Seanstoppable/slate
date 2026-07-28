@@ -69,6 +69,8 @@ impl Registry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
 
     fn sample_registry() -> Registry {
         Registry {
@@ -166,5 +168,37 @@ mod tests {
         let tag_results = registry.search("issues");
         assert_eq!(tag_results.len(), 1);
         assert_eq!(tag_results[0].name, "slate-github");
+    }
+
+    #[tokio::test]
+    async fn fetch_reads_registry_from_http_source() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let body = r#"
+[[plugins]]
+name = "slate-local"
+source = "github.com/slate-community/slate-local"
+description = "Local registry test"
+tags = ["local", "test"]
+"#;
+        let response = format!(
+            "HTTP/1.1 200 OK\r\ncontent-length: {}\r\ncontent-type: text/plain\r\nconnection: close\r\n\r\n{}",
+            body.len(),
+            body
+        );
+
+        tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = [0_u8; 1024];
+            let _ = stream.read(&mut request).await.unwrap();
+            stream.write_all(response.as_bytes()).await.unwrap();
+        });
+
+        let registry = Registry::fetch(Some(&format!("http://{addr}/registry.toml")))
+            .await
+            .unwrap();
+        assert_eq!(registry.url, format!("http://{addr}/registry.toml"));
+        assert_eq!(registry.plugins.len(), 1);
+        assert_eq!(registry.plugins[0].name, "slate-local");
     }
 }

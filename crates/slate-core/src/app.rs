@@ -382,7 +382,7 @@ mod tests {
     use slate_plugin_sdk::{Widget, WidgetConfig, WidgetContent, WidgetMetadata};
     use std::sync::{
         atomic::{AtomicUsize, Ordering},
-        Arc,
+        Arc, Mutex,
     };
 
     /// A mock widget that returns a selectable list and responds to on_action.
@@ -500,6 +500,42 @@ mod tests {
         }
     }
 
+    struct RecordingWidget {
+        last_key: Arc<Mutex<Option<String>>>,
+    }
+
+    impl RecordingWidget {
+        fn new(last_key: Arc<Mutex<Option<String>>>) -> Self {
+            Self { last_key }
+        }
+    }
+
+    impl Widget for RecordingWidget {
+        fn metadata(&self) -> WidgetMetadata {
+            WidgetMetadata {
+                name: "Recorder".to_string(),
+                description: "Records keys".to_string(),
+                version: "0.1.0".to_string(),
+                author: None,
+                homepage: None,
+            }
+        }
+
+        fn init(&mut self, _config: WidgetConfig) {}
+
+        fn refresh(&mut self) -> WidgetContent {
+            WidgetContent::Text {
+                content: "Recorder".to_string(),
+                scrollable: false,
+                wrap: true,
+            }
+        }
+
+        fn on_key(&mut self, key: &str, _action: &str) {
+            *self.last_key.lock().unwrap() = Some(key.to_string());
+        }
+    }
+
     fn make_key(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::NONE)
     }
@@ -542,10 +578,18 @@ mod tests {
         app.add_widget(Box::new(MockTextWidget), 0, 0, Some(60));
         app.add_widget(Box::new(MockListWidget::new(None)), 0, 1, Some(60));
 
-        assert_eq!(app.focused_widget().map(|widget| widget.metadata.name.as_str()), Some("Mock Text"));
+        assert_eq!(
+            app.focused_widget()
+                .map(|widget| widget.metadata.name.as_str()),
+            Some("Mock Text")
+        );
 
         app.focus.col = 1;
-        assert_eq!(app.focused_widget().map(|widget| widget.metadata.name.as_str()), Some("Mock List"));
+        assert_eq!(
+            app.focused_widget()
+                .map(|widget| widget.metadata.name.as_str()),
+            Some("Mock List")
+        );
     }
 
     #[test]
@@ -563,6 +607,23 @@ mod tests {
         app.widgets[0].last_refresh = now - Duration::from_secs(2);
 
         assert!(app.widgets[0].should_refresh(now, &app.focus));
+    }
+
+    #[test]
+    fn should_refresh_returns_false_before_interval_expires() {
+        let refresh_count = Arc::new(AtomicUsize::new(0));
+        let mut app = App::new(SlateConfig::default());
+        app.add_widget(
+            Box::new(CounterTextWidget::new(refresh_count)),
+            0,
+            0,
+            Some(60),
+        );
+
+        let now = Instant::now();
+        app.widgets[0].last_refresh = now - Duration::from_secs(10);
+
+        assert!(!app.widgets[0].should_refresh(now, &app.focus));
     }
 
     #[test]
@@ -816,5 +877,50 @@ mod tests {
         app.handle_key(make_key(KeyCode::Right));
         app.handle_key(make_key(KeyCode::Down));
         assert_eq!((app.focus.row, app.focus.col), (1, 1));
+    }
+
+    #[test]
+    fn ctrl_c_and_backtab_update_running_and_focus() {
+        let mut config = SlateConfig::default();
+        config.layout.rows = 1;
+        config.layout.cols = 2;
+        let mut app = App::new(config);
+        app.add_widget(Box::new(MockTextWidget), 0, 0, Some(60));
+        app.add_widget(Box::new(MockTextWidget), 0, 1, Some(60));
+        app.focus.col = 1;
+
+        app.handle_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL));
+        assert!(!app.running);
+
+        app.running = true;
+        app.handle_key(make_key(KeyCode::BackTab));
+        assert_eq!(app.focus.col, 0);
+    }
+
+    #[test]
+    fn set_notifications_and_forwarded_keys_update_state() {
+        let mut app = App::new(SlateConfig::default());
+        app.set_notifications(UpdateNotifications {
+            available_updates: vec![crate::notifications::UpdateInfo {
+                name: "clock".to_string(),
+                current_version: "1.0.0".to_string(),
+                latest_version: "1.2.3".to_string(),
+            }],
+            last_check: None,
+            dismissed: false,
+        });
+        assert!(app
+            .notifications
+            .status_message()
+            .as_deref()
+            .unwrap_or_default()
+            .contains("1 update available"));
+
+        let mut app = App::new(SlateConfig::default());
+        let last_key = Arc::new(Mutex::new(None));
+        let widget = RecordingWidget::new(last_key.clone());
+        app.add_widget(Box::new(widget), 0, 0, Some(60));
+        app.handle_key(make_key(KeyCode::Char('x')));
+        assert_eq!(last_key.lock().unwrap().as_deref(), Some("Char('x')"));
     }
 }
