@@ -111,4 +111,26 @@ mod tests {
         });
         assert!(matches!(widget.refresh(), WidgetContent::Empty { .. }));
     }
+
+    #[test]
+    fn boxed_widget_uses_default_trait_hooks_via_dynamic_dispatch() {
+        let mut widget: BoxedWidget = Box::new(DefaultBehaviorWidget);
+
+        assert_eq!(widget.metadata().name, "Default");
+        widget.init(WidgetConfig {
+            position: Position {
+                row: 1,
+                col: 2,
+                row_span: 1,
+                col_span: 1,
+            },
+            settings: Default::default(),
+            refresh_interval: Some(15),
+        });
+        widget.on_key("Space", "press");
+        widget.on_focus();
+        widget.on_blur();
+        assert_eq!(widget.on_action("inspect", "item-7"), None);
+        assert!(matches!(widget.refresh(), WidgetContent::Empty { .. }));
+    }
 }

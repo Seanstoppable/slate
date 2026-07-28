@@ -660,6 +660,74 @@ mod tests {
     }
 
     #[test]
+    fn generate_config_example_covers_type_specific_and_special_case_defaults() {
+        let manifest = DocsManifest {
+            plugin: DocsManifestPlugin::default(),
+            metadata: DocsManifestPlugin::default(),
+            permissions: DocsManifestPermissions {
+                network: vec!["api.openweathermap.org".to_string()],
+                exec: vec!["wego".to_string()],
+                ..Default::default()
+            },
+            config: [
+                (
+                    "items".to_string(),
+                    DocsConfigField {
+                        field_type: "array".to_string(),
+                        required: Some(false),
+                        description: String::new(),
+                        default: None,
+                    },
+                ),
+                (
+                    "enabled".to_string(),
+                    DocsConfigField {
+                        field_type: "boolean".to_string(),
+                        required: Some(false),
+                        description: "Turn on the widget".to_string(),
+                        default: None,
+                    },
+                ),
+                (
+                    "count".to_string(),
+                    DocsConfigField {
+                        field_type: "number".to_string(),
+                        required: Some(true),
+                        description: String::new(),
+                        default: None,
+                    },
+                ),
+            ]
+            .into_iter()
+            .collect(),
+        };
+
+        let config_example = generate_config_example("numbers", "plugin", &manifest);
+        assert!(config_example.contains("items = [\"example1\", \"example2\"]"));
+        assert!(config_example.contains("enabled = true  # Turn on the widget"));
+        assert!(config_example.contains("count = 1  # (required)"));
+
+        let weather = generate_config_example("weather", "plugin", &DocsManifest {
+            permissions: DocsManifestPermissions {
+                network: vec!["api.openweathermap.org".to_string()],
+                ..Default::default()
+            },
+            ..Default::default()
+        });
+        assert!(weather.contains("provider = \"openweathermap\""));
+        assert!(weather.contains("location = \"San Francisco\""));
+
+        let wego = generate_config_example("wego", "plugin", &DocsManifest {
+            permissions: DocsManifestPermissions {
+                exec: vec!["wego".to_string()],
+                ..Default::default()
+            },
+            ..Default::default()
+        });
+        assert!(wego.contains("days = \"1\""));
+    }
+
+    #[test]
     fn html_and_js_escape_special_characters() {
         assert_eq!(
             html_escape("<tag attr=\"a&b\">'x'</tag>"),
@@ -718,6 +786,55 @@ mod tests {
     }
 
     #[test]
+    fn generate_docs_html_covers_additional_language_and_os_badges() {
+        let html = generate_docs_html(&[
+            PluginInfo {
+                name: "go-tool".to_string(),
+                description: "Go plugin".to_string(),
+                version: "1.0.0".to_string(),
+                author: "Slate".to_string(),
+                language: "go".to_string(),
+                os: vec!["freebsd".to_string()],
+                permissions: vec!["exec: tool".to_string()],
+                kind: "plugin",
+                config_example: String::new(),
+                install_hint: String::new(),
+            },
+            PluginInfo {
+                name: "zig-tool".to_string(),
+                description: "Zig plugin".to_string(),
+                version: "1.0.0".to_string(),
+                author: "Slate".to_string(),
+                language: "zig".to_string(),
+                os: vec!["windows".to_string()],
+                permissions: vec![],
+                kind: "plugin",
+                config_example: String::new(),
+                install_hint: String::new(),
+            },
+            PluginInfo {
+                name: "ts-tool".to_string(),
+                description: "TS plugin".to_string(),
+                version: "1.0.0".to_string(),
+                author: "Slate".to_string(),
+                language: "typescript".to_string(),
+                os: vec!["linux".to_string()],
+                permissions: vec![],
+                kind: "plugin",
+                config_example: String::new(),
+                install_hint: String::new(),
+            },
+        ])
+        .unwrap();
+
+        assert!(html.contains("lang-badge lang-go"));
+        assert!(html.contains("lang-badge lang-zig"));
+        assert!(html.contains("lang-badge lang-ts"));
+        assert!(html.contains("&#x1FA9F; Windows"));
+        assert!(html.contains("<span class=\"os-badge\">freebsd</span>"));
+    }
+
+    #[test]
     fn template_file_exists_and_contains_placeholders() {
         let template_path = resolve_template_path().unwrap();
         let template = std::fs::read_to_string(template_path).unwrap();
@@ -731,6 +848,18 @@ mod tests {
         assert!(template.contains("<!DOCTYPE html>"));
         assert!(template.contains("{{CARDS}}"));
         assert!(template.contains("{{PLUGIN_DATA}}"));
+    }
+
+    #[test]
+    fn resolve_template_path_falls_back_to_executable_ancestors() {
+        let _lock = cwd_lock().lock().unwrap();
+        let dir = tempdir().unwrap();
+        let _cwd = CwdReset::change_to(dir.path());
+
+        let path = resolve_template_path().unwrap();
+
+        assert!(path.ends_with(Path::new("docs").join("template.html")));
+        assert!(!path.starts_with(dir.path()));
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -819,5 +948,77 @@ function refresh() return '{"type":"text","content":"Hello","scrollable":false,"
         assert!(html.contains("builtin:vcs"));
         assert!(html.contains("github.com/slate-community/slate-clock"));
         assert!(html.contains("lua:scripts/greeting.lua"));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn docs_uses_default_output_and_skips_invalid_entries() {
+        let _lock = cwd_lock().lock().unwrap();
+        let dir = tempdir().unwrap();
+
+        let valid_plugin_dir = dir.path().join("plugins").join("alpha");
+        std::fs::create_dir_all(&valid_plugin_dir).unwrap();
+        std::fs::write(
+            valid_plugin_dir.join("plugin.toml"),
+            r#"
+[plugin]
+name = "alpha"
+description = "Alpha plugin"
+version = "1.0.0"
+
+[permissions]
+exec = ["echo"]
+secrets = ["api_token"]
+"#,
+        )
+        .unwrap();
+
+        let invalid_manifest_dir = dir.path().join("plugins").join("broken");
+        std::fs::create_dir_all(&invalid_manifest_dir).unwrap();
+        std::fs::write(invalid_manifest_dir.join("plugin.toml"), "not = [valid").unwrap();
+
+        let unreadable_manifest_dir = dir.path().join("plugins").join("directory-manifest");
+        std::fs::create_dir_all(unreadable_manifest_dir.join("plugin.toml")).unwrap();
+
+        let ignored_dir = dir.path().join("plugins").join("missing-manifest");
+        std::fs::create_dir_all(&ignored_dir).unwrap();
+
+        let scripts_dir = dir.path().join("scripts");
+        std::fs::create_dir_all(&scripts_dir).unwrap();
+        std::fs::write(
+            scripts_dir.join("fallback.lua"),
+            r#"
+function refresh() return '{"type":"text","content":"fallback","scrollable":false,"wrap":true}' end
+"#,
+        )
+        .unwrap();
+        std::fs::write(scripts_dir.join("ignore.txt"), "not lua").unwrap();
+
+        let template_dir = dir.path().join("docs");
+        std::fs::create_dir_all(&template_dir).unwrap();
+        let template = std::fs::read_to_string(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("..")
+                .join("..")
+                .join("docs")
+                .join("template.html"),
+        )
+        .unwrap();
+        std::fs::write(template_dir.join("template.html"), template).unwrap();
+
+        let _cwd = CwdReset::change_to(dir.path());
+        docs(None).await.unwrap();
+
+        let output = dir.path().join("docs").join("plugins").join("index.html");
+        let html = std::fs::read_to_string(output).unwrap();
+        assert!(html.contains("alpha"));
+        assert!(html.contains("fallback"));
+        assert!(html.contains("exec: echo"));
+        assert!(html.contains("secrets: api_token"));
+        assert!(html.contains("lang:\"rust\""));
+        assert!(!html.contains("Build: see plugins/alpha/README.md"));
+        assert!(!html.contains("broken"));
+        assert!(!html.contains("missing-manifest"));
+        assert!(!html.contains("ignore.txt"));
+        assert!(html.contains("lua:scripts/fallback.lua"));
     }
 }

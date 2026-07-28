@@ -271,6 +271,14 @@ mod tests {
     }
 
     #[test]
+    fn rgb_colors_round_trip_through_json() {
+        let json = serde_json::to_string(&Color::Rgb(12, 34, 56)).unwrap();
+        let round_trip: Color = serde_json::from_str(&json).unwrap();
+
+        assert!(matches!(round_trip, Color::Rgb(12, 34, 56)));
+    }
+
+    #[test]
     fn widget_content_variants_round_trip_through_json() {
         let variants = vec![
             WidgetContent::Text {

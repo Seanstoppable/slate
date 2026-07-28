@@ -650,6 +650,33 @@ mod tests {
     }
 
     #[test]
+    fn build_refresh_settings_handles_missing_config_and_non_object_locations() {
+        let empty = build_refresh_settings(None);
+        assert!(empty.get("current_time").is_some());
+        assert!(empty.get("current_date").is_some());
+        assert!(empty.get("timezone").is_some());
+        assert!(empty.get("clocks").is_none());
+
+        let config = WidgetConfig {
+            position: slate_plugin_sdk::Position {
+                row: 0,
+                col: 0,
+                row_span: 1,
+                col_span: 1,
+            },
+            settings: std::collections::HashMap::from([(
+                "locations".to_string(),
+                serde_json::json!(["UTC", "America/New_York"]),
+            )]),
+            refresh_interval: None,
+        };
+
+        let settings = build_refresh_settings(Some(&config));
+        assert!(settings.get("locations").is_some());
+        assert!(settings.get("clocks").is_none());
+    }
+
+    #[test]
     fn from_file_returns_error_for_nonexistent_file() {
         let path = std::path::Path::new("C:\\definitely-missing-slate-plugin.wasm");
         let err = match WasmPlugin::from_file(path, Permissions::default()) {
@@ -736,6 +763,37 @@ mod tests {
             }
             other => panic!("expected text content, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn from_file_accepts_stub_exports_and_uses_success_paths() {
+        let dir = tempdir().unwrap();
+        let wasm_path = dir.path().join("stub.wasm");
+        std::fs::write(
+            &wasm_path,
+            wat::parse_str(
+                r#"
+                    (module
+                        (memory (export "memory") 1)
+                        (func (export "metadata") (result i32) (i32.const 0))
+                        (func (export "refresh") (result i32) (i32.const 0))
+                        (func (export "on_action") (result i32) (i32.const 0))
+                    )
+                "#,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+
+        let mut plugin = WasmPlugin::from_file(&wasm_path, Permissions::default()).unwrap();
+        assert_eq!(plugin.metadata().name, "stub");
+        assert_eq!(plugin.metadata().version, "0.1.0");
+
+        match plugin.refresh() {
+            WidgetContent::Text { content, .. } => assert_eq!(content, ""),
+            other => panic!("expected text content, got {other:?}"),
+        }
+        assert_eq!(plugin.on_action("open", "item-1"), None);
     }
 
     #[test]

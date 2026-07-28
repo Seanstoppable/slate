@@ -284,6 +284,12 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_blocks_stops_on_malformed_or_unclosed_tags() {
+        assert!(parse_blocks("<item<title>missing close", "item").is_empty());
+        assert!(parse_blocks("<item><title>oops</title>", "item").is_empty());
+    }
+
+    #[test]
     fn test_parse_rss_item() {
         let block = "<title>My Article</title><link>https://example.com/article</link>";
         let item = parse_rss_item(block).unwrap();
@@ -336,5 +342,19 @@ mod tests {
         let xml = "<html><body>Not a feed</body></html>";
         let items = parse_feed_items(xml);
         assert!(items.is_empty());
+    }
+
+    #[test]
+    fn test_parse_feed_items_ignores_invalid_rss_before_valid_atom_entries() {
+        let xml = r#"
+<feed>
+  <item><link>https://invalid.example.com</link></item>
+  <entry><title>Atom Title</title><link rel="alternate" href="https://valid.example.com"/></entry>
+</feed>
+"#;
+        let items = parse_feed_items(xml);
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].title, "Atom Title");
+        assert_eq!(items[0].link, "https://valid.example.com");
     }
 }

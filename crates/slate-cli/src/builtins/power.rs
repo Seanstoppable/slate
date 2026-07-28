@@ -96,6 +96,19 @@ fn parse_windows_power_output(text: &str) -> Option<(bool, String, u64)> {
     Some((true, status.to_string(), percent))
 }
 
+#[cfg(target_os = "windows")]
+fn resolve_windows_power_info(
+    output: std::io::Result<std::process::Output>,
+) -> (bool, String, u64) {
+    output
+        .ok()
+        .and_then(|out| {
+            let text = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            parse_windows_power_output(&text)
+        })
+        .unwrap_or((false, "AC Power".to_string(), 100))
+}
+
 fn get_power_info() -> (bool, String, u64) {
     #[cfg(target_os = "windows")]
     {
@@ -106,13 +119,7 @@ fn get_power_info() -> (bool, String, u64) {
                 "(Get-CimInstance Win32_Battery | Select-Object EstimatedChargeRemaining, BatteryStatus | ConvertTo-Json) 2>$null; if (-not $?) { Write-Output '{\"ac_power\": true}' }",
             ])
             .output();
-        if let Ok(out) = output {
-            let text = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            if let Some(parsed) = parse_windows_power_output(&text) {
-                return parsed;
-            }
-        }
-        (false, "AC Power".to_string(), 100)
+        resolve_windows_power_info(output)
     }
     #[cfg(target_os = "macos")]
     {
@@ -341,6 +348,24 @@ mod tests {
         );
         assert_eq!(
             super::parse_windows_power_output(
+                r#"{"EstimatedChargeRemaining":100,"BatteryStatus":2}"#
+            ),
+            Some((true, "AC Power".to_string(), 100))
+        );
+        assert_eq!(
+            super::parse_windows_power_output(
+                r#"{"EstimatedChargeRemaining":100,"BatteryStatus":3}"#
+            ),
+            Some((true, "Fully Charged".to_string(), 100))
+        );
+        assert_eq!(
+            super::parse_windows_power_output(
+                r#"{"EstimatedChargeRemaining":15,"BatteryStatus":4}"#
+            ),
+            Some((true, "Low".to_string(), 15))
+        );
+        assert_eq!(
+            super::parse_windows_power_output(
                 r#"{"EstimatedChargeRemaining":90,"BatteryStatus":7}"#
             ),
             Some((true, "Charging".to_string(), 90))
@@ -358,5 +383,27 @@ mod tests {
             Some((true, "Unknown".to_string(), 0))
         );
         assert_eq!(super::parse_windows_power_output("not-json"), None);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn resolve_windows_power_info_handles_ok_and_error_results() {
+        use std::os::windows::process::ExitStatusExt;
+        use std::process::Output;
+
+        let parsed = super::resolve_windows_power_info(Ok(Output {
+            status: std::process::ExitStatus::from_raw(0),
+            stdout: br#"{"EstimatedChargeRemaining":88,"BatteryStatus":6}"#.to_vec(),
+            stderr: Vec::new(),
+        }));
+        assert_eq!(parsed, (true, "Charging".to_string(), 88));
+
+        assert_eq!(
+            super::resolve_windows_power_info(Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "missing powershell"
+            ))),
+            (false, "AC Power".to_string(), 100)
+        );
     }
 }

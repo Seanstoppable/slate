@@ -103,6 +103,20 @@ mod tests {
     use crate::lockfile::{LockedPlugin, Lockfile};
     use std::path::PathBuf;
 
+    const KNOWN_RELEASE_SOURCE: &str = "github.com/sqlc-dev/sqlc-gen-greeter";
+
+    async fn latest_known_release_version() -> Result<String> {
+        let client = reqwest::Client::new();
+        let response: serde_json::Value = client
+            .get("https://api.github.com/repos/sqlc-dev/sqlc-gen-greeter/releases/latest")
+            .header("User-Agent", "slate-plugin-manager-tests")
+            .send()
+            .await?
+            .json()
+            .await?;
+        Ok(UpdateChecker::latest_tag_name(&response))
+    }
+
     #[test]
     fn new_stores_installer() {
         let checker = UpdateChecker::new(PluginInstaller::new(PathBuf::from("plugins")));
@@ -135,6 +149,135 @@ mod tests {
             LockedPlugin {
                 source: "invalid".to_string(),
                 version: "1.0.0".to_string(),
+                sha256: "hash".to_string(),
+                permissions_hash: None,
+            },
+        );
+
+        let updates = checker.check_outdated(&lockfile).await.unwrap();
+        assert!(updates.is_empty());
+    }
+
+    #[tokio::test]
+    async fn check_single_returns_update_for_outdated_known_release() {
+        let checker = UpdateChecker::new(PluginInstaller::new(PathBuf::from("plugins")));
+        let locked = LockedPlugin {
+            source: KNOWN_RELEASE_SOURCE.to_string(),
+            version: "0.0.0".to_string(),
+            sha256: "hash".to_string(),
+            permissions_hash: None,
+        };
+
+        let update = match checker.check_single("greeter", &locked).await {
+            Ok(Some(update)) => update,
+            Ok(None) => panic!("expected available update"),
+            Err(err) => {
+                eprintln!("skipping network-dependent assertion: {err}");
+                return;
+            }
+        };
+        let latest = match latest_known_release_version().await {
+            Ok(latest) => latest,
+            Err(err) => {
+                eprintln!("skipping network-dependent assertion: {err}");
+                return;
+            }
+        };
+
+        assert_eq!(update.name, "greeter");
+        assert_eq!(update.current_version, "0.0.0");
+        assert_eq!(update.latest_version, latest);
+        assert_eq!(update.source, KNOWN_RELEASE_SOURCE);
+    }
+
+    #[tokio::test]
+    async fn check_single_returns_none_when_version_matches_latest_release() {
+        let checker = UpdateChecker::new(PluginInstaller::new(PathBuf::from("plugins")));
+        let latest = match latest_known_release_version().await {
+            Ok(latest) => latest,
+            Err(err) => {
+                eprintln!("skipping network-dependent assertion: {err}");
+                return;
+            }
+        };
+        let locked = LockedPlugin {
+            source: KNOWN_RELEASE_SOURCE.to_string(),
+            version: latest,
+            sha256: "hash".to_string(),
+            permissions_hash: None,
+        };
+
+        match checker.check_single("greeter", &locked).await {
+            Ok(result) => assert!(result.is_none()),
+            Err(err) => {
+                eprintln!("skipping network-dependent assertion: {err}");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn check_outdated_collects_only_entries_with_newer_versions() {
+        let checker = UpdateChecker::new(PluginInstaller::new(PathBuf::from("plugins")));
+        let latest = match latest_known_release_version().await {
+            Ok(latest) => latest,
+            Err(err) => {
+                eprintln!("skipping network-dependent assertion: {err}");
+                return;
+            }
+        };
+        let mut lockfile = Lockfile::default();
+        lockfile.lock(
+            "outdated",
+            LockedPlugin {
+                source: KNOWN_RELEASE_SOURCE.to_string(),
+                version: "0.0.0".to_string(),
+                sha256: "hash".to_string(),
+                permissions_hash: None,
+            },
+        );
+        lockfile.lock(
+            "current",
+            LockedPlugin {
+                source: KNOWN_RELEASE_SOURCE.to_string(),
+                version: latest.clone(),
+                sha256: "hash".to_string(),
+                permissions_hash: None,
+            },
+        );
+        lockfile.lock(
+            "local-only",
+            LockedPlugin {
+                source: "not-a-github-source".to_string(),
+                version: latest,
+                sha256: "hash".to_string(),
+                permissions_hash: None,
+            },
+        );
+
+        let updates = checker.check_outdated(&lockfile).await.unwrap();
+
+        assert_eq!(updates.len(), 1);
+        assert_eq!(updates[0].name, "outdated");
+    }
+
+    #[tokio::test]
+    async fn check_outdated_ignores_request_failures_and_keeps_processing() {
+        let checker = UpdateChecker::new(PluginInstaller::new(PathBuf::from("plugins")));
+        let mut lockfile = Lockfile::default();
+        lockfile.lock(
+            "greeter",
+            LockedPlugin {
+                source: "github.com/%zz/sqlc-gen-greeter".to_string(),
+                version: "0.0.0".to_string(),
+                sha256: "hash".to_string(),
+                permissions_hash: None,
+            },
+        );
+        lockfile.lock(
+            "not-github",
+            LockedPlugin {
+                source: "invalid".to_string(),
+                version: "0.0.0".to_string(),
                 sha256: "hash".to_string(),
                 permissions_hash: None,
             },

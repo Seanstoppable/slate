@@ -570,6 +570,18 @@ mod tests {
     }
 
     #[test]
+    fn add_widget_uses_global_refresh_interval_and_initializes_list_selection() {
+        let mut config = SlateConfig::default();
+        config.global.refresh_interval = 42;
+        let mut app = App::new(config);
+
+        app.add_widget(Box::new(MockListWidget::new(None)), 0, 0, None);
+
+        assert_eq!(app.widgets[0].refresh_interval, Duration::from_secs(42));
+        assert_eq!(app.widgets[0].selected, Some(0));
+    }
+
+    #[test]
     fn focused_widget_returns_widget_at_focus_position() {
         let mut config = SlateConfig::default();
         config.layout.rows = 1;
@@ -635,6 +647,18 @@ mod tests {
         app.widgets[0].last_refresh = now - Duration::from_secs(600);
 
         assert!(!app.widgets[0].should_refresh(now, &app.focus));
+    }
+
+    #[test]
+    fn selectable_list_refresh_is_suppressed_only_while_focused() {
+        let mut app = test_app_with_list_widget(None);
+        let now = Instant::now();
+        app.widgets[0].last_refresh = now - Duration::from_secs(600);
+
+        assert!(!app.widgets[0].should_refresh(now, &app.focus));
+
+        app.focus = FocusPosition::new(1, 1);
+        assert!(app.widgets[0].should_refresh(now, &app.focus));
     }
 
     #[test]
@@ -769,6 +793,24 @@ mod tests {
     }
 
     #[test]
+    fn enter_on_non_list_widget_is_a_noop() {
+        let last_key = Arc::new(Mutex::new(None));
+        let mut app = App::new(SlateConfig::default());
+        app.add_widget(
+            Box::new(RecordingWidget::new(last_key.clone())),
+            0,
+            0,
+            Some(60),
+        );
+
+        app.handle_key(make_key(KeyCode::Enter));
+
+        assert_eq!(last_key.lock().unwrap().as_deref(), None);
+        assert!(app.widgets[0].detail_content.is_none());
+        assert!(app.running);
+    }
+
+    #[test]
     fn tab_moves_focus_between_widgets() {
         let mut config = SlateConfig::default();
         config.layout.rows = 1;
@@ -785,6 +827,21 @@ mod tests {
 
         app.handle_key(make_key(KeyCode::Tab));
         assert_eq!(app.focus.col, 0); // wraps around
+    }
+
+    #[test]
+    fn tab_and_backtab_keep_focus_stable_with_single_widget() {
+        let mut config = SlateConfig::default();
+        config.layout.rows = 1;
+        config.layout.cols = 1;
+        let mut app = App::new(config);
+        app.add_widget(Box::new(MockTextWidget), 0, 0, Some(60));
+
+        app.handle_key(make_key(KeyCode::Tab));
+        assert_eq!((app.focus.row, app.focus.col), (0, 0));
+
+        app.handle_key(make_key(KeyCode::BackTab));
+        assert_eq!((app.focus.row, app.focus.col), (0, 0));
     }
 
     #[test]
@@ -822,6 +879,16 @@ mod tests {
         app.handle_key(make_key(KeyCode::Char('r')));
         // Widget content should be refreshed (still a list)
         assert!(app.widgets[0].content.is_selectable_list());
+    }
+
+    #[test]
+    fn forced_refresh_resets_list_selection_to_first_item() {
+        let mut app = test_app_with_list_widget(None);
+        app.widgets[0].selected = Some(1);
+
+        app.handle_key(make_key(KeyCode::Char('r')));
+
+        assert_eq!(app.widgets[0].selected, Some(0));
     }
 
     #[test]
@@ -880,6 +947,40 @@ mod tests {
     }
 
     #[test]
+    fn arrow_keys_move_focus_for_non_list_widgets() {
+        let mut config = SlateConfig::default();
+        config.layout.rows = 2;
+        config.layout.cols = 2;
+        let mut app = App::new(config);
+        app.add_widget(Box::new(MockTextWidget), 0, 0, Some(60));
+
+        app.handle_key(make_key(KeyCode::Right));
+        assert_eq!((app.focus.row, app.focus.col), (0, 1));
+
+        app.handle_key(make_key(KeyCode::Down));
+        assert_eq!((app.focus.row, app.focus.col), (1, 1));
+
+        app.handle_key(make_key(KeyCode::Left));
+        assert_eq!((app.focus.row, app.focus.col), (1, 0));
+
+        app.handle_key(make_key(KeyCode::Up));
+        assert_eq!((app.focus.row, app.focus.col), (0, 0));
+    }
+
+    #[test]
+    fn arrow_keys_change_list_selection_without_moving_focus() {
+        let mut app = test_app_with_list_widget(None);
+
+        app.handle_key(make_key(KeyCode::Down));
+        assert_eq!(app.widgets[0].selected, Some(1));
+        assert_eq!((app.focus.row, app.focus.col), (0, 0));
+
+        app.handle_key(make_key(KeyCode::Up));
+        assert_eq!(app.widgets[0].selected, Some(0));
+        assert_eq!((app.focus.row, app.focus.col), (0, 0));
+    }
+
+    #[test]
     fn ctrl_c_and_backtab_update_running_and_focus() {
         let mut config = SlateConfig::default();
         config.layout.rows = 1;
@@ -922,5 +1023,41 @@ mod tests {
         app.add_widget(Box::new(widget), 0, 0, Some(60));
         app.handle_key(make_key(KeyCode::Char('x')));
         assert_eq!(last_key.lock().unwrap().as_deref(), Some("Char('x')"));
+    }
+
+    #[test]
+    fn escape_is_forwarded_when_not_showing_detail() {
+        let last_key = Arc::new(Mutex::new(None));
+        let mut app = App::new(SlateConfig::default());
+        app.add_widget(
+            Box::new(RecordingWidget::new(last_key.clone())),
+            0,
+            0,
+            Some(60),
+        );
+
+        app.handle_key(make_key(KeyCode::Esc));
+
+        assert_eq!(last_key.lock().unwrap().as_deref(), Some("Esc"));
+    }
+
+    #[test]
+    fn enter_with_notify_action_keeps_running_without_detail() {
+        let mut app = test_app_with_list_widget(Some(WidgetAction::Notify("hello".to_string())));
+
+        app.handle_key(make_key(KeyCode::Enter));
+
+        assert!(app.running);
+        assert!(app.widgets[0].detail_content.is_none());
+    }
+
+    #[test]
+    fn handle_widget_action_covers_notify_and_show_detail_branches() {
+        App::handle_widget_action(WidgetAction::Notify("hello".to_string()));
+
+        let result = std::panic::catch_unwind(|| {
+            App::handle_widget_action(WidgetAction::ShowDetail("detail".to_string()));
+        });
+        assert!(result.is_err());
     }
 }

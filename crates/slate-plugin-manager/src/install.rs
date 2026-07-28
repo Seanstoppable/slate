@@ -168,6 +168,11 @@ mod tests {
     use super::*;
     use tempfile::tempdir;
 
+    const KNOWN_RELEASE_OWNER: &str = "sqlc-dev";
+    const KNOWN_RELEASE_REPO: &str = "sqlc-gen-greeter";
+    const KNOWN_RELEASE_SOURCE: &str = "github.com/sqlc-dev/sqlc-gen-greeter";
+    const KNOWN_RELEASE_VERSION: &str = "0.1.0";
+
     #[test]
     fn test_parse_github_source() {
         let (owner, repo) = parse_github_source("github.com/slate-community/slate-github").unwrap();
@@ -288,5 +293,114 @@ mod tests {
             compute_sha256(b"abc"),
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
         );
+    }
+
+    #[tokio::test]
+    async fn fetch_latest_version_reads_known_release_tag() {
+        let installer = PluginInstaller::new(PathBuf::from("plugins"));
+
+        let latest = match installer
+            .fetch_latest_version(KNOWN_RELEASE_OWNER, KNOWN_RELEASE_REPO)
+            .await
+        {
+            Ok(latest) => latest,
+            Err(err) => {
+                eprintln!("skipping network-dependent assertion: {err}");
+                return;
+            }
+        };
+
+        assert_eq!(latest, KNOWN_RELEASE_VERSION);
+    }
+
+    #[tokio::test]
+    async fn install_downloads_known_release_and_writes_wasm_file() {
+        let dir = tempdir().unwrap();
+        let plugins_dir = dir.path().join("plugins");
+        let installer = PluginInstaller::new(plugins_dir.clone());
+
+        let installed = match installer
+            .install(KNOWN_RELEASE_SOURCE, Some(KNOWN_RELEASE_VERSION))
+            .await
+        {
+            Ok(installed) => installed,
+            Err(err) => {
+                eprintln!("skipping network-dependent assertion: {err}");
+                return;
+            }
+        };
+
+        let bytes = std::fs::read(&installed.path).unwrap();
+        assert_eq!(installed.name, KNOWN_RELEASE_REPO);
+        assert_eq!(installed.source, KNOWN_RELEASE_SOURCE);
+        assert_eq!(installed.version, KNOWN_RELEASE_VERSION);
+        assert_eq!(
+            installed.path,
+            plugins_dir
+                .join(KNOWN_RELEASE_REPO)
+                .join(format!("{}.wasm", KNOWN_RELEASE_REPO))
+        );
+        assert!(bytes.starts_with(b"\0asm"));
+        assert_eq!(installed.sha256, compute_sha256(&bytes));
+    }
+
+    #[tokio::test]
+    async fn install_creates_destination_directory_before_request_failures() {
+        let dir = tempdir().unwrap();
+        let plugins_dir = dir.path().join("plugins");
+        let installer = PluginInstaller::new(plugins_dir.clone());
+        let plugin_dir = plugins_dir.join(KNOWN_RELEASE_REPO);
+        let wasm_path = plugin_dir.join(format!("{}.wasm", KNOWN_RELEASE_REPO));
+
+        let err = match installer
+            .install(KNOWN_RELEASE_SOURCE, Some("0.1.0-does-not-exist"))
+            .await
+        {
+            Ok(_) => panic!("expected missing release asset to fail"),
+            Err(err) => err,
+        };
+
+        if err
+            .to_string()
+            .contains("error sending request for url")
+            || err.to_string().contains("tunnel error")
+        {
+            eprintln!("skipping network-dependent assertion: {err}");
+            return;
+        }
+
+        assert!(plugin_dir.exists());
+        assert!(!wasm_path.exists());
+        assert!(err.to_string().contains("Failed to download plugin"));
+    }
+
+    #[tokio::test]
+    async fn install_validates_source_before_creating_directories() {
+        let dir = tempdir().unwrap();
+        let plugins_dir = dir.path().join("plugins");
+        let installer = PluginInstaller::new(plugins_dir.clone());
+
+        let err = installer
+            .install("not-a-github-source", Some(KNOWN_RELEASE_VERSION))
+            .await
+            .unwrap_err();
+
+        assert!(err.to_string().contains("Invalid GitHub source"));
+        assert!(!plugins_dir.exists());
+    }
+
+    #[tokio::test]
+    async fn install_returns_latest_lookup_error_before_creating_plugin_dir() {
+        let dir = tempdir().unwrap();
+        let plugins_dir = dir.path().join("plugins");
+        let installer = PluginInstaller::new(plugins_dir.clone());
+
+        let err = installer
+            .install("github.com/sqlc-dev/definitely-no-such-plugin-for-slate-tests", None)
+            .await
+            .unwrap_err();
+
+        assert!(!plugins_dir.exists());
+        assert!(err.to_string().contains("No tag_name in latest release"));
     }
 }

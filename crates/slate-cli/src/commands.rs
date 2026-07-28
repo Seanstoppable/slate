@@ -794,6 +794,47 @@ mod tests {
         }
     }
 
+    struct FileRestoreGuard {
+        path: std::path::PathBuf,
+        original: Option<Vec<u8>>,
+    }
+
+    impl FileRestoreGuard {
+        fn new(path: std::path::PathBuf) -> Self {
+            Self {
+                original: std::fs::read(&path).ok(),
+                path,
+            }
+        }
+    }
+
+    impl Drop for FileRestoreGuard {
+        fn drop(&mut self) {
+            if let Some(original) = &self.original {
+                if let Some(parent) = self.path.parent() {
+                    std::fs::create_dir_all(parent).ok();
+                }
+                std::fs::write(&self.path, original).ok();
+            } else {
+                std::fs::remove_file(&self.path).ok();
+            }
+        }
+    }
+
+    fn write_default_config(content: &str) -> std::path::PathBuf {
+        let path = SlateConfig::default_path().unwrap();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, content).unwrap();
+        path
+    }
+
+    fn write_default_lockfile(content: &str) -> std::path::PathBuf {
+        let path = Lockfile::default_path().unwrap();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, content).unwrap();
+        path
+    }
+
     #[test]
     fn toml_to_json_converts_all_supported_value_types() {
         let datetime = "2024-01-02T03:04:05Z"
@@ -978,6 +1019,17 @@ mod tests {
     }
 
     #[test]
+    fn validate_wasm_binary_reports_missing_files() {
+        let dir = tempdir().unwrap();
+        let missing_path = dir.path().join("missing.wasm");
+
+        let issues = validate_wasm_binary(&missing_path);
+
+        assert_eq!(issues.len(), 1);
+        assert!(issues[0].contains("Cannot read file"));
+    }
+
+    #[test]
     fn validate_wasm_binary_accepts_module_with_required_and_optional_exports() {
         let dir = tempdir().unwrap();
         let wasm_path = dir.path().join("valid.wasm");
@@ -1106,6 +1158,16 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn run_returns_error_for_missing_explicit_config_file() {
+        let dir = tempdir().unwrap();
+        let missing = dir.path().join("missing.toml");
+
+        let error = run(Some(missing.to_str().unwrap())).await.unwrap_err();
+
+        assert!(error.to_string().contains("Failed to read config"));
+    }
+
+    #[tokio::test]
     async fn create_scaffolds_plugin_project() {
         let dir = tempdir().unwrap();
         let name = dir.path().join("test-plugin");
@@ -1135,6 +1197,18 @@ mod tests {
         assert!(lib.contains("pub fn metadata"));
         assert!(lib.contains("pub fn refresh"));
         assert!(lib.contains("Hello from my plugin!"));
+    }
+
+    #[tokio::test]
+    async fn create_scaffolds_nested_plugin_project_paths() {
+        let dir = tempdir().unwrap();
+        let name = dir.path().join("nested").join("plugins").join("sample-plugin");
+
+        create(name.to_str().unwrap()).await.unwrap();
+
+        assert!(name.join("Cargo.toml").exists());
+        assert!(name.join("plugin.toml").exists());
+        assert!(name.join("src").join("lib.rs").exists());
     }
 
     #[tokio::test]
@@ -1219,6 +1293,31 @@ position = {{ row = 0, col = 0 }}
     }
 
     #[test]
+    fn load_widget_or_error_uses_repo_name_for_uninstalled_github_plugins() {
+        let entry = WidgetEntry {
+            widget_type: "github.com/example/slate-clock".to_string(),
+            position: Position {
+                row: 0,
+                col: 0,
+                row_span: 1,
+                col_span: 1,
+            },
+            refresh_interval: None,
+            settings: Default::default(),
+        };
+
+        let mut widget = load_widget_or_error(&entry, widget_config());
+        assert_eq!(widget.metadata().name, "slate-clock");
+        match widget.refresh() {
+            WidgetContent::Text { content, .. } => {
+                assert!(content.contains("Plugin load error"));
+                assert!(content.contains("not installed"));
+            }
+            other => panic!("expected text content, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn try_load_widget_loads_existing_lua_script() {
         let dir = tempdir().unwrap();
         let script_path = dir.path().join("greeting.lua");
@@ -1253,6 +1352,113 @@ end
             WidgetContent::Text { content, .. } => assert_eq!(content, "Hello from Lua"),
             other => panic!("expected text content, got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn check_reports_missing_local_wasm_without_erroring() {
+        let dir = tempdir().unwrap();
+        let config_path = dir.path().join("slate.toml");
+        let wasm_path = dir.path().join("missing.wasm");
+        std::fs::write(
+            &config_path,
+            format!(
+                r#"
+[[widget]]
+type = "wasm:{}"
+position = {{ row = 0, col = 0 }}
+"#,
+                escape_path(&wasm_path)
+            ),
+        )
+        .unwrap();
+
+        check(Some(config_path.to_str().unwrap())).await.unwrap();
+    }
+
+    #[test]
+    fn try_load_widget_rejects_missing_local_wasm() {
+        let dir = tempdir().unwrap();
+        let wasm_path = dir.path().join("missing.wasm");
+        let entry = WidgetEntry {
+            widget_type: format!("wasm:{}", wasm_path.display()),
+            position: Position {
+                row: 0,
+                col: 0,
+                row_span: 1,
+                col_span: 1,
+            },
+            refresh_interval: None,
+            settings: Default::default(),
+        };
+
+        let error = match try_load_widget(&entry, widget_config()) {
+            Ok(_) => panic!("expected missing wasm"),
+            Err(error) => error,
+        };
+        assert!(error.to_string().contains("WASM file not found"));
+    }
+
+    #[test]
+    fn try_load_widget_rejects_unsupported_wasm_os() {
+        let dir = tempdir().unwrap();
+        let wasm_path = dir.path().join("unsupported.wasm");
+        write_wasm(
+            &wasm_path,
+            r#"
+                (module
+                    (func (export "metadata") (result i32) (i32.const 0))
+                    (func (export "refresh") (result i32) (i32.const 0))
+                )
+            "#,
+        );
+        let unsupported = ["linux", "macos", "windows"]
+            .into_iter()
+            .find(|os| *os != current_os())
+            .unwrap();
+        std::fs::write(
+            dir.path().join("plugin.toml"),
+            format!("[plugin]\nos = [\"{}\"]\n", unsupported),
+        )
+        .unwrap();
+        let entry = WidgetEntry {
+            widget_type: format!("wasm:{}", wasm_path.display()),
+            position: Position {
+                row: 0,
+                col: 0,
+                row_span: 1,
+                col_span: 1,
+            },
+            refresh_interval: None,
+            settings: Default::default(),
+        };
+
+        let error = match try_load_widget(&entry, widget_config()) {
+            Ok(_) => panic!("expected unsupported OS to be rejected"),
+            Err(error) => error,
+        };
+        assert!(error.to_string().contains("Not available on"));
+        assert!(error.to_string().contains(unsupported));
+    }
+
+    #[test]
+    fn try_load_widget_rejects_uninstalled_github_plugins() {
+        let entry = WidgetEntry {
+            widget_type: "github.com/example/slate-weather".to_string(),
+            position: Position {
+                row: 0,
+                col: 0,
+                row_span: 1,
+                col_span: 1,
+            },
+            refresh_interval: None,
+            settings: Default::default(),
+        };
+
+        let error = match try_load_widget(&entry, widget_config()) {
+            Ok(_) => panic!("expected missing GitHub plugin"),
+            Err(error) => error,
+        };
+        assert!(error.to_string().contains("not installed"));
     }
 
     #[tokio::test]
@@ -1371,20 +1577,59 @@ position = {{ row = 3, col = 1 }}
     }
 
     #[tokio::test]
-    async fn list_and_remove_use_redirected_default_directories() {
-        let _lock = env_lock().lock().unwrap();
+    async fn install_and_update_return_errors_for_invalid_default_config() {
+        let _lock = env_lock().lock().unwrap_or_else(|e| e.into_inner());
         let dir = tempdir().unwrap();
         let _env = EnvGuard::redirect_to(dir.path());
+        let _restore = FileRestoreGuard::new(SlateConfig::default_path().unwrap());
+        write_default_config("[[widget]]\ntype = ");
+
+        let install_error = install().await.unwrap_err();
+        assert!(install_error.to_string().contains("Failed to parse slate.toml"));
+
+        let update_error = update().await.unwrap_err();
+        assert!(update_error.to_string().contains("Failed to parse slate.toml"));
+    }
+
+    #[tokio::test]
+    async fn list_remove_and_outdated_return_errors_for_invalid_default_lockfile() {
+        let _lock = env_lock().lock().unwrap_or_else(|e| e.into_inner());
+        let dir = tempdir().unwrap();
+        let _env = EnvGuard::redirect_to(dir.path());
+        let _restore = FileRestoreGuard::new(Lockfile::default_path().unwrap());
+        write_default_lockfile("not = [valid");
+
+        let list_error = list().await.unwrap_err();
+        assert!(list_error.to_string().contains("Failed to parse lockfile"));
+
+        let remove_error = remove("clock").await.unwrap_err();
+        assert!(remove_error.to_string().contains("Failed to parse lockfile"));
+
+        let outdated_error = outdated().await.unwrap_err();
+        assert!(outdated_error.to_string().contains("Failed to parse lockfile"));
+    }
+
+    #[tokio::test]
+    async fn list_and_remove_use_redirected_default_directories() {
+        let _lock = env_lock().lock().unwrap_or_else(|e| e.into_inner());
+        let dir = tempdir().unwrap();
+        let _env = EnvGuard::redirect_to(dir.path());
+        let _restore = FileRestoreGuard::new(Lockfile::default_path().unwrap());
 
         let plugins_dir = PluginInstaller::default_dir().unwrap();
-        std::fs::create_dir_all(plugins_dir.join("clock")).unwrap();
-        std::fs::write(plugins_dir.join("clock").join("clock.wasm"), b"wasm").unwrap();
+        let plugin_name = "slate-cli-test-plugin";
+        std::fs::create_dir_all(plugins_dir.join(plugin_name)).unwrap();
+        std::fs::write(
+            plugins_dir.join(plugin_name).join(format!("{plugin_name}.wasm")),
+            b"wasm",
+        )
+        .unwrap();
 
         let mut lockfile = Lockfile::default();
         lockfile.lock(
-            "clock",
+            plugin_name,
             slate_plugin_manager::lockfile::LockedPlugin {
-                source: "github.com/slate-community/slate-clock".to_string(),
+                source: "github.com/slate-community/slate-cli-test-plugin".to_string(),
                 version: "1.0.0".to_string(),
                 sha256: "hash".to_string(),
                 permissions_hash: None,
@@ -1392,20 +1637,36 @@ position = {{ row = 3, col = 1 }}
         );
         let lockfile_path = Lockfile::default_path().unwrap();
         lockfile.save_to(&lockfile_path).unwrap();
+        assert!(plugins_dir.join(plugin_name).exists());
+
+        Lockfile::default().save_default().unwrap();
+        let mut lockfile = Lockfile::load_from(&lockfile_path).unwrap();
+        lockfile.lock(
+            plugin_name,
+            slate_plugin_manager::lockfile::LockedPlugin {
+                source: "github.com/slate-community/slate-cli-test-plugin".to_string(),
+                version: "1.0.0".to_string(),
+                sha256: "hash".to_string(),
+                permissions_hash: None,
+            },
+        );
+        lockfile.save_to(&lockfile_path).unwrap();
 
         list().await.unwrap();
-        remove("clock").await.unwrap();
+        remove(plugin_name).await.unwrap();
 
-        assert!(!plugins_dir.join("clock").exists());
+        assert!(!plugins_dir.join(plugin_name).exists());
         let updated_lockfile = Lockfile::load_from(&lockfile_path).unwrap();
-        assert!(updated_lockfile.get("clock").is_none());
+        assert!(updated_lockfile.get(plugin_name).is_none());
     }
 
     #[tokio::test]
     async fn outdated_returns_clean_result_with_empty_redirected_lockfile() {
-        let _lock = env_lock().lock().unwrap();
+        let _lock = env_lock().lock().unwrap_or_else(|e| e.into_inner());
         let dir = tempdir().unwrap();
         let _env = EnvGuard::redirect_to(dir.path());
+        let _restore = FileRestoreGuard::new(Lockfile::default_path().unwrap());
+        Lockfile::default().save_default().unwrap();
 
         outdated().await.unwrap();
     }
