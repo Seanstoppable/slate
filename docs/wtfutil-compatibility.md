@@ -70,8 +70,6 @@ Modules that are feasible but not yet implemented.
 | pivotal | network | Yes | Pivotal Tracker stories | |
 | pocket | network | Yes (OAuth) | Saved articles list | Needs OAuth flow |
 | rollbar | network | Yes | Error tracking dashboard | |
-| spotify | exec | No | Now playing (local client) | Via `spotify` CLI |
-| spotifyweb | network | Yes (OAuth) | Spotify web playback | Needs OAuth flow |
 | steam | network | Yes | Game library/friends | |
 | stocks | network | Yes | Stock price ticker | Most APIs require keys |
 | todo | storage | No | Local todo list | Needs KV storage |
@@ -92,9 +90,11 @@ Modules that are deprecated, internal, or not applicable.
 | wtfutil Module | Reason |
 |----------------|--------|
 | bargraph | Demo/placeholder widget |
-| gitter | Gitter is deprecated |
+| gitter | Gitter shut down in 2023; migrated to Matrix |
 | logger | wtfutil internal debug log, not a user-facing feature |
 | progress | Demo/placeholder widget |
+| spotify | Spotify deprecated local CLI; web API needs OAuth |
+| spotifyweb | Spotify web API requires complex OAuth flow |
 | travisci | Travis CI is largely deprecated |
 | twitter | Twitter/X API deprecated for free tier |
 | twitterstats | Twitter/X API deprecated for free tier |
@@ -105,8 +105,8 @@ Modules that are deprecated, internal, or not applicable.
 | Category | Count |
 |----------|-------|
 | ✅ Migrated | 22 |
-| 🔲 Planned | 43 |
-| ➖ Not Planned | 8 |
+| 🔲 Planned | 41 |
+| ➖ Not Planned | 10 |
 | **Total** | 73 |
 
 ## Slate-Only Features (not in wtfutil)

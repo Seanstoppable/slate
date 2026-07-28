@@ -28,6 +28,8 @@ struct DocsManifestPlugin {
     language: String,
     #[serde(default)]
     os: Vec<String>,
+    #[serde(default)]
+    tags: Vec<String>,
 }
 
 #[derive(serde::Deserialize, Default, Clone)]
@@ -66,6 +68,7 @@ struct PluginInfo {
     author: String,
     language: String,
     os: Vec<String>,
+    tags: Vec<String>,
     permissions: Vec<String>,
     kind: &'static str,
     config_example: String,
@@ -144,6 +147,7 @@ pub async fn docs(output_dir: Option<&str>) -> Result<()> {
                                 p.language.clone()
                             },
                             os: p.os.clone(),
+                            tags: p.tags.clone(),
                             permissions: perms,
                             kind: "plugin",
                             config_example,
@@ -155,14 +159,14 @@ pub async fn docs(output_dir: Option<&str>) -> Result<()> {
         }
     }
 
-    let builtins: &[(&str, &str, &str, &str)] = &[
-        ("resource_usage", "CPU, memory, swap, and temperature monitoring", "Real-time system resource usage with configurable refresh rates. Shows CPU percentage, memory used/total, swap usage, CPU count, and hottest temperature sensor.", "[[widget]]\ntype = \"builtin:resource_usage\"\nposition = { row = 0, col = 0 }"),
-        ("power", "Battery status and power source", "Shows charge level, charging state, and power source. On desktops without a battery, displays 'AC Power (100%)'. Supports Windows (WMI), macOS (pmset), and Linux (sysfs).", "[[widget]]\ntype = \"builtin:power\"\nposition = { row = 0, col = 1 }"),
-        ("firewall", "Firewall rules and status", "Displays active firewall rules. Uses netsh on Windows, pfctl on macOS, and iptables/nftables on Linux.", "[[widget]]\ntype = \"builtin:firewall\"\nposition = { row = 0, col = 2 }"),
-        ("ipaddresses", "Network interface IP addresses", "Lists all network interfaces with their IPv4/IPv6 addresses. Shows interface name, IP, and status. Defaults to all interfaces if none specified.", "[[widget]]\ntype = \"builtin:ipaddresses\"\nposition = { row = 1, col = 0 }"),
-        ("vcs", "Version control status (Git/Mercurial)", "Branch, modified files, and recent commit log for a repository. Set engine to 'git' or 'hg'. Multiple instances supported for different repos.", "[[widget]]\ntype = \"builtin:vcs\"\nposition = { row = 1, col = 1 }\nengine = \"git\"\nrepo_path = \"/path/to/repo\""),
+    let builtins: &[(&str, &str, &str, &str, &[&str])] = &[
+        ("resource_usage", "CPU, memory, swap, and temperature monitoring", "Real-time system resource usage with configurable refresh rates. Shows CPU percentage, memory used/total, swap usage, CPU count, and hottest temperature sensor.", "[[widget]]\ntype = \"builtin:resource_usage\"\nposition = { row = 0, col = 0 }", &["system", "monitoring"]),
+        ("power", "Battery status and power source", "Shows charge level, charging state, and power source. On desktops without a battery, displays 'AC Power (100%)'. Supports Windows (WMI), macOS (pmset), and Linux (sysfs).", "[[widget]]\ntype = \"builtin:power\"\nposition = { row = 0, col = 1 }", &["system", "hardware"]),
+        ("firewall", "Firewall rules and status", "Displays active firewall rules. Uses netsh on Windows, pfctl on macOS, and iptables/nftables on Linux.", "[[widget]]\ntype = \"builtin:firewall\"\nposition = { row = 0, col = 2 }", &["system", "network", "security"]),
+        ("ipaddresses", "Network interface IP addresses", "Lists all network interfaces with their IPv4/IPv6 addresses. Shows interface name, IP, and status. Defaults to all interfaces if none specified.", "[[widget]]\ntype = \"builtin:ipaddresses\"\nposition = { row = 1, col = 0 }", &["network", "utility"]),
+        ("logfile", "Display and tail text files", "Shows the last N lines of a file with auto-refresh. Supports ~ expansion and environment variables in paths.", "[[widget]]\ntype = \"builtin:logfile\"\nposition = { row = 1, col = 1 }\nfilePath = \"~/app.log\"", &["utility", "monitoring"]),
     ];
-    for (name, desc, _long_desc, config) in builtins {
+    for (name, desc, _long_desc, config, tags) in builtins {
         plugins.push(PluginInfo {
             name: name.to_string(),
             description: desc.to_string(),
@@ -174,6 +178,7 @@ pub async fn docs(output_dir: Option<&str>) -> Result<()> {
                 "linux".to_string(),
                 "windows".to_string(),
             ],
+            tags: tags.iter().map(|t| t.to_string()).collect(),
             permissions: vec!["system (native access)".to_string()],
             kind: "builtin",
             config_example: config.to_string(),
@@ -220,6 +225,7 @@ pub async fn docs(output_dir: Option<&str>) -> Result<()> {
                             "linux".to_string(),
                             "windows".to_string(),
                         ],
+                        tags: vec!["script".to_string()],
                         permissions: vec!["unsandboxed (full io access)".to_string()],
                         kind: "script",
                         config_example,
@@ -380,13 +386,24 @@ fn generate_docs_html(plugins: &[PluginInfo]) -> Result<String> {
             p.os.join(" ")
         };
 
+        let tags_html = if p.tags.is_empty() {
+            String::new()
+        } else {
+            p.tags
+                .iter()
+                .map(|tag| format!(r#"<span class="tag-badge">{}</span>"#, html_escape(tag)))
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+
         cards.push_str(&format!(
-            r#"<div class="plugin-card" data-os="{os_data}" data-lang="{lang}" data-kind="{kind}" data-name="{name}" data-desc="{desc}" onclick="showDetail({idx})">
+            r#"<div class="plugin-card" data-os="{os_data}" data-lang="{lang}" data-kind="{kind}" data-tags="{tags}" data-name="{name}" data-desc="{desc}" onclick="showDetail({idx})">
   <div class="card-header">
     <h3>{name}</h3>
     <div class="badges">{kind_badge} <span class="lang-badge {lang_class}">{lang}</span></div>
   </div>
   <p class="description">{description}</p>
+  <div class="tags-row">{tags_html}</div>
   <div class="card-meta">
     <div class="os-row">{os_badges}</div>
     <div class="perms-row"><strong>Permissions:</strong> {perms_html}</div>
@@ -398,11 +415,13 @@ fn generate_docs_html(plugins: &[PluginInfo]) -> Result<String> {
             os_data = os_data,
             lang = p.language,
             kind = p.kind,
+            tags = p.tags.join(" "),
             name = html_escape(&p.name),
             desc = html_escape(&p.description),
             description = html_escape(&p.description),
             kind_badge = kind_badge,
             lang_class = lang_class,
+            tags_html = tags_html,
             os_badges = os_badges,
             perms_html = perms_html,
             version = html_escape(&p.version),
@@ -430,7 +449,7 @@ fn generate_docs_html(plugins: &[PluginInfo]) -> Result<String> {
             .collect::<Vec<_>>()
             .join(",");
         plugin_data.push_str(&format!(
-            r#"  {{name:"{}",desc:"{}",version:"{}",author:"{}",lang:"{}",kind:"{}",os:[{}],perms:[{}],config:"{}",install:"{}"}}"#,
+            r#"  {{name:"{}",desc:"{}",version:"{}",author:"{}",lang:"{}",kind:"{}",os:[{}],perms:[{}],tags:[{}],config:"{}",install:"{}"}}"#,
             js_escape(&p.name),
             js_escape(&p.description),
             js_escape(&p.version),
@@ -439,6 +458,7 @@ fn generate_docs_html(plugins: &[PluginInfo]) -> Result<String> {
             p.kind,
             os_list,
             perms_list,
+            p.tags.iter().map(|t| format!("\"{}\"", js_escape(t))).collect::<Vec<_>>().join(","),
             js_escape(&p.config_example),
             js_escape(&p.install_hint),
         ));
@@ -527,6 +547,7 @@ mod tests {
             author: "Slate".to_string(),
             language: "rust".to_string(),
             os: vec!["macos".to_string(), "linux".to_string()],
+            tags: vec!["weather".to_string(), "utility".to_string()],
             permissions: vec!["network: api.example.com".to_string()],
             kind: "plugin",
             config_example: "[[widget]]\ntype = \"github.com/slate-community/slate-weather\""
@@ -543,6 +564,7 @@ mod tests {
             author: "Slate".to_string(),
             language: "rust (native)".to_string(),
             os: vec![],
+            tags: vec!["system".to_string()],
             permissions: vec![],
             kind: "builtin",
             config_example: "[[widget]]\ntype = \"builtin:power\"".to_string(),
@@ -558,6 +580,7 @@ mod tests {
             author: "Slate Community".to_string(),
             language: "lua".to_string(),
             os: vec!["windows".to_string()],
+            tags: vec!["script".to_string()],
             permissions: vec!["unsandboxed (full io access)".to_string()],
             kind: "script",
             config_example: "[[widget]]\ntype = \"lua:scripts/local.lua\"".to_string(),
@@ -795,6 +818,7 @@ mod tests {
                 author: "Slate".to_string(),
                 language: "go".to_string(),
                 os: vec!["freebsd".to_string()],
+                tags: vec![],
                 permissions: vec!["exec: tool".to_string()],
                 kind: "plugin",
                 config_example: String::new(),
@@ -807,6 +831,7 @@ mod tests {
                 author: "Slate".to_string(),
                 language: "zig".to_string(),
                 os: vec!["windows".to_string()],
+                tags: vec![],
                 permissions: vec![],
                 kind: "plugin",
                 config_example: String::new(),
@@ -819,6 +844,7 @@ mod tests {
                 author: "Slate".to_string(),
                 language: "typescript".to_string(),
                 os: vec!["linux".to_string()],
+                tags: vec![],
                 permissions: vec![],
                 kind: "plugin",
                 config_example: String::new(),
@@ -945,7 +971,7 @@ function refresh() return '{"type":"text","content":"Hello","scrollable":false,"
         assert!(html.contains("worldtimeapi.org"));
         assert!(html.contains("filesystem_read"));
         assert!(html.contains("raw_network"));
-        assert!(html.contains("builtin:vcs"));
+        assert!(html.contains("builtin:logfile"));
         assert!(html.contains("github.com/slate-community/slate-clock"));
         assert!(html.contains("lua:scripts/greeting.lua"));
     }

@@ -91,7 +91,18 @@ pub fn refresh(input: String) -> FnResult<String> {
     let req = HttpRequest::new(&url)
         .with_header("Accept", "application/json");
 
-    let response = http::request::<String>(&req, None)?;
+    let response = match http::request::<String>(&req, None) {
+        Ok(r) => r,
+        Err(e) => {
+            let error_content = json!({
+                "type": "text",
+                "content": format!("Failed to connect to Pi-hole:\n{}", e),
+                "scrollable": false,
+                "wrap": true
+            });
+            return Ok(error_content.to_string());
+        }
+    };
     let body = response.body();
     let body_str = std::str::from_utf8(&body).unwrap_or("{}");
 

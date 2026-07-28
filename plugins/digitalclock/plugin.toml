@@ -6,3 +6,8 @@ version = "0.1.0"
 
 [permissions]
 # Uses WASI clock only — no extra permissions needed
+
+[config]
+use24HourFormat = { type = "boolean", required = false, description = "Use 24-hour format (default: true)" }
+showSeconds = { type = "boolean", required = false, description = "Show seconds (default: true)" }
+utcOffset = { type = "integer", required = false, description = "UTC offset in hours (default: 0)" }

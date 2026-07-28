@@ -8,4 +8,6 @@ author = "Slate Community"
 [permissions]
 # No permissions needed - pure computation
 
-
+[config]
+timezone = { type = "string", required = false, description = "Display timezone label (default: UTC)" }
+clocks = { type = "array", required = false, description = "Array of {label, utc_offset} for multi-timezone display" }

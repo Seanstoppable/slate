@@ -6,3 +6,9 @@ version = "0.1.0"
 
 [permissions]
 network = ["www.reddit.com"]
+
+[config]
+subreddit = { type = "string", required = false, description = "Subreddit name (default: all)" }
+sort = { type = "string", required = false, description = "Sort order: hot, new, top, rising (default: hot)" }
+numberOfPosts = { type = "integer", required = false, description = "Number of posts to show (default: 15)" }
+showNsfw = { type = "boolean", required = false, description = "Show NSFW posts (default: false)" }

@@ -1,4 +1,5 @@
 #[cfg(target_arch = "wasm32")]
+use extism_pdk::*;
 
 #[cfg(target_arch = "wasm32")]
 use serde_json::json;

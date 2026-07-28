@@ -6,3 +6,10 @@ version = "0.1.0"
 
 [permissions]
 network = ["dev.to"]
+
+[config]
+contentTag = { type = "string", required = false, description = "Filter by tag (e.g. rust, webdev)" }
+contentUsername = { type = "string", required = false, description = "Filter by author username" }
+contentState = { type = "string", required = false, description = "Article state: fresh, rising, all" }
+numberOfArticles = { type = "integer", required = false, description = "Number of articles (default: 10)" }
+top = { type = "integer", required = false, description = "Top articles from last N days" }

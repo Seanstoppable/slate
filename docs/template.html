@@ -147,6 +147,18 @@ header p { color: var(--text-muted); font-size: 1.1rem; margin-top: 0.5rem; }
   margin: 0.1rem 0.2rem 0.1rem 0;
 }
 .version-row { color: var(--text-muted); }
+.tags-row { margin-bottom: 0.6rem; }
+.tag-badge {
+  display: inline-block;
+  font-size: 0.72rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 10px;
+  background: #1c2d4f;
+  color: var(--accent);
+  margin: 0.1rem 0.2rem 0.1rem 0;
+  cursor: pointer;
+}
+.tag-badge:hover { background: #264170; }
 .stats {
   text-align: center;
   color: var(--text-muted);
@@ -259,6 +271,9 @@ header p { color: var(--text-muted); font-size: 1.1rem; margin-top: 0.5rem; }
     <button class="filter-btn" data-kind="plugin">Plugin</button>
     <button class="filter-btn" data-kind="script">Lua Script</button>
   </div>
+  <div class="filter-group" id="tag-filters">
+    <button class="filter-btn active" data-tag="all">All Tags</button>
+  </div>
 </div>
 
 <div class="grid" id="grid">
@@ -305,6 +320,47 @@ const modal = document.getElementById('modal-overlay');
 
 let osFilter = 'all';
 let kindFilter = 'all';
+let tagFilter = 'all';
+
+// Build tag filter buttons dynamically from plugin data
+(function buildTagFilters() {
+  const tagSet = new Set();
+  pluginData.forEach(p => { if (p.tags) p.tags.forEach(t => tagSet.add(t)); });
+  const tagContainer = document.getElementById('tag-filters');
+  Array.from(tagSet).sort().forEach(tag => {
+    const btn = document.createElement('button');
+    btn.className = 'filter-btn';
+    btn.dataset.tag = tag;
+    btn.textContent = tag;
+    btn.addEventListener('click', () => {
+      tagContainer.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      tagFilter = tag;
+      applyFilters();
+    });
+    tagContainer.appendChild(btn);
+  });
+  tagContainer.querySelector('[data-tag="all"]').addEventListener('click', () => {
+    tagContainer.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    tagContainer.querySelector('[data-tag="all"]').classList.add('active');
+    tagFilter = 'all';
+    applyFilters();
+  });
+})();
+
+// Allow clicking tag badges on cards to filter
+document.querySelectorAll('.tag-badge').forEach(badge => {
+  badge.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const tag = badge.textContent;
+    const tagContainer = document.getElementById('tag-filters');
+    tagContainer.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    const btn = tagContainer.querySelector('[data-tag="' + tag + '"]');
+    if (btn) btn.classList.add('active');
+    tagFilter = tag;
+    applyFilters();
+  });
+});
 
 function updateStats() {
   const visible = document.querySelectorAll('.plugin-card:not(.hidden)').length;
@@ -319,12 +375,14 @@ function applyFilters() {
     const desc = card.dataset.desc.toLowerCase();
     const cardOs = card.dataset.os;
     const cardKind = card.dataset.kind;
+    const cardTags = card.dataset.tags || '';
 
-    const matchesSearch = !q || name.includes(q) || desc.includes(q);
+    const matchesSearch = !q || name.includes(q) || desc.includes(q) || cardTags.includes(q);
     const matchesOs = osFilter === 'all' || cardOs.includes(osFilter);
     const matchesKind = kindFilter === 'all' || cardKind === kindFilter;
+    const matchesTag = tagFilter === 'all' || cardTags.split(' ').includes(tagFilter);
 
-    card.classList.toggle('hidden', !(matchesSearch && matchesOs && matchesKind));
+    card.classList.toggle('hidden', !(matchesSearch && matchesOs && matchesKind && matchesTag));
   });
   updateStats();
 }
