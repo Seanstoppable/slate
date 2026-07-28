@@ -1,4 +1,4 @@
--- Todo — reads a todo.txt file and displays it
+-- Todo -- reads a todo.txt file and displays it
 -- Usage: type = "lua:scripts/todo.lua"
 -- Settings: file = "~/todo.txt"
 
@@ -19,10 +19,7 @@ function refresh()
 
     local content = slate.read_file(filepath)
     if not content then
-        return string.format(
-            '{"type":"text","content":"No todo file found at %s\\nCreate one to get started!","scrollable":false,"wrap":true}',
-            escape(filepath)
-        )
+        return slate.text("No todo file found at " .. filepath .. "\nCreate one to get started!")
     end
 
     local items = {}
@@ -34,25 +31,22 @@ function refresh()
             local done = line:match("^x%s") ~= nil
             local priority = line:match("^%((%u)%)")
             local title = line
-            if done then title = "✓ " .. line:sub(3) end
+            if done then title = "\226\156\147 " .. line:sub(3) end
 
             local subtitle = ""
             if priority then subtitle = "Priority: " .. priority end
 
-            table.insert(items, string.format(
-                '{"id":"%d","title":"%s","subtitle":"%s"}',
-                line_num, escape(title), escape(subtitle)
-            ))
+            table.insert(items, {
+                id = tostring(line_num),
+                title = title,
+                subtitle = subtitle,
+            })
         end
     end
 
     if #items == 0 then
-        return '{"type":"text","content":"🎉 All done! No tasks.","scrollable":false,"wrap":false}'
+        return slate.text("\240\159\142\137 All done! No tasks.", {wrap = false})
     end
 
-    return '{"type":"list","items":[' .. table.concat(items, ",") .. '],"selectable":true}'
-end
-
-function escape(s)
-    return s:gsub('\\', '\\\\'):gsub('"', '\\"'):gsub("\n", "\\n")
+    return slate.list(items, {selectable = true})
 end

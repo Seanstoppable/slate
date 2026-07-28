@@ -1,4 +1,4 @@
--- Disk Usage — shows filesystem usage per mount point
+-- Disk Usage -- shows filesystem usage per mount point
 -- Usage: type = "lua:scripts/disk-usage.lua"
 -- Platforms: macOS, Linux, Windows (via wmic fallback)
 
@@ -21,10 +21,7 @@ function refresh()
                     line:match("^(%S+)%s+(%S+)%s+(%S+)%s+(%S+)%s+(%S+)%s+(.+)")
                 if mount and not mount:match("^/private/var/") and not mount:match("^/snap/") then
                     local bar = make_bar(pct)
-                    table.insert(pairs, string.format(
-                        '["%s",{"text":"%s  %s / %s","color":"%s"}]',
-                        mount, bar, used, size, bar_color(pct)
-                    ))
+                    table.insert(pairs, {mount, {text = bar .. "  " .. used .. " / " .. size, color = bar_color(pct)}})
                 end
             end
         end
@@ -43,10 +40,7 @@ function refresh()
                         local pct_num = math.floor((t - f) / t * 100)
                         local pct = tostring(pct_num) .. "%"
                         local bar = make_bar(pct)
-                        table.insert(pairs, string.format(
-                            '["%s",{"text":"%s  %s%%","color":"%s"}]',
-                            drivename, bar, pct_num, bar_color(pct)
-                        ))
+                        table.insert(pairs, {drivename, {text = bar .. "  " .. pct_num .. "%", color = bar_color(pct)}})
                     end
                 end
             end
@@ -54,10 +48,10 @@ function refresh()
     end
 
     if #pairs == 0 then
-        return '{"type":"text","content":"No disk info available","scrollable":false,"wrap":true}'
+        return slate.text("No disk info available")
     end
 
-    return '{"type":"key_value","pairs":[' .. table.concat(pairs, ",") .. ']}'
+    return slate.key_value(pairs)
 end
 
 function make_bar(pct_str)

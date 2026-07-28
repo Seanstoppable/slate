@@ -210,6 +210,11 @@ pub async fn run(config_path: Option<&str>) -> Result<()> {
         };
 
         let widget = load_widget_or_error(entry, widget_config);
+        let border_color = entry
+            .settings
+            .get("border_color")
+            .and_then(|v| v.as_str())
+            .and_then(parse_color);
         app.add_widget(
             widget,
             entry.position.row,
@@ -217,13 +222,14 @@ pub async fn run(config_path: Option<&str>) -> Result<()> {
             entry.position.row_span,
             entry.position.col_span,
             entry.refresh_interval,
+            border_color,
         );
     }
 
     // If no widgets configured, show a welcome message
     if config.widget.is_empty() {
         let widget = builtins::WelcomeWidget;
-        app.add_widget(Box::new(widget), 0, 0, 1, 1, None);
+        app.add_widget(Box::new(widget), 0, 0, 1, 1, None, None);
     }
 
     app.run()
@@ -728,6 +734,22 @@ fn toml_to_json(value: &toml::Value) -> serde_json::Value {
             serde_json::Value::Object(map)
         }
         toml::Value::Datetime(dt) => serde_json::Value::String(dt.to_string()),
+    }
+}
+
+/// Parse a color string into a Color enum value.
+fn parse_color(s: &str) -> Option<slate_plugin_sdk::Color> {
+    use slate_plugin_sdk::Color;
+    match s.to_lowercase().as_str() {
+        "red" => Some(Color::Red),
+        "green" => Some(Color::Green),
+        "yellow" => Some(Color::Yellow),
+        "blue" => Some(Color::Blue),
+        "magenta" | "purple" => Some(Color::Magenta),
+        "cyan" => Some(Color::Cyan),
+        "white" => Some(Color::White),
+        "gray" | "grey" => Some(Color::Gray),
+        _ => None,
     }
 }
 

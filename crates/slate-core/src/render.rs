@@ -17,9 +17,12 @@ pub fn render_widget(
     metadata: &WidgetMetadata,
     focused: bool,
     selected: Option<usize>,
+    border_color: Option<&Color>,
 ) {
     let border_style = if focused {
         Style::default().fg(RatColor::Cyan)
+    } else if let Some(color) = border_color {
+        Style::default().fg(convert_color(color))
     } else {
         Style::default().fg(RatColor::DarkGray)
     };
@@ -236,6 +239,7 @@ mod tests {
                     &metadata(),
                     focused,
                     selected,
+                    None,
                 );
             })
             .unwrap();

@@ -1,4 +1,4 @@
--- Kubernetes — shows cluster objects (pods, deployments, nodes)
+-- Kubernetes -- shows cluster objects (pods, deployments, nodes)
 -- Usage: type = "lua:scripts/kubernetes.lua"
 -- Settings: context, namespace, objects (array of "pods", "deployments", "nodes")
 -- Platforms: any (requires kubectl CLI)
@@ -16,7 +16,6 @@ function refresh()
     if config_json then
         context = config_json:match('"context"%s*:%s*"(.-)"')
         namespace = config_json:match('"namespace"%s*:%s*"(.-)"')
-        -- Parse objects array
         local objs_str = config_json:match('"objects"%s*:%s*%[(.-)%]')
         if objs_str then
             objects = {}
@@ -46,7 +45,6 @@ function refresh()
         for _, a in ipairs(base_args) do
             table.insert(args, a)
         end
-        -- Add output columns based on type
         if obj_type == "pods" then
             table.insert(args, "-o")
             table.insert(args, "custom-columns=NAME:.metadata.name,STATUS:.status.phase,RESTARTS:.status.containerStatuses[0].restartCount,AGE:.metadata.creationTimestamp,NS:.metadata.namespace")
@@ -61,23 +59,15 @@ function refresh()
         local result = slate.exec("kubectl", args)
 
         if result.exit_code ~= 0 then
+            local err_msg = result.stderr:gsub("\n", " "):sub(1, 80)
             if result.stderr:match("not found") or result.stderr:match("Unable to connect") then
-                table.insert(items, string.format(
-                    '{"id":"%s-err","title":"⚠ %s: cluster unreachable","subtitle":"%s"}',
-                    obj_type, obj_type, escape(result.stderr:gsub("\n", " "):sub(1, 60))
-                ))
+                table.insert(items, {id = obj_type .. "-err", title = "\226\154\160 " .. obj_type .. ": cluster unreachable", subtitle = err_msg})
             else
-                table.insert(items, string.format(
-                    '{"id":"%s-err","title":"⚠ %s: error","subtitle":"%s"}',
-                    obj_type, obj_type, escape(result.stderr:gsub("\n", " "):sub(1, 80))
-                ))
+                table.insert(items, {id = obj_type .. "-err", title = "\226\154\160 " .. obj_type .. ": error", subtitle = err_msg})
             end
         else
-            -- Add section header
-            table.insert(items, string.format(
-                '{"id":"%s-header","title":"── %s ──","subtitle":""}',
-                obj_type, obj_type:upper()
-            ))
+            -- Section header
+            table.insert(items, {id = obj_type .. "-header", title = "\226\148\128\226\148\128 " .. obj_type:upper() .. " \226\148\128\226\148\128", subtitle = ""})
 
             local count = 0
             for line in result.stdout:gmatch("[^\n]+") do
@@ -95,8 +85,7 @@ function refresh()
                         local status = parts[2] or "?"
                         local restarts = parts[3] or "0"
                         local ns = parts[5] or ""
-                        local icon = status_icon(status)
-                        title_str = icon .. " " .. title_str
+                        title_str = status_icon(status) .. " " .. title_str
                         subtitle_str = status
                         if restarts ~= "0" and restarts ~= "<none>" then
                             subtitle_str = subtitle_str .. " (restarts: " .. restarts .. ")"
@@ -107,67 +96,52 @@ function refresh()
                         local desired = parts[3] or "?"
                         local ns = parts[4] or ""
                         if ready == desired then
-                            title_str = "✓ " .. title_str
+                            title_str = "\226\156\147 " .. title_str
                         else
-                            title_str = "⚠ " .. title_str
+                            title_str = "\226\154\160 " .. title_str
                         end
                         subtitle_str = ready .. "/" .. desired .. " ready"
                         if ns ~= "" then subtitle_str = subtitle_str .. " [" .. ns .. "]" end
                     elseif obj_type == "nodes" then
                         local status = parts[2] or "?"
-                        title_str = "⬡ " .. title_str
+                        title_str = "\226\172\161 " .. title_str
                         subtitle_str = status
                     end
 
-                    table.insert(items, string.format(
-                        '{"id":"%s-%d","title":"%s","subtitle":"%s"}',
-                        obj_type, count, escape(title_str), escape(subtitle_str)
-                    ))
+                    table.insert(items, {id = obj_type .. "-" .. count, title = title_str, subtitle = subtitle_str})
                 end
             end
 
             if count == 0 then
-                table.insert(items, string.format(
-                    '{"id":"%s-empty","title":"  (no %s found)","subtitle":""}',
-                    obj_type, obj_type
-                ))
+                table.insert(items, {id = obj_type .. "-empty", title = "  (no " .. obj_type .. " found)", subtitle = ""})
             end
         end
     end
 
     if #items == 0 then
-        return '{"type":"text","content":"kubectl not available","scrollable":false,"wrap":true}'
+        return slate.text("kubectl not available")
     end
 
-    return '{"type":"list","items":[' .. table.concat(items, ",") .. '],"selectable":true}'
+    return slate.list(items, {selectable = true})
 end
 
 function status_icon(status)
-    if status == "Running" then return "●"
-    elseif status == "Succeeded" or status == "Completed" then return "✓"
-    elseif status == "Pending" then return "◌"
-    elseif status == "Failed" or status == "Error" or status == "CrashLoopBackOff" then return "✗"
+    if status == "Running" then return "\226\151\143"
+    elseif status == "Succeeded" or status == "Completed" then return "\226\156\147"
+    elseif status == "Pending" then return "\226\151\140"
+    elseif status == "Failed" or status == "Error" or status == "CrashLoopBackOff" then return "\226\156\151"
     else return "?"
     end
 end
 
-function escape(s)
-    if not s then return "" end
-    return s:gsub('\\', '\\\\'):gsub('"', '\\"'):gsub("\n", "\\n"):gsub("\r", "")
-end
-
 function on_action(action_id, item_id)
-    -- item_id format: "{type}-{index}" or "{type}-header"/"{type}-err"/"{type}-empty"
-    -- For actual items, look up the resource name and describe it
     if item_id:match("%-header$") or item_id:match("%-err$") or item_id:match("%-empty$") then
         return nil
     end
 
-    -- Parse the object type from item_id (e.g., "pods-3" -> "pods")
     local obj_type = item_id:match("^(.-)%-[0-9]+$")
     if not obj_type then return nil end
 
-    -- We need to find the resource name. Fetch it again (simple approach)
     local context = nil
     local namespace = nil
     if config_json then
@@ -175,7 +149,6 @@ function on_action(action_id, item_id)
         namespace = config_json:match('"namespace"%s*:%s*"(.-)"')
     end
 
-    -- Get the specific item by index
     local idx = tonumber(item_id:match("%-([0-9]+)$"))
     if not idx then return nil end
 
@@ -193,10 +166,9 @@ function on_action(action_id, item_id)
 
     local list_result = slate.exec("kubectl", args)
     if list_result.exit_code ~= 0 then
-        return '{"notify":"Could not list resources"}'
+        return slate.notify("Could not list resources")
     end
 
-    -- Find the Nth resource name
     local count = 0
     local resource_name = nil
     local resource_ns = nil
@@ -212,7 +184,6 @@ function on_action(action_id, item_id)
                     resource_name = parts[1]
                     resource_ns = namespace
                 else
-                    -- all-namespaces: first col is namespace
                     resource_ns = parts[1]
                     resource_name = parts[2]
                 end
@@ -222,10 +193,9 @@ function on_action(action_id, item_id)
     end
 
     if not resource_name then
-        return '{"notify":"Resource not found"}'
+        return slate.notify("Resource not found")
     end
 
-    -- Run kubectl describe
     local describe_args = {"describe", obj_type:gsub("s$", ""), resource_name}
     if context then
         table.insert(describe_args, "--context")
@@ -238,8 +208,8 @@ function on_action(action_id, item_id)
 
     local result = slate.exec("kubectl", describe_args)
     if result.exit_code ~= 0 then
-        return '{"notify":"' .. escape(result.stderr:sub(1, 80)) .. '"}'
+        return slate.notify(result.stderr:sub(1, 80))
     end
 
-    return '{"show_detail":"' .. escape(result.stdout) .. '"}'
+    return slate.show_detail(result.stdout)
 end

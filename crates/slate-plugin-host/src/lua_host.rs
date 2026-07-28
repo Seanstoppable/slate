@@ -149,6 +149,12 @@ impl LuaPlugin {
         lua.globals()
             .set("slate", slate)
             .map_err(|e| anyhow::anyhow!("{}", e))?;
+
+        // Inject content helper library
+        lua.load(include_str!("lua_helpers.lua"))
+            .exec()
+            .map_err(|e| anyhow::anyhow!("Failed to load Lua helpers: {}", e))?;
+
         Ok(())
     }
 }
@@ -773,6 +779,134 @@ mod tests {
         let mut plugin = LuaPlugin::from_file(&script_path).unwrap();
         let result = plugin.on_action("select", "item1");
         assert_eq!(result, None);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn lua_helpers_text_builds_valid_json() {
+        let dir = std::env::temp_dir().join("slate_test_lua_helpers_text");
+        std::fs::create_dir_all(&dir).unwrap();
+        let script_path = dir.join("helpers_text.lua");
+        std::fs::write(&script_path, r#"
+            name = "Helpers Text"
+            function refresh()
+                return slate.text("Hello\nWorld", {scrollable = true, wrap = false})
+            end
+        "#).unwrap();
+
+        let mut plugin = LuaPlugin::from_file(&script_path).unwrap();
+        let content = plugin.refresh();
+        match content {
+            WidgetContent::Text { content, scrollable, wrap } => {
+                assert_eq!(content, "Hello\nWorld");
+                assert!(scrollable);
+                assert!(!wrap);
+            }
+            _ => panic!("Expected Text content"),
+        }
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn lua_helpers_list_builds_valid_json() {
+        let dir = std::env::temp_dir().join("slate_test_lua_helpers_list");
+        std::fs::create_dir_all(&dir).unwrap();
+        let script_path = dir.join("helpers_list.lua");
+        std::fs::write(&script_path, r#"
+            name = "Helpers List"
+            function refresh()
+                local items = {
+                    {id = "a", title = "First", subtitle = "sub1"},
+                    {id = "b", title = "Second", subtitle = "sub2"},
+                }
+                return slate.list(items, {selectable = true})
+            end
+        "#).unwrap();
+
+        let mut plugin = LuaPlugin::from_file(&script_path).unwrap();
+        let content = plugin.refresh();
+        match content {
+            WidgetContent::List { items, selectable, .. } => {
+                assert_eq!(items.len(), 2);
+                assert_eq!(items[0].id, "a");
+                assert_eq!(items[0].title, "First");
+                assert_eq!(items[1].subtitle, Some("sub2".to_string()));
+                assert!(selectable);
+            }
+            _ => panic!("Expected List content"),
+        }
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn lua_helpers_key_value_builds_valid_json() {
+        let dir = std::env::temp_dir().join("slate_test_lua_helpers_kv");
+        std::fs::create_dir_all(&dir).unwrap();
+        let script_path = dir.join("helpers_kv.lua");
+        std::fs::write(&script_path, r#"
+            name = "Helpers KV"
+            function refresh()
+                local pairs = {
+                    {"CPU", "42%"},
+                    {"Memory", {text = "8GB", color = "green"}},
+                }
+                return slate.key_value(pairs)
+            end
+        "#).unwrap();
+
+        let mut plugin = LuaPlugin::from_file(&script_path).unwrap();
+        let content = plugin.refresh();
+        match content {
+            WidgetContent::KeyValue { pairs } => {
+                assert_eq!(pairs.len(), 2);
+                assert_eq!(pairs[0].0, "CPU");
+                assert_eq!(pairs[1].0, "Memory");
+            }
+            _ => panic!("Expected KeyValue content, got {:?}", content),
+        }
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn lua_helpers_escape_handles_special_chars() {
+        let dir = std::env::temp_dir().join("slate_test_lua_helpers_esc");
+        std::fs::create_dir_all(&dir).unwrap();
+        let script_path = dir.join("helpers_esc.lua");
+        std::fs::write(&script_path, r#"
+            name = "Helpers Escape"
+            function refresh()
+                return slate.text('He said "hello"\nand left')
+            end
+        "#).unwrap();
+
+        let mut plugin = LuaPlugin::from_file(&script_path).unwrap();
+        let content = plugin.refresh();
+        match content {
+            WidgetContent::Text { content, .. } => {
+                assert!(content.contains("\"hello\""));
+                assert!(content.contains("\n"));
+            }
+            _ => panic!("Expected Text content"),
+        }
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn lua_helpers_notify_returns_action() {
+        let dir = std::env::temp_dir().join("slate_test_lua_helpers_notify");
+        std::fs::create_dir_all(&dir).unwrap();
+        let script_path = dir.join("helpers_notify.lua");
+        std::fs::write(&script_path, r#"
+            name = "Helpers Notify"
+            function refresh() return slate.text("hi") end
+            function on_action(action_id, item_id)
+                return slate.notify("Something happened!")
+            end
+        "#).unwrap();
+
+        let mut plugin = LuaPlugin::from_file(&script_path).unwrap();
+        let result = plugin.on_action("select", "item1");
+        assert_eq!(result, Some(slate_plugin_sdk::WidgetAction::Notify("Something happened!".to_string())));
         std::fs::remove_dir_all(&dir).ok();
     }
 }

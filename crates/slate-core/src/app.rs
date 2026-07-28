@@ -10,7 +10,7 @@ use crossterm::{
 use ratatui::{
     backend::CrosstermBackend, layout::Constraint, layout::Direction, layout::Layout, Terminal,
 };
-use slate_plugin_sdk::{BoxedWidget, WidgetAction, WidgetContent, WidgetMetadata};
+use slate_plugin_sdk::{BoxedWidget, Color, WidgetAction, WidgetContent, WidgetMetadata};
 
 use crate::config::SlateConfig;
 use crate::layout::{compute_grid, compute_widget_area, FocusPosition};
@@ -32,6 +32,8 @@ struct WidgetInstance {
     selected: Option<usize>,
     /// Detail view content (replaces normal rendering, suppresses refresh)
     detail_content: Option<String>,
+    /// Per-widget border color from config
+    border_color: Option<Color>,
 }
 
 impl WidgetInstance {
@@ -79,6 +81,7 @@ impl App {
         row_span: u16,
         col_span: u16,
         refresh_interval: Option<u64>,
+        border_color: Option<Color>,
     ) {
         let metadata = widget.metadata();
         let interval = refresh_interval.unwrap_or(self.config.global.refresh_interval);
@@ -100,6 +103,7 @@ impl App {
             refresh_interval: Duration::from_secs(interval),
             selected,
             detail_content: None,
+            border_color,
         });
     }
 
@@ -186,6 +190,7 @@ impl App {
                             &instance.metadata,
                             focused,
                             None,
+                            instance.border_color.as_ref(),
                         );
                     } else {
                         render_widget(
@@ -195,6 +200,7 @@ impl App {
                             &instance.metadata,
                             focused,
                             instance.selected,
+                            instance.border_color.as_ref(),
                         );
                     }
                 }
@@ -555,7 +561,7 @@ mod tests {
         let config = SlateConfig::default();
         let mut app = App::new(config);
         let widget = MockListWidget::new(action);
-        app.add_widget(Box::new(widget), 0, 0, 1, 1, Some(300));
+        app.add_widget(Box::new(widget), 0, 0, 1, 1, Some(300), None);
         app
     }
 
@@ -570,6 +576,7 @@ mod tests {
             1,
             1,
             Some(60),
+            None,
         );
 
         assert_eq!(app.widgets.len(), 1);
@@ -588,7 +595,7 @@ mod tests {
         config.global.refresh_interval = 42;
         let mut app = App::new(config);
 
-        app.add_widget(Box::new(MockListWidget::new(None)), 0, 0, 1, 1, None);
+        app.add_widget(Box::new(MockListWidget::new(None)), 0, 0, 1, 1, None, None);
 
         assert_eq!(app.widgets[0].refresh_interval, Duration::from_secs(42));
         assert_eq!(app.widgets[0].selected, Some(0));
@@ -600,8 +607,8 @@ mod tests {
         config.layout.rows = 1;
         config.layout.cols = 2;
         let mut app = App::new(config);
-        app.add_widget(Box::new(MockTextWidget), 0, 0, 1, 1, Some(60));
-        app.add_widget(Box::new(MockListWidget::new(None)), 0, 1, 1, 1, Some(60));
+        app.add_widget(Box::new(MockTextWidget), 0, 0, 1, 1, Some(60), None);
+        app.add_widget(Box::new(MockListWidget::new(None)), 0, 1, 1, 1, Some(60), None);
 
         assert_eq!(
             app.focused_widget()
@@ -627,7 +634,7 @@ mod tests {
             0,
              1,
              1,
-            Some(1),
+            Some(1), None
         );
 
         let now = Instant::now();
@@ -646,7 +653,7 @@ mod tests {
             0,
              1,
              1,
-            Some(60),
+            Some(60), None
         );
 
         let now = Instant::now();
@@ -819,7 +826,7 @@ mod tests {
              0,
              1,
              1,
-            Some(60),
+            Some(60), None
         );
 
         app.handle_key(make_key(KeyCode::Enter));
@@ -835,8 +842,8 @@ mod tests {
         config.layout.rows = 1;
         config.layout.cols = 2;
         let mut app = App::new(config);
-        app.add_widget(Box::new(MockTextWidget), 0, 0, 1, 1, Some(300));
-        app.add_widget(Box::new(MockTextWidget), 0, 1, 1, 1, Some(300));
+        app.add_widget(Box::new(MockTextWidget), 0, 0, 1, 1, Some(300), None);
+        app.add_widget(Box::new(MockTextWidget), 0, 1, 1, 1, Some(300), None);
 
         assert_eq!(app.focus.row, 0);
         assert_eq!(app.focus.col, 0);
@@ -854,7 +861,7 @@ mod tests {
         config.layout.rows = 1;
         config.layout.cols = 1;
         let mut app = App::new(config);
-        app.add_widget(Box::new(MockTextWidget), 0, 0, 1, 1, Some(60));
+        app.add_widget(Box::new(MockTextWidget), 0, 0, 1, 1, Some(60), None);
 
         app.handle_key(make_key(KeyCode::Tab));
         assert_eq!((app.focus.row, app.focus.col), (0, 0));
@@ -920,7 +927,7 @@ mod tests {
              0,
              1,
              1,
-            Some(60),
+            Some(60), None
         );
 
         let previous_refresh = Instant::now() - Duration::from_secs(600);
@@ -973,7 +980,7 @@ mod tests {
         config.layout.rows = 2;
         config.layout.cols = 2;
         let mut app = App::new(config);
-        app.add_widget(Box::new(MockTextWidget), 0, 0, 1, 1, Some(60));
+        app.add_widget(Box::new(MockTextWidget), 0, 0, 1, 1, Some(60), None);
 
         app.handle_key(make_key(KeyCode::Right));
         assert_eq!((app.focus.row, app.focus.col), (0, 1));
@@ -1007,8 +1014,8 @@ mod tests {
         config.layout.rows = 1;
         config.layout.cols = 2;
         let mut app = App::new(config);
-        app.add_widget(Box::new(MockTextWidget), 0, 0, 1, 1, Some(60));
-        app.add_widget(Box::new(MockTextWidget), 0, 1, 1, 1, Some(60));
+        app.add_widget(Box::new(MockTextWidget), 0, 0, 1, 1, Some(60), None);
+        app.add_widget(Box::new(MockTextWidget), 0, 1, 1, 1, Some(60), None);
         app.focus.col = 1;
 
         app.handle_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL));
@@ -1041,7 +1048,7 @@ mod tests {
         let mut app = App::new(SlateConfig::default());
         let last_key = Arc::new(Mutex::new(None));
         let widget = RecordingWidget::new(last_key.clone());
-        app.add_widget(Box::new(widget), 0, 0, 1, 1, Some(60));
+        app.add_widget(Box::new(widget), 0, 0, 1, 1, Some(60), None);
         app.handle_key(make_key(KeyCode::Char('x')));
         assert_eq!(last_key.lock().unwrap().as_deref(), Some("Char('x')"));
     }
@@ -1056,7 +1063,7 @@ mod tests {
              0,
              1,
              1,
-            Some(60),
+            Some(60), None
         );
 
         app.handle_key(make_key(KeyCode::Esc));

@@ -16,5 +16,5 @@ function refresh()
         greeting = "Good evening!"
     end
 
-    return '{"type":"text","content":"' .. greeting .. '\\nWelcome to Slate.","scrollable":false,"wrap":true}'
+    return slate.text(greeting .. "\nWelcome to Slate.")
 end

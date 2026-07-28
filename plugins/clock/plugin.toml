@@ -2,12 +2,14 @@
 name = "clock"
 description = "Displays multiple world clocks as a location list (wtfutil-style)"
 tags = ["clock", "time", "utility"]
-version = "0.2.0"
+version = "0.3.0"
 author = "Slate Community"
 
 [permissions]
 # No permissions needed - pure computation
 
 [config]
-timezone = { type = "string", required = false, description = "Display timezone label (default: UTC)" }
+timezone = { type = "string", required = false, description = "Display timezone label when using single clock mode (default: UTC)" }
+utc_offset = { type = "string", required = false, description = "UTC offset for single clock mode (e.g. '-5', '+5:30', '9')" }
+locations = { type = "object", required = false, description = "wtfutil-style map of label to UTC offset (e.g. {\"New York\": \"-5\", \"Tokyo\": \"+9\"})" }
 clocks = { type = "array", required = false, description = "Array of {label, utc_offset} for multi-timezone display" }

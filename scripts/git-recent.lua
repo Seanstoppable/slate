@@ -1,4 +1,4 @@
--- Git Recent — shows recent commits in the current repo
+-- Git Recent -- shows recent commits in the current repo
 -- Usage: type = "lua:scripts/git-recent.lua"
 -- Settings: count = 10, path = "." (optional repo path)
 
@@ -20,36 +20,36 @@ function refresh()
     local result = slate.exec("git", {"-C", path, "log", "--oneline", "--no-decorate", "-n", count, "--format=%h|%s|%ar|%an"})
     if result.exit_code ~= 0 then
         if result.stderr:match("not a git repository") then
-            return '{"type":"text","content":"Not a git repository","scrollable":false,"wrap":true}'
+            return slate.text("Not a git repository")
         end
-        return '{"type":"text","content":"git not available","scrollable":false,"wrap":true}'
+        return slate.text("git not available")
     end
 
     local output = result.stdout
     if output == nil or output == "" then
-        return '{"type":"text","content":"No commits found","scrollable":false,"wrap":false}'
+        return slate.text("No commits found", {wrap = false})
     end
 
     local items = {}
     for line in output:gmatch("[^\n]+") do
         local hash, subject, time_ago, author = line:match("^(.-)|(.-)|(.-)|(.*)")
         if hash then
-            table.insert(items, string.format(
-                '{"id":"%s","title":"%s","subtitle":"%s • %s • %s"}',
-                escape(hash), escape(subject), escape(hash), escape(author), escape(time_ago)
-            ))
+            table.insert(items, {
+                id = hash,
+                title = subject,
+                subtitle = hash .. " \226\128\162 " .. author .. " \226\128\162 " .. time_ago,
+            })
         end
     end
 
     if #items == 0 then
-        return '{"type":"text","content":"No commits found","scrollable":false,"wrap":false}'
+        return slate.text("No commits found", {wrap = false})
     end
 
-    return '{"type":"list","items":[' .. table.concat(items, ",") .. '],"selectable":true}'
+    return slate.list(items, {selectable = true})
 end
 
 function on_action(action_id, item_id)
-    -- item_id is the commit hash; show the full commit details
     local path = "."
     if config_json then
         local p = config_json:match('"path"%s*:%s*"(.-)"')
@@ -58,17 +58,13 @@ function on_action(action_id, item_id)
 
     local result = slate.exec("git", {"-C", path, "show", "--stat", "--format=commit %H%nAuthor: %an <%ae>%nDate:   %ad%n%n%s%n%n%b", item_id})
     if result.exit_code ~= 0 then
-        return '{"notify":"Could not load commit details"}'
+        return slate.notify("Could not load commit details")
     end
 
     local detail = result.stdout
     if detail == nil or detail == "" then
-        return '{"notify":"No commit details found"}'
+        return slate.notify("No commit details found")
     end
 
-    return '{"show_detail":"' .. escape(detail) .. '"}'
-end
-
-function escape(s)
-    return s:gsub('\\', '\\\\'):gsub('"', '\\"'):gsub("\n", "\\n"):gsub("\r", "")
+    return slate.show_detail(detail)
 end

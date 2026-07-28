@@ -1,4 +1,4 @@
--- Docker PS — shows running containers
+-- Docker PS -- shows running containers
 -- Usage: type = "lua:scripts/docker-ps.lua"
 -- Platforms: any (requires docker CLI)
 
@@ -9,16 +9,15 @@ version = "0.1.0"
 function refresh()
     local result = slate.exec("docker", {"ps", "--format", "{{.Names}}|{{.Image}}|{{.Status}}|{{.Ports}}"})
     if result.exit_code == -1 then
-        return '{"type":"text","content":"docker not found","scrollable":false,"wrap":true}'
+        return slate.text("docker not found")
     end
 
     local output = result.stdout
     if output == nil or output == "" then
-        -- Maybe docker isn't running or no containers
         if result.stderr:match("Cannot connect") or result.stderr:match("error") then
-            return '{"type":"text","content":"⚠ Docker daemon not running","scrollable":false,"wrap":true}'
+            return slate.text("\226\154\160 Docker daemon not running")
         end
-        return '{"type":"text","content":"No running containers","scrollable":false,"wrap":false}'
+        return slate.text("No running containers", {wrap = false})
     end
 
     local items = {}
@@ -27,22 +26,19 @@ function refresh()
         if cname then
             local subtitle = image
             if ports and ports ~= "" then
-                subtitle = subtitle .. " • " .. ports:gsub("0%.0%.0%.0:", ":")
+                subtitle = subtitle .. " \226\128\162 " .. ports:gsub("0%.0%.0%.0:", ":")
             end
-            table.insert(items, string.format(
-                '{"id":"%s","title":"%s","subtitle":"%s"}',
-                escape(cname), escape(cname .. " (" .. status .. ")"), escape(subtitle)
-            ))
+            table.insert(items, {
+                id = cname,
+                title = cname .. " (" .. status .. ")",
+                subtitle = subtitle,
+            })
         end
     end
 
     if #items == 0 then
-        return '{"type":"text","content":"No running containers","scrollable":false,"wrap":false}'
+        return slate.text("No running containers", {wrap = false})
     end
 
-    return '{"type":"list","items":[' .. table.concat(items, ",") .. '],"selectable":true}'
-end
-
-function escape(s)
-    return s:gsub('"', '\\"'):gsub("\n", "\\n")
+    return slate.list(items, {selectable = true})
 end
