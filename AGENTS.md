@@ -206,10 +206,20 @@ When implementing new WASM plugins or Lua scripts, delegate to a cheaper/faster 
 ### What to delegate
 
 - New WASM plugins (follow the pattern in any `plugins/*/src/lib.rs`)
-- New Lua scripts (follow the pattern in any `scripts/*.lua`)
+- New Lua scripts (follow the pattern in any `scripts/*.lua` — use `slate.*` helpers, never raw JSON)
 - Adding unit tests to existing plugins
 - Adding `tags` or config fields to `plugin.toml` files
 - Updating `docs/wtfutil-compatibility.md` entries
+- Bulk file edits (updating multiple plugin.toml files, sorting lists, etc.)
+- Mechanical refactors with clear patterns (e.g., adding a parameter to all call sites)
+
+### What NOT to delegate
+
+Reserve the expensive/high-reasoning model for:
+- Architecture decisions (new crate design, trait changes, host function APIs)
+- Complex debugging (WASM traps, cross-crate type mismatches, platform-specific issues)
+- Multi-system reasoning (config → host → plugin → renderer data flow)
+- Security and permissions model changes
 
 ### How to prompt the delegated model
 
@@ -232,3 +242,32 @@ After receiving the implementation:
 - Run `cargo test --manifest-path plugins/<name>/Cargo.toml`
 - Verify the plugin is in workspace `exclude` list
 - Check that `plugin.toml` has name, description, version, tags, and permissions
+
+## Cost Efficiency
+
+### Reducing credit usage
+
+This project's biggest credit drivers are long iterative sessions and bulk edits. Follow these principles:
+
+1. **Be specific in requests** — "Add `None` as the 8th argument to all `add_widget` calls in tests" is cheaper than "fix the compile errors" (avoids trial-and-error loops).
+
+2. **Batch related changes** — Instead of changing one file at a time across 15 plugin.toml files, describe the full pattern once and let the agent do all files in one pass.
+
+3. **Break mega-sessions into focused sessions** — Context accumulates and every message re-reads the full history. A 200-turn session costs far more per turn than four 50-turn sessions. Start fresh sessions for distinct feature areas.
+
+4. **Run builds/tests locally and report results** — Instead of the agent running `cargo test` and reading 200 lines of output, run it yourself and paste only the failure. This avoids tool-call overhead and large output in context.
+
+5. **Use `--fix` flags** — When the agent suggests a fix, consider if `cargo clippy --fix`, `cargo fmt`, or `slate lint --fix` could do it mechanically without burning credits.
+
+### Model selection by task type
+
+| Task | Recommended Model |
+|------|-------------------|
+| New WASM plugin | Sonnet / GPT-5-mini |
+| New Lua script | Haiku / Sonnet |
+| Bulk plugin.toml edits | Haiku |
+| Architecture design | Opus |
+| Complex debugging | Opus |
+| Writing tests for pure functions | Sonnet |
+| Documentation updates | Sonnet / Haiku |
+| CI/build configuration | Sonnet |
