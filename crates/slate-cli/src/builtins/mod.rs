@@ -1,8 +1,8 @@
 mod firewall;
 mod ipaddresses;
+mod logfile;
 mod power;
 mod resource_usage;
-mod vcs;
 mod welcome;
 
 use anyhow::Result;
@@ -19,7 +19,7 @@ pub fn create_builtin(
         "power" => Ok(Box::new(power::PowerWidget::new())),
         "firewall" => Ok(Box::new(firewall::FirewallWidget::new())),
         "ipaddresses" => Ok(Box::new(ipaddresses::IpAddressesWidget::new())),
-        "vcs" => Ok(Box::new(vcs::VcsWidget::new(config))),
+        "logfile" => Ok(Box::new(logfile::LogfileWidget::new(config))),
         _ => anyhow::bail!("Unknown builtin widget: {}", name),
     }
 }
@@ -49,7 +49,7 @@ mod tests {
             ("power", "Power"),
             ("firewall", "Firewall"),
             ("ipaddresses", "IP Addresses"),
-            ("vcs", "VCS (git)"),
+            ("logfile", "Log File"),
         ];
 
         for (name, expected_metadata) in cases {

@@ -1,0 +1,7 @@
+[plugin]
+name = "VCS"
+description = "Version control status (git/hg)"
+version = "0.1.0"
+
+[permissions]
+exec = ["git", "hg"]

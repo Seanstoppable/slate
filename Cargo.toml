@@ -8,9 +8,12 @@ members = [
 ]
 exclude = [
     "plugins/clock",
+    "plugins/docker",
     "plugins/ipinfo",
     "plugins/hackernews",
     "plugins/github",
+    "plugins/lunarphase",
+    "plugins/vcs",
 ]
 resolver = "2"
 

@@ -605,7 +605,7 @@ pub async fn check(config_path: Option<&str>) -> Result<()> {
 
         if entry.widget_type.starts_with("builtin:") {
             let name = entry.widget_type.trim_start_matches("builtin:");
-            let known = ["resource_usage", "power", "firewall", "ipaddresses", "vcs"];
+            let known = ["resource_usage", "power", "firewall", "ipaddresses", "logfile"];
             if known.contains(&name) {
                 println!("  {:2}. {} ✓ builtin", i + 1, label);
                 ok += 1;
@@ -1155,7 +1155,7 @@ mod tests {
         assert!(builtins::create_builtin("power", widget_config()).is_ok());
         assert!(builtins::create_builtin("firewall", widget_config()).is_ok());
         assert!(builtins::create_builtin("ipaddresses", widget_config()).is_ok());
-        assert!(builtins::create_builtin("vcs", widget_config()).is_ok());
+        assert!(builtins::create_builtin("logfile", widget_config()).is_ok());
         assert!(builtins::create_builtin("nonexistent", widget_config()).is_err());
     }
 
