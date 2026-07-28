@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Slate Plugins</title>
+<style>
+:root {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --border: #30363d;
+  --text: #e6edf3;
+  --text-muted: #8b949e;
+  --accent: #58a6ff;
+  --green: #3fb950;
+  --orange: #d29922;
+  --purple: #bc8cff;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+  padding: 2rem;
+}
+.container { max-width: 1200px; margin: 0 auto; }
+header {
+  text-align: center;
+  margin-bottom: 2rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--border);
+}
+header h1 {
+  font-size: 2.5rem;
+  background: linear-gradient(135deg, var(--accent), var(--purple));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+header p { color: var(--text-muted); font-size: 1.1rem; margin-top: 0.5rem; }
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 2rem;
+  align-items: center;
+}
+.search-box {
+  flex: 1;
+  min-width: 200px;
+  padding: 0.6rem 1rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 1rem;
+}
+.search-box::placeholder { color: var(--text-muted); }
+.filter-group {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.filter-btn {
+  padding: 0.4rem 0.8rem;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: all 0.2s;
+}
+.filter-btn:hover { border-color: var(--accent); color: var(--text); }
+.filter-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 1.2rem;
+}
+.plugin-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1.2rem;
+  transition: border-color 0.2s, transform 0.1s;
+  cursor: pointer;
+}
+.plugin-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+.plugin-card.hidden { display: none; }
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 0.5rem;
+}
+.card-header h3 { font-size: 1.15rem; color: var(--accent); }
+.badges { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.kind-badge {
+  font-size: 0.7rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+.kind-badge.builtin { background: #1f3d2a; color: var(--green); }
+.kind-badge.plugin { background: #1c2d4f; color: var(--accent); }
+.kind-badge.script { background: #3d2a1f; color: #f0a050; }
+.lang-badge {
+  font-size: 0.7rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 10px;
+  background: #2d1f3d;
+  color: var(--purple);
+}
+.lang-rust { background: #3d2a1f; color: #f97316; }
+.lang-go { background: #1f3d3d; color: #06b6d4; }
+.lang-zig { background: #3d3d1f; color: #eab308; }
+.lang-ts { background: #1f2d3d; color: #3b82f6; }
+.description {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  margin-bottom: 0.8rem;
+}
+.card-meta { font-size: 0.8rem; }
+.os-row { margin-bottom: 0.4rem; }
+.os-badge {
+  display: inline-block;
+  font-size: 0.75rem;
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+  background: #21262d;
+  margin-right: 0.2rem;
+}
+.perms-row {
+  color: var(--text-muted);
+  margin-bottom: 0.3rem;
+}
+.perm-tag {
+  display: inline-block;
+  font-size: 0.72rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  background: #2d1b00;
+  color: var(--orange);
+  margin: 0.1rem 0.2rem 0.1rem 0;
+}
+.version-row { color: var(--text-muted); }
+.tags-row { margin-bottom: 0.6rem; }
+.tag-badge {
+  display: inline-block;
+  font-size: 0.72rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 10px;
+  background: #1c2d4f;
+  color: var(--accent);
+  margin: 0.1rem 0.2rem 0.1rem 0;
+  cursor: pointer;
+}
+.tag-badge:hover { background: #264170; }
+.stats {
+  text-align: center;
+  color: var(--text-muted);
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+}
+#no-results {
+  text-align: center;
+  color: var(--text-muted);
+  padding: 3rem;
+  display: none;
+}
+/* Modal styles */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.7);
+  z-index: 1000;
+  padding: 2rem;
+  overflow-y: auto;
+}
+.modal-overlay.active { display: flex; justify-content: center; align-items: flex-start; }
+.modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  max-width: 700px;
+  width: 100%;
+  padding: 2rem;
+  margin-top: 3rem;
+  position: relative;
+}
+.modal-close {
+  position: absolute;
+  top: 1rem; right: 1rem;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.5rem;
+  cursor: pointer;
+}
+.modal-close:hover { color: var(--text); }
+.modal h2 { color: var(--accent); margin-bottom: 0.5rem; font-size: 1.6rem; }
+.modal .meta-line { color: var(--text-muted); margin-bottom: 1rem; }
+.modal .section { margin-bottom: 1.5rem; }
+.modal .section h4 {
+  color: var(--text);
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.5rem;
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid var(--border);
+}
+.modal pre {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 1rem;
+  overflow-x: auto;
+  font-family: 'SF Mono', Menlo, monospace;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+.modal code { color: var(--green); }
+.modal .os-list { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.modal .os-item {
+  padding: 0.3rem 0.8rem;
+  border-radius: 6px;
+  background: #21262d;
+  font-size: 0.9rem;
+}
+.modal .perm-list { display: flex; flex-direction: column; gap: 0.4rem; }
+.modal .perm-item {
+  padding: 0.3rem 0.6rem;
+  border-radius: 4px;
+  background: #2d1b00;
+  color: var(--orange);
+  font-size: 0.85rem;
+  font-family: monospace;
+}
+.modal .install-text {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  white-space: pre-wrap;
+}
+</style>
+</head>
+<body>
+<div class="container">
+<header>
+  <h1>⬡ Slate Plugins</h1>
+  <p>Terminal dashboard widgets — WASM-sandboxed, multi-language, installable from GitHub</p>
+</header>
+
+<div class="stats" id="stats"></div>
+
+<div class="controls">
+  <input type="text" class="search-box" id="search" placeholder="Search plugins..." autocomplete="off">
+  <div class="filter-group" id="os-filters">
+    <button class="filter-btn active" data-os="all">🌐 All</button>
+    <button class="filter-btn" data-os="macos">🍎 macOS</button>
+    <button class="filter-btn" data-os="linux">🐧 Linux</button>
+    <button class="filter-btn" data-os="windows">🪟 Windows</button>
+  </div>
+  <div class="filter-group" id="kind-filters">
+    <button class="filter-btn active" data-kind="all">All Types</button>
+    <button class="filter-btn" data-kind="builtin">Built-in</button>
+    <button class="filter-btn" data-kind="plugin">Plugin</button>
+    <button class="filter-btn" data-kind="script">Lua Script</button>
+  </div>
+  <div class="filter-group" id="tag-filters">
+    <button class="filter-btn active" data-tag="all">All Tags</button>
+  </div>
+</div>
+
+<div class="grid" id="grid">
+<div class="plugin-card" data-os="macos linux windows" data-lang="rust" data-kind="plugin" data-tags="news dev articles" data-name="Dev.to" data-desc="Shows articles from dev.to (by tag, user, or state)" onclick="showDetail(0)">
+  <div class="card-header">
+    <h3>Dev.to</h3>
+    <div class="badges"><span class="kind-badge plugin">plugin</span> <span class="lang-badge lang-rust">rust</span></div>
+  </div>
+  <p class="description">Shows articles from dev.to (by tag, user, or state)</p>
+  <div class="tags-row"><span class="tag-badge">news</span> <span class="tag-badge">dev</span> <span class="tag-badge">articles</span></div>
+  <div class="card-meta">
+    <div class="os-row"><span class="os-badge all" title="All platforms">&#x1F310; All</span></div>
+    <div class="perms-row"><strong>Permissions:</strong> <span class="perm-tag">network: dev.to</span></div>
+    <div class="version-row">v0.1.0 &middot; </div>
+  </div>
+</div>
+<div class="plugin-card" data-os="macos linux windows" data-lang="rust" data-kind="plugin" data-tags="time clock ascii-art" data-name="Digital Clock" data-desc="Displays the current time as large ASCII art digits" onclick="showDetail(1)">
+  <div class="card-header">
+    <h3>Digital Clock</h3>
+    <div class="badges"><span class="kind-badge plugin">plugin</span> <span class="lang-badge lang-rust">rust</span></div>
+  </div>
+  <p class="description">Displays the current time as large ASCII art digits</p>
+  <div class="tags-row"><span class="tag-badge">time</span> <span class="tag-badge">clock</span> <span class="tag-badge">ascii-art</span></div>
+  <div class="card-meta">
+    <div class="os-row"><span class="os-badge all" title="All platforms">&#x1F310; All</span></div>
+    <div class="perms-row"><strong>Permissions:</strong> <em>None required</em></div>
+    <div class="version-row">v0.1.0 &middot; </div>
+  </div>
+</div>
+<div class="plugin-card" data-os="macos linux windows" data-lang="rust" data-kind="plugin" data-tags="network dns pihole" data-name="Pi-hole" data-desc="Displays Pi-hole DNS filtering statistics" onclick="showDetail(2)">
+  <div class="card-header">
+    <h3>Pi-hole</h3>
+    <div class="badges"><span class="kind-badge plugin">plugin</span> <span class="lang-badge lang-rust">rust</span></div>
+  </div>
+  <p class="description">Displays Pi-hole DNS filtering statistics</p>
+  <div class="tags-row"><span class="tag-badge">network</span> <span class="tag-badge">dns</span> <span class="tag-badge">pihole</span></div>
+  <div class="card-meta">
+    <div class="os-row"><span class="os-badge all" title="All platforms">&#x1F310; All</span></div>
+    <div class="perms-row"><strong>Permissions:</strong> <span class="perm-tag">network: *</span></div>
+    <div class="version-row">v0.1.0 &middot; </div>
+  </div>
+</div>
+<div class="plugin-card" data-os="macos linux windows" data-lang="rust" data-kind="plugin" data-tags="news social reddit" data-name="Subreddit" data-desc="Shows posts from Reddit subreddits" onclick="showDetail(3)">
+  <div class="card-header">
+    <h3>Subreddit</h3>
+    <div class="badges"><span class="kind-badge plugin">plugin</span> <span class="lang-badge lang-rust">rust</span></div>
+  </div>
+  <p class="description">Shows posts from Reddit subreddits</p>
+  <div class="tags-row"><span class="tag-badge">news</span> <span class="tag-badge">social</span> <span class="tag-badge">reddit</span></div>
+  <div class="card-meta">
+    <div class="os-row"><span class="os-badge all" title="All platforms">&#x1F310; All</span></div>
+    <div class="perms-row"><strong>Permissions:</strong> <span class="perm-tag">network: www.reddit.com</span></div>
+    <div class="version-row">v0.1.0 &middot; </div>
+  </div>
+</div>
+<div class="plugin-card" data-os="macos linux windows" data-lang="rust" data-kind="plugin" data-tags="dev git vcs" data-name="VCS" data-desc="Version control status (git/hg)" onclick="showDetail(4)">
+  <div class="card-header">
+    <h3>VCS</h3>
+    <div class="badges"><span class="kind-badge plugin">plugin</span> <span class="lang-badge lang-rust">rust</span></div>
+  </div>
+  <p class="description">Version control status (git/hg)</p>
+  <div class="tags-row"><span class="tag-badge">dev</span> <span class="tag-badge">git</span> <span class="tag-badge">vcs</span></div>
+  <div class="card-meta">
+    <div class="os-row"><span class="os-badge all" title="All platforms">&#x1F310; All</span></div>
+    <div class="perms-row"><strong>Permissions:</strong> <span class="perm-tag">exec: git, hg</span></div>
+    <div class="version-row">v0.1.0 &middot; </div>
+  </div>
+</div>
+<div class="plugin-card" data-os="macos linux" data-lang="go" data-kind="plugin" data-tags="dev macos packages" data-name="brew-outdated" data-desc="Shows outdated Homebrew packages" onclick="showDetail(5)">
+  <div class="card-header">
+    <h3>brew-outdated</h3>
+    <div class="badges"><span class="kind-badge plugin">plugin</span> <span class="lang-badge lang-go">go</span></div>
+  </div>
+  <p class="description">Shows outdated Homebrew packages</p>
+  <div class="tags-row"><span class="tag-badge">dev</span> <span class="tag-badge">macos</span> <span class="tag-badge">packages</span></div>
+  <div class="card-meta">
+    <div class="os-row"><span class="os-badge macos" title="macOS">&#x1F34E; macOS</span> <span class="os-badge linux" title="Linux">&#x1F427; Linux</span></div>
+    <div class="perms-row"><strong>Permissions:</strong> <span class="perm-tag">exec: brew</span></div>
+    <div class="version-row">v0.1.0 &middot; Slate Community</div>
+  </div>
+</div>
+<div class="plugin-card" data-os="macos linux windows" data-lang="lua" data-kind="script" data-tags="script" data-name="brew-outdated" data-desc="Shows Homebrew packages with available updates" onclick="showDetail(6)">
+  <div class="card-header">
+    <h3>brew-outdated</h3>
+    <div class="badges"><span class="kind-badge script">lua script</span> <span class="lang-badge lang-other">lua</span></div>
+  </div>
+  <p class="description">Shows Homebrew packages with available updates</p>
+  <div class="tags-row"><span class="tag-badge">script</span></div>
+  <div class="card-meta">
+    <div class="os-row"><span class="os-badge macos" title="macOS">&#x1F34E; macOS</span> <span class="os-badge linux" title="Linux">&#x1F427; Linux</span> <span class="os-badge windows" title="Windows">&#x1FA9F; Windows</span></div>
+    <div class="perms-row"><strong>Permissions:</strong> <span class="perm-tag">unsandboxed (full io access)</span></div>
+    <div class="version-row">v0.1.0 &middot; Slate Community</div>
+  </div>
+</div>
+<div class="plugin-card" data-os="macos linux windows" data-lang="rust" data-kind="plugin" data-tags="time clock utility" data-name="clock" data-desc="Displays multiple world clocks as a location list (wtfutil-style)" onclick="showDetail(7)">
+  <div class="card-header">
+    <h3>clock</h3>
+    <div class="badges"><span class="kind-badge plugin">plugin</span> <span class="lang-badge lang-rust">rust</span></div>
+  </div>
+  <p class="description">Displays multiple world clocks as a location list (wtfutil-style)</p>
+  <div class="tags-row"><span class="tag-badge">time</span> <span class="tag-badge">clock</span> <span class="tag-badge">utility</span></div>
+  <div class="card-meta">
+    <div class="os-row"><span class="os-badge all" title="All platforms">&#x1F310; All</span></div>
+    <div class="perms-row"><strong>Permissions:</strong> <em>None required</em></div>
+    <div class="version-row">v0.2.0 &middot; Slate Community</div>
+  </div>
+</div>
+<div class="plugin-card" data-os="macos linux windows" data-lang="lua" data-kind="script" data-tags="script" data-name="disk-usage" data-desc="Shows disk space usage for mounted filesystems" onclick="showDetail(8)">
+  <div class="card-header">
+    <h3>disk-usage</h3>
+    <div class="badges"><span class="kind-badge script">lua script</span> <span class="lang-badge lang-other">lua</span></div>
+  </div>
+  <p class="description">Shows disk space usage for mounted filesystems</p>
+  <div class="tags-row"><span class="tag-badge">script</span></div>
+  <div class="card-meta">
+    <div class="os-row"><span class="os-badge macos" title="macOS">&#x1F34E; macOS</span> <span class="os-badge linux" title="Linux">&#x1F427; Linux</span> <span class="os-badge windows" title="Windows">&#x1FA9F; Windows</span></div>
+    <div class="perms-row"><strong>Permissions:</strong> <span class="perm-tag">unsandboxed (full io access)</span></div>
+    <div class="version-row">v0.1.0 &middot; Slate Community</div>
+  </div>
+</div>
+<div class="plugin-card" data-os="macos linux windows" data-lang="rust" data-kind="plugin" data-tags="dev containers docker" data-name="docker" data-desc="Shows Docker container status and resource usage" onclick="showDetail(9)">
+  <div class="card-header">
+    <h3>docker</h3>
+    <div class="badges"><span class="kind-badge plugin">plugin</span> <span class="lang-badge lang-rust">rust</span></div>
+  </div>
+  <p class="description">Shows Docker container status and resource usage</p>
+  <div class="tags-row"><span class="tag-badge">dev</span> <span class="tag-badge">containers</span> <span class="tag-badge">docker</span></div>
+  <div class="card-meta">
+    <div class="os-row"><span class="os-badge all" title="All platforms">&#x1F310; All</span></div>
+    <div class="perms-row"><strong>Permissions:</strong> <span class="perm-tag">exec: docker</span></div>
+    <div class="version-row">v0.1.0 &middot; Slate Community</div>
+  </div>
+</div>
+<div class="plugin-card" data-os="macos linux windows" data-lang="lua" data-kind="script" data-tags="script" data-name="docker" data-desc="Shows running Docker containers" onclick="showDetail(10)">
+  <div class="card-header">
+    <h3>docker</h3>
+    <div class="badges"><span class="kind-badge script">lua script</span> <span class="lang-badge lang-other">lua</span></div>
+  </div>
+  <p class="description">Shows running Docker containers</p>
+  <div class="tags-row"><span class="tag-badge">script</span></div>
+  <div class="card-meta">
+    <div class="os-row"><span class="os-badge macos" title="macOS">&#x1F34E; macOS</span> <span class="os-badge linux" title="Linux">&#x1F427; Linux</span> <span class="os-badge windows" title="Windows">&#x1FA9F; Windows</span></div>
+    <div class="perms-row"><strong>Permissions:</strong> <span class="perm-tag">unsandboxed (full io access)</span></div>
+    <div class="version-row">v0.1.0 &middot; Slate Community</div>
+  </div>
+</div>
+<div class="plugin-card" data-os="macos linux windows" data-lang="rust" data-kind="plugin" data-tags="news rss feed" data-name="feedreader" data-desc="RSS/Atom feed reader with selectable items" onclick="showDetail(11)">
+  <div class="card-header">
+    <h3>feedreader</h3>
+    <div class="badges"><span class="kind-badge plugin">plugin</span> <span class="lang-badge lang-rust">rust</span></div>
+  </div>
+  <p class="description">RSS/Atom feed reader with selectable items</p>
+  <div class="tags-row"><span class="tag-badge">news</span> <span class="tag-badge">rss</span> <span class="tag-badge">feed</span></div>
+  <div class="card-meta">
+    <div class="os-row"><span class="os-badge all" title="All platforms">&#x1F310; All</span></div>
+    <div class="perms-row"><strong>Permissions:</strong> <span class="perm-tag">network: *</span></div>
+    <div class="version-row">v0.1.0 &middot; Slate Community</div>
+  </div>
+</div>
+<div class="plugin-card" data-os="macos linux windows" data-lang="rust (native)" data-kind="builtin" data-tags="system network security" data-name="firewall" data-desc="Firewall rules and status" onclick="showDetail(12)">
+  <div class="card-header">
+    <h3>firewall</h3>
+    <div class="badges"><span class="kind-badge builtin">built-in</span> <span class="lang-badge lang-rust">rust (native)</span></div>
+  </div>
+  <p class="description">Firewall rules and status</p>
+  <div class="tags-row"><span class="tag-badge">system</span> <span class="tag-badge">network</span> <span class="tag-badge">security</span></div>
+  <div class="card-meta">
+    <div class="os-row"><span class="os-badge macos" title="macOS">&#x1F34E; macOS</span> <span class="os-badge linux" title="Linux">&#x1F427; Linux</span> <span class="os-badge windows" title="Windows">&#x1FA9F; Windows</span></div>
+    <div class="perms-row"><strong>Permissions:</strong> <span class="perm-tag">system (native access)</span></div>
+    <div class="version-row">vbuilt-in &middot; Slate</div>
+  </div>
+</div>
+<div class="plugin-card" data-os="macos linux windows" data-lang="lua" data-kind="script" data-tags="script" data-name="git-recent" data-desc="Shows recent git commits in a repository" onclick="showDetail(13)">
+  <div class="card-header">
+    <h3>git-recent</h3>
+    <div class="badges"><span class="kind-badge script">lua script</span> <span class="lang-badge lang-other">lua</span></div>
+  </div>
+  <p class="description">Shows recent git commits in a repository</p>
+  <div class="tags-row"><span class="tag-badge">script</span></div>
+  <div class="card-meta">
+    <div class="os-row"><span class="os-badge macos" title="macOS">&#x1F34E; macOS</span> <span class="os-badge linux" title="Linux">&#x1F427; Linux</span> <span class="os-badge windows" title="Windows">&#x1FA9F; Windows</span></div>
+    <div class="perms-row"><strong>Permissions:</strong> <span class="perm-tag">unsandboxed (full io access)</span></div>
+    <div class="version-row">v0.1.0 &middot; Slate Community</div>
+  </div>
+</div>
+<div class="plugin-card" data-os="macos linux windows" data-lang="rust" data-kind="plugin" data-tags="dev git github" data-name="github" data-desc="GitHub PRs, issues, and repo stats" onclick="showDetail(14)">
+  <div class="card-header">
+    <h3>github</h3>
+    <div class="badges"><span class="kind-badge plugin">plugin</span> <span class="lang-badge lang-rust">rust</span></div>
+  </div>
+  <p class="description">GitHub PRs, issues, and repo stats</p>
+  <div class="tags-row"><span class="tag-badge">dev</span> <span class="tag-badge">git</span> <span class="tag-badge">github</span></div>
+  <div class="card-meta">
+    <div class="os-row"><span class="os-badge all" title="All platforms">&#x1F310; All</span></div>
+    <div class="perms-row"><strong>Permissions:</strong> <span class="perm-tag">network: api.github.com</span> <span class="perm-tag">secrets: token</span> <span class="perm-tag">storage</span></div>
+    <div class="version-row">v0.1.0 &middot; Slate Community</div>
+  </div>
+</div>
+<div class="plugin-card" data-os="macos linux windows" data-lang="lua" data-kind="script" data-tags="script" data-name="greeting" data-desc="A friendly greeting widget" onclick="showDetail(15)">
+  <div class="card-header">
+    <h3>greeting</h3>
+    <div class="badges"><span class="kind-badge script">lua script</span> <span class="lang-badge lang-other">lua</span></div>
+  </div>
+  <p class="description">A friendly greeting widget</p>
+  <div class="tags-row"><span class="tag-badge">script</span></div>
+  <div class="card-meta">
+    <div class="os-row"><span class="os-badge macos" title="macOS">&#x1F34E; macOS</span> <span class="os-badge linux" title="Linux">&#x1F427; Linux</span> <span class="os-badge windows" title="Windows">&#x1FA9F; Windows</span></div>
+    <div class="perms-row"><strong>Permissions:</strong> <span class="perm-tag">unsandboxed (full io access)</span></div>
+    <div class="version-row">v0.1.0 &middot; Slate Community</div>
+  </div>
+</div>
+<div class="plugin-card" data-os="macos linux windows" data-lang="rust" data-kind="plugin" data-tags="news tech hackernews" data-name="hackernews" data-desc="Hacker News top stories" onclick="showDetail(16)">
+  <div class="card-header">
+    <h3>hackernews</h3>
+    <div class="badges"><span class="kind-badge plugin">plugin</span> <span class="lang-badge lang-rust">rust</span></div>
+  </div>
+  <p class="description">Hacker News top stories</p>
+  <div class="tags-row"><span class="tag-badge">news</span> <span class="tag-badge">tech</span> <span class="tag-badge">hackernews</span></div>
+  <div class="card-meta">
+    <div class="os-row"><span class="os-badge all" title="All platforms">&#x1F310; All</span></div>
+    <div class="perms-row"><strong>Permissions:</strong> <span class="perm-tag">network: hacker-news.firebaseio.com</span></div>
+    <div class="version-row">v0.1.0 &middot; Slate Community</div>
+  </div>
+</div>
+<div class="plugin-card" data-os="macos linux windows" data-lang="rust (native)" data-kind="builtin" data-tags="network utility" data-name="ipaddresses" data-desc="Network interface IP addresses" onclick="showDetail(17)">
+  <div class="card-header">
+    <h3>ipaddresses</h3>
+    <div class="badges"><span class="kind-badge builtin">built-in</span> <span class="lang-badge lang-rust">rust (native)</span></div>
+  </div>
+  <p class="description">Network interface IP addresses</p>
+  <div class="tags-row"><span class="tag-badge">network</span> <span class="tag-badge">utility</span></div>
+  <div class="card-meta">
+    <div class="os-row"><span class="os-badge macos" title="macOS">&#x1F34E; macOS</span> <span class="os-badge linux" title="Linux">&#x1F427; Linux</span> <span class="os-badge windows" title="Windows">&#x1FA9F; Windows</span></div>
+    <div class="perms-row"><strong>Permissions:</strong> <span class="perm-tag">system (native access)</span></div>
+    <div class="version-row">vbuilt-in &middot; Slate</div>
+  </div>
+</div>
+<div class="plugin-card" data-os="macos" data-lang="zig" data-kind="plugin" data-tags="system hardware macos" data-name="istats" data-desc="System stats via iStats (macOS) - CPU temp, fan speeds, battery" onclick="showDetail(18)">
+  <div class="card-header">
+    <h3>istats</h3>
+    <div class="badges"><span class="kind-badge plugin">plugin</span> <span class="lang-badge lang-zig">zig</span></div>
+  </div>
+  <p class="description">System stats via iStats (macOS) - CPU temp, fan speeds, battery</p>
+  <div class="tags-row"><span class="tag-badge">system</span> <span class="tag-badge">hardware</span> <span class="tag-badge">macos</span></div>
+  <div class="card-meta">
+    <div class="os-row"><span class="os-badge macos" title="macOS">&#x1F34E; macOS</span></div>
+    <div class="perms-row"><strong>Permissions:</strong> <span class="perm-tag">exec: istats</span></div>
+    <div class="version-row">v0.1.0 &middot; Slate Community</div>
+  </div>
+</div>
+<div class="plugin-card" data-os="macos linux windows" data-lang="lua" data-kind="script" data-tags="script" data-name="kubernetes" data-desc="Displays Kubernetes cluster objects via kubectl" onclick="showDetail(19)">
+  <div class="card-header">
+    <h3>kubernetes</h3>
+    <div class="badges"><span class="kind-badge script">lua script</span> <span class="lang-badge lang-other">lua</span></div>
+  </div>
+  <p class="description">Displays Kubernetes cluster objects via kubectl</p>
+  <div class="tags-row"><span class="tag-badge">script</span></div>
+  <div class="card-meta">
+    <div class="os-row"><span class="os-badge macos" title="macOS">&#x1F34E; macOS</span> <span class="os-badge linux" title="Linux">&#x1F427; Linux</span> <span class="os-badge windows" title="Windows">&#x1FA9F; Windows</span></div>
+    <div class="perms-row"><strong>Permissions:</strong> <span class="perm-tag">unsandboxed (full io access)</span></div>
+    <div class="version-row">v0.1.0 &middot; Slate Community</div>
+  </div>
+</div>
+<div class="plugin-card" data-os="macos linux windows" data-lang="rust (native)" data-kind="builtin" data-tags="utility monitoring" data-name="logfile" data-desc="Display and tail text files" onclick="showDetail(20)">
+  <div class="card-header">
+    <h3>logfile</h3>
+    <div class="badges"><span class="kind-badge builtin">built-in</span> <span class="lang-badge lang-rust">rust (native)</span></div>
+  </div>
+  <p class="description">Display and tail text files</p>
+  <div class="tags-row"><span class="tag-badge">utility</span> <span class="tag-badge">monitoring</span></div>
+  <div class="card-meta">
+    <div class="os-row"><span class="os-badge macos" title="macOS">&#x1F34E; macOS</span> <span class="os-badge linux" title="Linux">&#x1F427; Linux</span> <span class="os-badge windows" title="Windows">&#x1FA9F; Windows</span></div>
+    <div class="perms-row"><strong>Permissions:</strong> <span class="perm-tag">system (native access)</span></div>
+    <div class="version-row">vbuilt-in &middot; Slate</div>
+  </div>
+</div>
+<div class="plugin-card" data-os="macos linux windows" data-lang="rust (native)" data-kind="builtin" data-tags="system hardware" data-name="power" data-desc="Battery status and power source" onclick="showDetail(21)">
+  <div class="card-header">
+    <h3>power</h3>
+    <div class="badges"><span class="kind-badge builtin">built-in</span> <span class="lang-badge lang-rust">rust (native)</span></div>
+  </div>
+  <p class="description">Battery status and power source</p>
+  <div class="tags-row"><span class="tag-badge">system</span> <span class="tag-badge">hardware</span></div>
+  <div class="card-meta">
+    <div class="os-row"><span class="os-badge macos" title="macOS">&#x1F34E; macOS</span> <span class="os-badge linux" title="Linux">&#x1F427; Linux</span> <span class="os-badge windows" title="Windows">&#x1FA9F; Windows</span></div>
+    <div class="perms-row"><strong>Permissions:</strong> <span class="perm-tag">system (native access)</span></div>
+    <div class="version-row">vbuilt-in &middot; Slate</div>
+  </div>
+</div>
+<div class="plugin-card" data-os="macos linux windows" data-lang="rust (native)" data-kind="builtin" data-tags="system monitoring" data-name="resource_usage" data-desc="CPU, memory, swap, and temperature monitoring" onclick="showDetail(22)">
+  <div class="card-header">
+    <h3>resource_usage</h3>
+    <div class="badges"><span class="kind-badge builtin">built-in</span> <span class="lang-badge lang-rust">rust (native)</span></div>
+  </div>
+  <p class="description">CPU, memory, swap, and temperature monitoring</p>
+  <div class="tags-row"><span class="tag-badge">system</span> <span class="tag-badge">monitoring</span></div>
+  <div class="card-meta">
+    <div class="os-row"><span class="os-badge macos" title="macOS">&#x1F34E; macOS</span> <span class="os-badge linux" title="Linux">&#x1F427; Linux</span> <span class="os-badge windows" title="Windows">&#x1FA9F; Windows</span></div>
+    <div class="perms-row"><strong>Permissions:</strong> <span class="perm-tag">system (native access)</span></div>
+    <div class="version-row">vbuilt-in &middot; Slate</div>
+  </div>
+</div>
+<div class="plugin-card" data-os="macos linux windows" data-lang="lua" data-kind="script" data-tags="script" data-name="spacex" data-desc="Next SpaceX launch information" onclick="showDetail(23)">
+  <div class="card-header">
+    <h3>spacex</h3>
+    <div class="badges"><span class="kind-badge script">lua script</span> <span class="lang-badge lang-other">lua</span></div>
+  </div>
+  <p class="description">Next SpaceX launch information</p>
+  <div class="tags-row"><span class="tag-badge">script</span></div>
+  <div class="card-meta">
+    <div class="os-row"><span class="os-badge macos" title="macOS">&#x1F34E; macOS</span> <span class="os-badge linux" title="Linux">&#x1F427; Linux</span> <span class="os-badge windows" title="Windows">&#x1FA9F; Windows</span></div>
+    <div class="perms-row"><strong>Permissions:</strong> <span class="perm-tag">unsandboxed (full io access)</span></div>
+    <div class="version-row">v0.1.0 &middot; Slate Community</div>
+  </div>
+</div>
+<div class="plugin-card" data-os="macos linux windows" data-lang="typescript" data-kind="plugin" data-tags="monitoring status devops" data-name="status-pages" data-desc="Monitor service status pages (Atlassian Statuspage, custom APIs)" onclick="showDetail(24)">
+  <div class="card-header">
+    <h3>status-pages</h3>
+    <div class="badges"><span class="kind-badge plugin">plugin</span> <span class="lang-badge lang-ts">typescript</span></div>
+  </div>
+  <p class="description">Monitor service status pages (Atlassian Statuspage, custom APIs)</p>
+  <div class="tags-row"><span class="tag-badge">monitoring</span> <span class="tag-badge">status</span> <span class="tag-badge">devops</span></div>
+  <div class="card-meta">
+    <div class="os-row"><span class="os-badge all" title="All platforms">&#x1F310; All</span></div>
+    <div class="perms-row"><strong>Permissions:</strong> <span class="perm-tag">network: www.githubstatus.com, status.slack.com</span></div>
+    <div class="version-row">v0.1.0 &middot; Slate Community</div>
+  </div>
+</div>
+<div class="plugin-card" data-os="macos linux windows" data-lang="lua" data-kind="script" data-tags="script" data-name="todo" data-desc="Displays tasks from a todo.txt file" onclick="showDetail(25)">
+  <div class="card-header">
+    <h3>todo</h3>
+    <div class="badges"><span class="kind-badge script">lua script</span> <span class="lang-badge lang-other">lua</span></div>
+  </div>
+  <p class="description">Displays tasks from a todo.txt file</p>
+  <div class="tags-row"><span class="tag-badge">script</span></div>
+  <div class="card-meta">
+    <div class="os-row"><span class="os-badge macos" title="macOS">&#x1F34E; macOS</span> <span class="os-badge linux" title="Linux">&#x1F427; Linux</span> <span class="os-badge windows" title="Windows">&#x1FA9F; Windows</span></div>
+    <div class="perms-row"><strong>Permissions:</strong> <span class="perm-tag">unsandboxed (full io access)</span></div>
+    <div class="version-row">v0.1.0 &middot; Slate Community</div>
+  </div>
+</div>
+<div class="plugin-card" data-os="macos linux windows" data-lang="rust" data-kind="plugin" data-tags="weather utility" data-name="weather" data-desc="Current weather conditions via OpenWeatherMap API" onclick="showDetail(26)">
+  <div class="card-header">
+    <h3>weather</h3>
+    <div class="badges"><span class="kind-badge plugin">plugin</span> <span class="lang-badge lang-rust">rust</span></div>
+  </div>
+  <p class="description">Current weather conditions via OpenWeatherMap API</p>
+  <div class="tags-row"><span class="tag-badge">weather</span> <span class="tag-badge">utility</span></div>
+  <div class="card-meta">
+    <div class="os-row"><span class="os-badge all" title="All platforms">&#x1F310; All</span></div>
+    <div class="perms-row"><strong>Permissions:</strong> <span class="perm-tag">network: api.openweathermap.org</span> <span class="perm-tag">secrets: api_key</span></div>
+    <div class="version-row">v0.1.0 &middot; Slate Community</div>
+  </div>
+</div>
+<div class="plugin-card" data-os="macos linux windows" data-lang="assemblyscript" data-kind="plugin" data-tags="weather utility" data-name="wego" data-desc="Weather display via wego CLI (ASCII art weather)" onclick="showDetail(27)">
+  <div class="card-header">
+    <h3>wego</h3>
+    <div class="badges"><span class="kind-badge plugin">plugin</span> <span class="lang-badge lang-ts">assemblyscript</span></div>
+  </div>
+  <p class="description">Weather display via wego CLI (ASCII art weather)</p>
+  <div class="tags-row"><span class="tag-badge">weather</span> <span class="tag-badge">utility</span></div>
+  <div class="card-meta">
+    <div class="os-row"><span class="os-badge macos" title="macOS">&#x1F34E; macOS</span> <span class="os-badge linux" title="Linux">&#x1F427; Linux</span> <span class="os-badge windows" title="Windows">&#x1FA9F; Windows</span></div>
+    <div class="perms-row"><strong>Permissions:</strong> <span class="perm-tag">exec: wego</span></div>
+    <div class="version-row">v0.1.0 &middot; Slate Community</div>
+  </div>
+</div>
+
+</div>
+
+<div id="no-results">No plugins match your filters.</div>
+</div>
+
+<!-- Detail modal -->
+<div class="modal-overlay" id="modal-overlay" onclick="if(event.target===this)closeDetail()">
+  <div class="modal">
+    <button class="modal-close" onclick="closeDetail()">&times;</button>
+    <h2 id="modal-name"></h2>
+    <div class="meta-line" id="modal-meta"></div>
+    <p class="description" id="modal-desc" style="margin-bottom:1.5rem"></p>
+    <div class="section">
+      <h4>Configuration</h4>
+      <pre><code id="modal-config"></code></pre>
+    </div>
+    <div class="section">
+      <h4>Platform Support</h4>
+      <div class="os-list" id="modal-os"></div>
+    </div>
+    <div class="section">
+      <h4>Permissions</h4>
+      <div class="perm-list" id="modal-perms"></div>
+    </div>
+    <div class="section">
+      <h4>Installation</h4>
+      <div class="install-text" id="modal-install"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const pluginData = [
+  {name:"Dev.to",desc:"Shows articles from dev.to (by tag, user, or state)",version:"0.1.0",author:"",lang:"rust",kind:"plugin",os:["All platforms"],perms:["network: dev.to"],tags:["news","dev","articles"],config:"[[widget]]\ntype = \"github.com/slate-community/slate-Dev.to\"\nposition = { row = 0, col = 0 }\n\n# Configuration\ncontentTag = \"...\"  # Filter by tag (e.g. rust, webdev)\ntop = 1  # Top articles from last N days\nnumberOfArticles = 1  # Number of articles (default: 10)\ncontentState = \"...\"  # Article state: fresh, rising, all\ncontentUsername = \"...\"  # Filter by author username",install:"Add to slate.toml:\n  type = \"github.com/slate-community/slate-Dev.to\""},
+  {name:"Digital Clock",desc:"Displays the current time as large ASCII art digits",version:"0.1.0",author:"",lang:"rust",kind:"plugin",os:["All platforms"],perms:[],tags:["time","clock","ascii-art"],config:"[[widget]]\ntype = \"github.com/slate-community/slate-Digital Clock\"\nposition = { row = 0, col = 0 }\n\n# Configuration\nshowSeconds = true  # Show seconds (default: true)\nutcOffset = 1  # UTC offset in hours (default: 0)\nuse24HourFormat = true  # Use 24-hour format (default: true)",install:"Add to slate.toml:\n  type = \"github.com/slate-community/slate-Digital Clock\""},
+  {name:"Pi-hole",desc:"Displays Pi-hole DNS filtering statistics",version:"0.1.0",author:"",lang:"rust",kind:"plugin",os:["All platforms"],perms:["network: *"],tags:["network","dns","pihole"],config:"[[widget]]\ntype = \"github.com/slate-community/slate-Pi-hole\"\nposition = { row = 0, col = 0 }\n\n# Configuration\napiUrl = \"...\"  # Pi-hole admin API URL (e.g. http://192.168.1.35/admin/api.php)",install:"Add to slate.toml:\n  type = \"github.com/slate-community/slate-Pi-hole\""},
+  {name:"Subreddit",desc:"Shows posts from Reddit subreddits",version:"0.1.0",author:"",lang:"rust",kind:"plugin",os:["All platforms"],perms:["network: www.reddit.com"],tags:["news","social","reddit"],config:"[[widget]]\ntype = \"github.com/slate-community/slate-Subreddit\"\nposition = { row = 0, col = 0 }\n\n# Configuration\nsort = \"...\"  # Sort order: hot, new, top, rising (default: hot)\nshowNsfw = true  # Show NSFW posts (default: false)\nsubreddit = \"...\"  # Subreddit name (default: all)\nnumberOfPosts = 1  # Number of posts to show (default: 15)",install:"Add to slate.toml:\n  type = \"github.com/slate-community/slate-Subreddit\""},
+  {name:"VCS",desc:"Version control status (git/hg)",version:"0.1.0",author:"",lang:"rust",kind:"plugin",os:["All platforms"],perms:["exec: git, hg"],tags:["dev","git","vcs"],config:"[[widget]]\ntype = \"github.com/slate-community/slate-VCS\"\nposition = { row = 0, col = 0 }",install:"Add to slate.toml:\n  type = \"github.com/slate-community/slate-VCS\""},
+  {name:"brew-outdated",desc:"Shows outdated Homebrew packages",version:"0.1.0",author:"Slate Community",lang:"go",kind:"plugin",os:["macos","linux"],perms:["exec: brew"],tags:["dev","macos","packages"],config:"[[widget]]\ntype = \"github.com/slate-community/slate-brew-outdated\"\nposition = { row = 0, col = 0 }",install:"Build: see plugins/brew-outdated/README.md\nOr add pre-built: type = \"wasm:path/to/plugin.wasm\""},
+  {name:"brew-outdated",desc:"Shows Homebrew packages with available updates",version:"0.1.0",author:"Slate Community",lang:"lua",kind:"script",os:["macos","linux","windows"],perms:["unsandboxed (full io access)"],tags:["script"],config:"[[widget]]\ntype = \"lua:scripts/brew-outdated.lua\"\nposition = { row = 0, col = 0 }",install:"Copy brew-outdated.lua to your scripts/ folder and add to slate.toml."},
+  {name:"clock",desc:"Displays multiple world clocks as a location list (wtfutil-style)",version:"0.2.0",author:"Slate Community",lang:"rust",kind:"plugin",os:["All platforms"],perms:[],tags:["time","clock","utility"],config:"[[widget]]\ntype = \"github.com/slate-community/slate-clock\"\nposition = { row = 0, col = 0 }\n\n# Configuration\nclocks = [\"example1\", \"example2\"]  # Array of {label, utc_offset} for multi-timezone display\ntimezone = \"...\"  # Display timezone label (default: UTC)",install:"Add to slate.toml:\n  type = \"github.com/slate-community/slate-clock\""},
+  {name:"disk-usage",desc:"Shows disk space usage for mounted filesystems",version:"0.1.0",author:"Slate Community",lang:"lua",kind:"script",os:["macos","linux","windows"],perms:["unsandboxed (full io access)"],tags:["script"],config:"[[widget]]\ntype = \"lua:scripts/disk-usage.lua\"\nposition = { row = 0, col = 0 }",install:"Copy disk-usage.lua to your scripts/ folder and add to slate.toml."},
+  {name:"docker",desc:"Shows Docker container status and resource usage",version:"0.1.0",author:"Slate Community",lang:"rust",kind:"plugin",os:["All platforms"],perms:["exec: docker"],tags:["dev","containers","docker"],config:"[[widget]]\ntype = \"github.com/slate-community/slate-docker\"\nposition = { row = 0, col = 0 }",install:"Add to slate.toml:\n  type = \"github.com/slate-community/slate-docker\""},
+  {name:"docker",desc:"Shows running Docker containers",version:"0.1.0",author:"Slate Community",lang:"lua",kind:"script",os:["macos","linux","windows"],perms:["unsandboxed (full io access)"],tags:["script"],config:"[[widget]]\ntype = \"lua:scripts/docker-ps.lua\"\nposition = { row = 0, col = 0 }",install:"Copy docker-ps.lua to your scripts/ folder and add to slate.toml."},
+  {name:"feedreader",desc:"RSS/Atom feed reader with selectable items",version:"0.1.0",author:"Slate Community",lang:"rust",kind:"plugin",os:["All platforms"],perms:["network: *"],tags:["news","rss","feed"],config:"[[widget]]\ntype = \"github.com/slate-community/slate-feedreader\"\nposition = { row = 0, col = 0 }\n\n# Configuration\nfeed_url = \"...\"  # URL of the RSS or Atom feed to display (required)\nfeeds = [\"example1\", \"example2\"]  # List of feed URLs to aggregate (alternative to feed_url)",install:"Add to slate.toml:\n  type = \"github.com/slate-community/slate-feedreader\""},
+  {name:"firewall",desc:"Firewall rules and status",version:"built-in",author:"Slate",lang:"rust (native)",kind:"builtin",os:["macos","linux","windows"],perms:["system (native access)"],tags:["system","network","security"],config:"[[widget]]\ntype = \"builtin:firewall\"\nposition = { row = 0, col = 2 }",install:"Built-in - no installation needed. Just add to slate.toml."},
+  {name:"git-recent",desc:"Shows recent git commits in a repository",version:"0.1.0",author:"Slate Community",lang:"lua",kind:"script",os:["macos","linux","windows"],perms:["unsandboxed (full io access)"],tags:["script"],config:"[[widget]]\ntype = \"lua:scripts/git-recent.lua\"\nposition = { row = 0, col = 0 }",install:"Copy git-recent.lua to your scripts/ folder and add to slate.toml."},
+  {name:"github",desc:"GitHub PRs, issues, and repo stats",version:"0.1.0",author:"Slate Community",lang:"rust",kind:"plugin",os:["All platforms"],perms:["network: api.github.com","secrets: token","storage"],tags:["dev","git","github"],config:"[[widget]]\ntype = \"github.com/slate-community/slate-github\"\nposition = { row = 0, col = 0 }\n\n# Configuration\ntoken = \"...\"  # GitHub personal access token (use ${GITHUB_TOKEN} for env var) (required)\nrepos = [\"example1\", \"example2\"]  # List of repositories to monitor (e.g. ['owner/repo']) (required)\nshow = \"...\"  # What to show: 'prs', 'issues', or 'all' (default: 'all')",install:"Add to slate.toml:\n  type = \"github.com/slate-community/slate-github\""},
+  {name:"greeting",desc:"A friendly greeting widget",version:"0.1.0",author:"Slate Community",lang:"lua",kind:"script",os:["macos","linux","windows"],perms:["unsandboxed (full io access)"],tags:["script"],config:"[[widget]]\ntype = \"lua:scripts/greeting.lua\"\nposition = { row = 0, col = 0 }",install:"Copy greeting.lua to your scripts/ folder and add to slate.toml."},
+  {name:"hackernews",desc:"Hacker News top stories",version:"0.1.0",author:"Slate Community",lang:"rust",kind:"plugin",os:["All platforms"],perms:["network: hacker-news.firebaseio.com"],tags:["news","tech","hackernews"],config:"[[widget]]\ntype = \"github.com/slate-community/slate-hackernews\"\nposition = { row = 0, col = 0 }\n\n# Configuration\ncount = 1  # Number of stories to display (default: 10)\nstory_type = \"...\"  # Story type: 'top', 'new', 'best', 'ask', 'show' (default: 'top')",install:"Add to slate.toml:\n  type = \"github.com/slate-community/slate-hackernews\""},
+  {name:"ipaddresses",desc:"Network interface IP addresses",version:"built-in",author:"Slate",lang:"rust (native)",kind:"builtin",os:["macos","linux","windows"],perms:["system (native access)"],tags:["network","utility"],config:"[[widget]]\ntype = \"builtin:ipaddresses\"\nposition = { row = 1, col = 0 }",install:"Built-in - no installation needed. Just add to slate.toml."},
+  {name:"istats",desc:"System stats via iStats (macOS) - CPU temp, fan speeds, battery",version:"0.1.0",author:"Slate Community",lang:"zig",kind:"plugin",os:["macos"],perms:["exec: istats"],tags:["system","hardware","macos"],config:"[[widget]]\ntype = \"github.com/slate-community/slate-istats\"\nposition = { row = 0, col = 0 }",install:"Build: see plugins/istats/README.md\nOr add pre-built: type = \"wasm:path/to/plugin.wasm\""},
+  {name:"kubernetes",desc:"Displays Kubernetes cluster objects via kubectl",version:"0.1.0",author:"Slate Community",lang:"lua",kind:"script",os:["macos","linux","windows"],perms:["unsandboxed (full io access)"],tags:["script"],config:"[[widget]]\ntype = \"lua:scripts/kubernetes.lua\"\nposition = { row = 0, col = 0 }",install:"Copy kubernetes.lua to your scripts/ folder and add to slate.toml."},
+  {name:"logfile",desc:"Display and tail text files",version:"built-in",author:"Slate",lang:"rust (native)",kind:"builtin",os:["macos","linux","windows"],perms:["system (native access)"],tags:["utility","monitoring"],config:"[[widget]]\ntype = \"builtin:logfile\"\nposition = { row = 1, col = 1 }\nfilePath = \"~/app.log\"",install:"Built-in - no installation needed. Just add to slate.toml."},
+  {name:"power",desc:"Battery status and power source",version:"built-in",author:"Slate",lang:"rust (native)",kind:"builtin",os:["macos","linux","windows"],perms:["system (native access)"],tags:["system","hardware"],config:"[[widget]]\ntype = \"builtin:power\"\nposition = { row = 0, col = 1 }",install:"Built-in - no installation needed. Just add to slate.toml."},
+  {name:"resource_usage",desc:"CPU, memory, swap, and temperature monitoring",version:"built-in",author:"Slate",lang:"rust (native)",kind:"builtin",os:["macos","linux","windows"],perms:["system (native access)"],tags:["system","monitoring"],config:"[[widget]]\ntype = \"builtin:resource_usage\"\nposition = { row = 0, col = 0 }",install:"Built-in - no installation needed. Just add to slate.toml."},
+  {name:"spacex",desc:"Next SpaceX launch information",version:"0.1.0",author:"Slate Community",lang:"lua",kind:"script",os:["macos","linux","windows"],perms:["unsandboxed (full io access)"],tags:["script"],config:"[[widget]]\ntype = \"lua:scripts/spacex.lua\"\nposition = { row = 0, col = 0 }",install:"Copy spacex.lua to your scripts/ folder and add to slate.toml."},
+  {name:"status-pages",desc:"Monitor service status pages (Atlassian Statuspage, custom APIs)",version:"0.1.0",author:"Slate Community",lang:"typescript",kind:"plugin",os:["All platforms"],perms:["network: www.githubstatus.com, status.slack.com"],tags:["monitoring","status","devops"],config:"[[widget]]\ntype = \"github.com/slate-community/slate-status-pages\"\nposition = { row = 0, col = 0 }",install:"Build: see plugins/status-pages/README.md\nOr add pre-built: type = \"wasm:path/to/plugin.wasm\""},
+  {name:"todo",desc:"Displays tasks from a todo.txt file",version:"0.1.0",author:"Slate Community",lang:"lua",kind:"script",os:["macos","linux","windows"],perms:["unsandboxed (full io access)"],tags:["script"],config:"[[widget]]\ntype = \"lua:scripts/todo.lua\"\nposition = { row = 0, col = 0 }",install:"Copy todo.lua to your scripts/ folder and add to slate.toml."},
+  {name:"weather",desc:"Current weather conditions via OpenWeatherMap API",version:"0.1.0",author:"Slate Community",lang:"rust",kind:"plugin",os:["All platforms"],perms:["network: api.openweathermap.org","secrets: api_key"],tags:["weather","utility"],config:"[[widget]]\ntype = \"github.com/slate-community/slate-weather\"\nposition = { row = 0, col = 0 }\napi_key = \"${API_KEY}\"\nprovider = \"openweathermap\"\nlocation = \"San Francisco\"",install:"Add to slate.toml:\n  type = \"github.com/slate-community/slate-weather\""},
+  {name:"wego",desc:"Weather display via wego CLI (ASCII art weather)",version:"0.1.0",author:"Slate Community",lang:"assemblyscript",kind:"plugin",os:["macos","linux","windows"],perms:["exec: wego"],tags:["weather","utility"],config:"[[widget]]\ntype = \"github.com/slate-community/slate-wego\"\nposition = { row = 0, col = 0 }\ndays = \"1\"",install:"Build: see plugins/wego/README.md\nOr add pre-built: type = \"wasm:path/to/plugin.wasm\""}
+];
+
+const cards = document.querySelectorAll('.plugin-card');
+const search = document.getElementById('search');
+const noResults = document.getElementById('no-results');
+const stats = document.getElementById('stats');
+const modal = document.getElementById('modal-overlay');
+
+let osFilter = 'all';
+let kindFilter = 'all';
+let tagFilter = 'all';
+
+// Build tag filter buttons dynamically from plugin data
+(function buildTagFilters() {
+  const tagSet = new Set();
+  pluginData.forEach(p => { if (p.tags) p.tags.forEach(t => tagSet.add(t)); });
+  const tagContainer = document.getElementById('tag-filters');
+  Array.from(tagSet).sort().forEach(tag => {
+    const btn = document.createElement('button');
+    btn.className = 'filter-btn';
+    btn.dataset.tag = tag;
+    btn.textContent = tag;
+    btn.addEventListener('click', () => {
+      tagContainer.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      tagFilter = tag;
+      applyFilters();
+    });
+    tagContainer.appendChild(btn);
+  });
+  tagContainer.querySelector('[data-tag="all"]').addEventListener('click', () => {
+    tagContainer.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    tagContainer.querySelector('[data-tag="all"]').classList.add('active');
+    tagFilter = 'all';
+    applyFilters();
+  });
+})();
+
+// Allow clicking tag badges on cards to filter
+document.querySelectorAll('.tag-badge').forEach(badge => {
+  badge.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const tag = badge.textContent;
+    const tagContainer = document.getElementById('tag-filters');
+    tagContainer.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    const btn = tagContainer.querySelector('[data-tag="' + tag + '"]');
+    if (btn) btn.classList.add('active');
+    tagFilter = tag;
+    applyFilters();
+  });
+});
+
+function updateStats() {
+  const visible = document.querySelectorAll('.plugin-card:not(.hidden)').length;
+  stats.textContent = visible + ' of ' + cards.length + ' plugins shown';
+  noResults.style.display = visible === 0 ? 'block' : 'none';
+}
+
+function applyFilters() {
+  const q = search.value.toLowerCase();
+  cards.forEach(card => {
+    const name = card.dataset.name.toLowerCase();
+    const desc = card.dataset.desc.toLowerCase();
+    const cardOs = card.dataset.os;
+    const cardKind = card.dataset.kind;
+    const cardTags = card.dataset.tags || '';
+
+    const matchesSearch = !q || name.includes(q) || desc.includes(q) || cardTags.includes(q);
+    const matchesOs = osFilter === 'all' || cardOs.includes(osFilter);
+    const matchesKind = kindFilter === 'all' || cardKind === kindFilter;
+    const matchesTag = tagFilter === 'all' || cardTags.split(' ').includes(tagFilter);
+
+    card.classList.toggle('hidden', !(matchesSearch && matchesOs && matchesKind && matchesTag));
+  });
+  updateStats();
+}
+
+function showDetail(idx) {
+  const p = pluginData[idx];
+  document.getElementById('modal-name').textContent = p.name;
+  document.getElementById('modal-meta').textContent = 'v' + p.version + ' · ' + p.author + ' · ' + p.lang;
+  document.getElementById('modal-desc').textContent = p.desc;
+  document.getElementById('modal-config').textContent = p.config;
+
+  const osEl = document.getElementById('modal-os');
+  const osIcons = {macos: '🍎', linux: '🐧', windows: '🪟'};
+  osEl.innerHTML = p.os.map(o => '<span class="os-item">' + (osIcons[o]||'') + ' ' + o + '</span>').join('');
+
+  const permsEl = document.getElementById('modal-perms');
+  if (p.perms.length === 0) {
+    permsEl.innerHTML = '<em style="color:var(--text-muted)">None required</em>';
+  } else {
+    permsEl.innerHTML = p.perms.map(perm => '<span class="perm-item">' + perm + '</span>').join('');
+  }
+
+  document.getElementById('modal-install').textContent = p.install;
+  modal.classList.add('active');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeDetail() {
+  modal.classList.remove('active');
+  document.body.style.overflow = '';
+}
+
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDetail(); });
+
+search.addEventListener('input', applyFilters);
+
+document.querySelectorAll('#os-filters .filter-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#os-filters .filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    osFilter = btn.dataset.os;
+    applyFilters();
+  });
+});
+
+document.querySelectorAll('#kind-filters .filter-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#kind-filters .filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    kindFilter = btn.dataset.kind;
+    applyFilters();
+  });
+});
+
+updateStats();
+</script>
+</body>
+</html>

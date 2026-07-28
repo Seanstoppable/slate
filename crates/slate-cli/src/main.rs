@@ -65,6 +65,14 @@ enum Commands {
         #[arg(short, long)]
         output: Option<String>,
     },
+    /// Lint a plugin directory for baseline compliance
+    Lint {
+        /// Path to plugin directory (default: current directory)
+        path: Option<String>,
+        /// Auto-generate [config] section from source code
+        #[arg(long)]
+        fix: bool,
+    },
 }
 
 #[tokio::main]
@@ -105,6 +113,16 @@ async fn main() -> Result<()> {
         Some(Commands::Migrate { path }) => commands::migrate(&path).await,
         Some(Commands::Check { config }) => commands::check(config.as_deref()).await,
         Some(Commands::Docs { output }) => docs::docs(output.as_deref()).await,
+        Some(Commands::Lint { path, fix }) => {
+            if fix {
+                let dir = path
+                    .map(std::path::PathBuf::from)
+                    .unwrap_or_else(|| std::env::current_dir().unwrap());
+                commands::lint_fix(&dir)
+            } else {
+                commands::lint(path.as_deref()).await
+            }
+        }
     }
 }
 

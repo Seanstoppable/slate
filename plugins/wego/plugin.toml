@@ -1,7 +1,7 @@
 [plugin]
 name = "wego"
 description = "Weather display via wego CLI (ASCII art weather)"
-tags = ["weather", "utility"]
+tags = ["utility", "weather"]
 version = "0.1.0"
 author = "Slate Community"
 language = "assemblyscript"

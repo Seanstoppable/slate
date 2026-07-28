@@ -1,8 +1,13 @@
 [metadata]
 name = "lunarphase"
-description = "Displays the current lunar phase with visual representation"`ntags = ["utility", "astronomy", "fun"]
+description = "Displays the current lunar phase with visual representation"
+tags = ["astronomy", "fun", "utility"]
 version = "0.1.0"
 author = "Slate Community"
 
 [permissions]
 
+[config]
+day = { type = "integer", required = false, description = "" }
+month = { type = "integer", required = false, description = "" }
+year = { type = "integer", required = false, description = "" }

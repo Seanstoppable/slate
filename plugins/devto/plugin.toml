@@ -1,7 +1,7 @@
 [plugin]
 name = "Dev.to"
 description = "Shows articles from dev.to (by tag, user, or state)"
-tags = ["news", "dev", "articles"]
+tags = ["dev", "news"]
 version = "0.1.0"
 
 [permissions]

@@ -1,7 +1,7 @@
 [metadata]
 name = "docker"
 description = "Shows Docker container status and resource usage"
-tags = ["dev", "containers", "docker"]
+tags = ["containers", "dev", "docker"]
 version = "0.1.0"
 author = "Slate Community"
 

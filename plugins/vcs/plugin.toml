@@ -6,3 +6,7 @@ version = "0.1.0"
 
 [permissions]
 exec = ["git", "hg"]
+
+[config]
+engine = { type = "string", required = false, description = "" }
+repo_path = { type = "string", required = false, description = "" }

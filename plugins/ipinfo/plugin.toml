@@ -1,6 +1,7 @@
 [metadata]
 name = "ipinfo"
-description = "Shows your public IP and geolocation info (supports ipinfo.io and ip-api.com backends)"`ntags = ["network", "ip", "utility"]
+description = "Shows your public IP and geolocation info (supports ipinfo.io and ip-api.com backends)"
+tags = ["ip", "network", "utility"]
 version = "0.2.0"
 author = "Slate Community"
 
@@ -16,3 +17,6 @@ backend = "ipinfo"
 #   postalCode, currency, organization, timezone, reverseDNS
 # args = ["ip", "city", "regionName", "country", "isp", "timezone"]
 
+[config]
+args = { type = "string", required = false, description = "" }
+backend = { type = "string", required = false, description = "" }

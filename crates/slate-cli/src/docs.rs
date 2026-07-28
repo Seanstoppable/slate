@@ -160,11 +160,11 @@ pub async fn docs(output_dir: Option<&str>) -> Result<()> {
     }
 
     let builtins: &[(&str, &str, &str, &str, &[&str])] = &[
-        ("resource_usage", "CPU, memory, swap, and temperature monitoring", "Real-time system resource usage with configurable refresh rates. Shows CPU percentage, memory used/total, swap usage, CPU count, and hottest temperature sensor.", "[[widget]]\ntype = \"builtin:resource_usage\"\nposition = { row = 0, col = 0 }", &["system", "monitoring"]),
-        ("power", "Battery status and power source", "Shows charge level, charging state, and power source. On desktops without a battery, displays 'AC Power (100%)'. Supports Windows (WMI), macOS (pmset), and Linux (sysfs).", "[[widget]]\ntype = \"builtin:power\"\nposition = { row = 0, col = 1 }", &["system", "hardware"]),
-        ("firewall", "Firewall rules and status", "Displays active firewall rules. Uses netsh on Windows, pfctl on macOS, and iptables/nftables on Linux.", "[[widget]]\ntype = \"builtin:firewall\"\nposition = { row = 0, col = 2 }", &["system", "network", "security"]),
+        ("resource_usage", "CPU, memory, swap, and temperature monitoring", "Real-time system resource usage with configurable refresh rates. Shows CPU percentage, memory used/total, swap usage, CPU count, and hottest temperature sensor.", "[[widget]]\ntype = \"builtin:resource_usage\"\nposition = { row = 0, col = 0 }", &["monitoring", "system"]),
+        ("power", "Battery status and power source", "Shows charge level, charging state, and power source. On desktops without a battery, displays 'AC Power (100%)'. Supports Windows (WMI), macOS (pmset), and Linux (sysfs).", "[[widget]]\ntype = \"builtin:power\"\nposition = { row = 0, col = 1 }", &["hardware", "system"]),
+        ("firewall", "Firewall rules and status", "Displays active firewall rules. Uses netsh on Windows, pfctl on macOS, and iptables/nftables on Linux.", "[[widget]]\ntype = \"builtin:firewall\"\nposition = { row = 0, col = 2 }", &["network", "security", "system"]),
         ("ipaddresses", "Network interface IP addresses", "Lists all network interfaces with their IPv4/IPv6 addresses. Shows interface name, IP, and status. Defaults to all interfaces if none specified.", "[[widget]]\ntype = \"builtin:ipaddresses\"\nposition = { row = 1, col = 0 }", &["network", "utility"]),
-        ("logfile", "Display and tail text files", "Shows the last N lines of a file with auto-refresh. Supports ~ expansion and environment variables in paths.", "[[widget]]\ntype = \"builtin:logfile\"\nposition = { row = 1, col = 1 }\nfilePath = \"~/app.log\"", &["utility", "monitoring"]),
+        ("logfile", "Display and tail text files", "Shows the last N lines of a file with auto-refresh. Supports ~ expansion and environment variables in paths.", "[[widget]]\ntype = \"builtin:logfile\"\nposition = { row = 1, col = 1 }\nfilePath = \"~/app.log\"", &["monitoring", "utility"]),
     ];
     for (name, desc, _long_desc, config, tags) in builtins {
         plugins.push(PluginInfo {

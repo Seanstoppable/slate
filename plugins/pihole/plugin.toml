@@ -1,7 +1,7 @@
 [plugin]
 name = "Pi-hole"
 description = "Displays Pi-hole DNS filtering statistics"
-tags = ["network", "dns", "pihole"]
+tags = ["dns", "network", "pihole"]
 version = "0.1.0"
 
 [permissions]

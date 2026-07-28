@@ -197,6 +197,7 @@ Plugins use WASI Preview 1, granting access to system clock (`std::time::SystemT
 - Dev dependencies: `tempfile` for filesystem tests, `wat` for WASM binary creation
 - Platform-specific code uses `cfg(target_os = "...")` with fallbacks
 - Widget settings flow: TOML → `HashMap<String, serde_json::Value>` → passed to `init()`/`refresh()`
+- **All list/array values must be alphabetical (case-insensitive) unless otherwise specified** — this includes `tags` in plugin.toml, permission lists, OS lists, and any other ordered collections
 
 ## Delegation Guide
 

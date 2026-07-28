@@ -1,7 +1,7 @@
 [metadata]
 name = "clock"
 description = "Displays multiple world clocks as a location list (wtfutil-style)"
-tags = ["time", "clock", "utility"]
+tags = ["clock", "time", "utility"]
 version = "0.2.0"
 author = "Slate Community"
 

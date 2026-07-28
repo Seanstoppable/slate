@@ -1,7 +1,7 @@
 [plugin]
 name = "status-pages"
 description = "Monitor service status pages (Atlassian Statuspage, custom APIs)"
-tags = ["monitoring", "status", "devops"]
+tags = ["devops", "monitoring", "status"]
 version = "0.1.0"
 author = "Slate Community"
 language = "typescript"
