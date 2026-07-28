@@ -2,105 +2,111 @@
 
 Status of wtfutil module equivalents in Slate.
 
-## Legend
+## Migrated (22)
 
-| Status | Meaning |
-|--------|---------|
-| ✅ Builtin | Implemented as a native Rust builtin |
-| ✅ Plugin | Implemented as a WASM plugin |
-| ✅ Lua | Implemented as a Lua script |
-| 🔲 Planned | Not yet implemented but feasible |
-| ➖ N/A | Not applicable or deprecated |
+Modules that have been fully implemented in Slate.
 
-## Modules
+| wtfutil Module | Slate Type | Slate Name | Permissions Needed | Needs API Token | Description | Notes |
+|----------------|------------|------------|--------------------|-----------------|-------------|-------|
+| clocks | Plugin | `clock` | — | No | Multi-timezone clock list | Uses WASI time; host injects timezone names |
+| cmdrunner | Lua | `scripts/` | exec | No | Run arbitrary commands | Any Lua script can exec commands |
+| devto | Plugin | `devto` | network | No | Dev.to articles | Filter by tag, username, state |
+| digitalclock | Plugin | `digitalclock` | — | No | Large ASCII art time display | Uses WASI time; supports 12/24h |
+| docker | Plugin | `docker` | exec | No | Container list/status | Runs `docker ps` |
+| feedreader | Plugin | `feedreader` | network | No | RSS/Atom feed reader | Supports any feed URL |
+| git | Plugin | `vcs` | exec | No | Git repo status | Branch, staged, modified, commits |
+| github | Plugin | `github` | network | Yes | PRs, issues, repo stats | |
+| hackernews | Plugin | `hackernews` | network | No | Top stories with actions | Selectable list, open in browser |
+| ipaddresses | Builtin | `ipaddresses` | — | No | Local network interface IPs | |
+| kubernetes | Lua | `scripts/kubernetes.lua` | exec | No | Pod status | Runs kubectl |
+| lunarphase | Plugin | `lunarphase` | — | No | Moon phase calculator | Pure computation, no network |
+| mercurial | Plugin | `vcs` | exec | No | Hg repo status | Set `engine = "hg"` |
+| pihole | Plugin | `pihole` | network | No | Pi-hole DNS filtering stats | Configurable `apiUrl`; auth optional for summary |
+| power | Builtin | `power` | — | No | Battery/charge state | |
+| resourceusage | Builtin | `resource_usage` | — | No | CPU, memory, swap, temp | |
+| security | Builtin | `firewall` | — | No | Firewall status/rules | Renamed from `security` |
+| spacex | Lua | `scripts/spacex.lua` | network | No | Next SpaceX launch info | Uses public SpaceX API |
+| status | Plugin | `status-pages` | network | No | Service status pages | GitHub, Slack, etc. |
+| subreddit | Plugin | `subreddit` | network | No | Reddit subreddit posts | Sort by hot/new/top; NSFW filter |
+| system | Builtin | `resource_usage` | — | No | System info | Merged into resource_usage |
+| textfile | Builtin | `logfile` | — | No | Display/tail any text file | |
+| weatherservices | Plugin | `weather` | network | Yes | Weather forecast | OpenWeatherMap API |
 
-| wtfutil Module | Slate Status | Slate Name | Permissions Needed | Needs API Token | Description | Notes |
-|----------------|--------------|------------|--------------------|-----------------|-------------|-------|
-| airbrake | 🔲 Planned | — | network | Yes | Error tracking dashboard | |
-| asana | 🔲 Planned | — | network | Yes | Task management viewer | |
-| azuredevops | 🔲 Planned | — | network | Yes | CI/CD pipeline status | |
-| azurelogs | 🔲 Planned | — | network | Yes | Azure log viewer | |
-| bamboohr | 🔲 Planned | — | network | Yes | HR time-off/directory | |
-| bargraph | ➖ N/A | — | — | — | Demo/placeholder widget | |
-| buildkite | 🔲 Planned | — | network | Yes | CI build status | |
-| circleci | 🔲 Planned | — | network | Yes | CI pipeline status | |
-| clocks | ✅ Plugin | `clock` | — | No | Multi-timezone clock list | Uses WASI time; host injects timezone names |
-| cmdrunner | ✅ Lua | `scripts/` | exec | No | Run arbitrary commands | Any Lua script can exec commands |
-| cryptocurrency | 🔲 Planned | — | network | No | Crypto price ticker | Public APIs available |
-| datadog | 🔲 Planned | — | network | Yes | Monitoring dashboard | |
-| devto | ✅ Plugin | `devto` | network | No | Dev.to articles | Filter by tag, username, state |
-| digitalclock | ✅ Plugin | `digitalclock` | — | No | Large ASCII art time display | Uses WASI time; supports 12/24h |
-| digitalocean | 🔲 Planned | — | network | Yes | Cloud droplet status | |
-| docker | ✅ Plugin | `docker` | exec | No | Container list/status | Runs `docker ps` |
-| feedreader | ✅ Plugin | `feedreader` | network | No | RSS/Atom feed reader | Supports any feed URL |
-| football | 🔲 Planned | — | network | Yes | Sports scores | |
-| gcal | 🔲 Planned | — | network | Yes (OAuth) | Google Calendar events | Needs OAuth flow |
-| gerrit | 🔲 Planned | — | network | Yes | Code review status | |
-| git | ✅ Plugin | `vcs` | exec | No | Git repo status | Branch, staged, modified, commits |
-| github | ✅ Plugin | `github` | network | Yes | PRs, issues, repo stats | |
-| gitlab | 🔲 Planned | — | network | Yes | GitLab MRs and issues | |
-| gitlabtodo | 🔲 Planned | — | network | Yes | GitLab todo items | |
-| gitter | ➖ N/A | — | — | — | Chat client | Gitter is deprecated |
-| googleanalytics | 🔲 Planned | — | network | Yes (OAuth) | Site analytics | Needs OAuth flow |
-| grafana | 🔲 Planned | — | network | Yes | Alert/dashboard status | |
-| gspreadsheets | 🔲 Planned | — | network | Yes (OAuth) | Google Sheets viewer | Needs OAuth flow |
-| hackernews | ✅ Plugin | `hackernews` | network | No | Top stories with actions | Selectable list, open in browser |
-| healthchecks | 🔲 Planned | — | network | Yes | Cron job monitoring | |
-| hibp | 🔲 Planned | — | network | Yes | Breach notification check | |
-| ipaddresses | ✅ Builtin | `ipaddresses` | — | No | Local network interface IPs | |
-| jenkins | 🔲 Planned | — | network | Yes | CI build status | |
-| jira | 🔲 Planned | — | network | Yes | Issue tracking viewer | |
-| krisinformation | 🔲 Planned | — | network | No | Swedish crisis alerts | Public API |
-| kubernetes | ✅ Lua | `scripts/kubernetes.lua` | exec | No | Pod status | Runs kubectl |
-| logger | ➖ N/A | — | — | — | wtfutil internal debug log | Not a user-facing feature |
-| lunarphase | ✅ Plugin | `lunarphase` | — | No | Moon phase calculator | Pure computation, no network |
-| mercurial | ✅ Plugin | `vcs` | exec | No | Hg repo status | Set `engine = "hg"` |
-| nbascore | 🔲 Planned | — | network | No | Basketball scores | Public APIs available |
-| newrelic | 🔲 Planned | — | network | Yes | APM dashboard | |
-| nextbus | 🔲 Planned | — | network | No | Transit arrival times | Public APIs available |
-| opsgenie | 🔲 Planned | — | network | Yes | Alert management | |
-| pagerduty | 🔲 Planned | — | network | Yes | Incident management | |
-| pihole | ✅ Plugin | `pihole` | network | No | Pi-hole DNS filtering stats | Configurable `apiUrl`; auth optional for summary |
-| ping | 🔲 Planned | — | raw_network | No | ICMP ping latency | |
-| pivotal | 🔲 Planned | — | network | Yes | Pivotal Tracker stories | |
-| pocket | 🔲 Planned | — | network | Yes (OAuth) | Saved articles list | Needs OAuth flow |
-| power | ✅ Builtin | `power` | — | No | Battery/charge state | |
-| progress | ➖ N/A | — | — | — | Demo/placeholder widget | |
-| resourceusage | ✅ Builtin | `resource_usage` | — | No | CPU, memory, swap, temp | |
-| rollbar | 🔲 Planned | — | network | Yes | Error tracking dashboard | |
-| security | ✅ Builtin | `firewall` | — | No | Firewall status/rules | Renamed from `security` |
-| spacex | ✅ Lua | `scripts/spacex.lua` | network | No | Next SpaceX launch info | Uses public SpaceX API |
-| spotify | 🔲 Planned | — | exec | No | Now playing (local client) | Via `spotify` CLI |
-| spotifyweb | 🔲 Planned | — | network | Yes (OAuth) | Spotify web playback | Needs OAuth flow |
-| status | ✅ Plugin | `status-pages` | network | No | Service status pages | GitHub, Slack, etc. |
-| steam | 🔲 Planned | — | network | Yes | Game library/friends | |
-| stocks | 🔲 Planned | — | network | Yes | Stock price ticker | Most APIs require keys |
-| subreddit | ✅ Plugin | `subreddit` | network | No | Reddit subreddit posts | Sort by hot/new/top; NSFW filter |
-| system | ✅ Builtin | `resource_usage` | — | No | System info | Merged into resource_usage |
-| textfile | ✅ Builtin | `logfile` | — | No | Display/tail any text file | |
-| todo | 🔲 Planned | — | storage | No | Local todo list | Needs KV storage |
-| todo_plus | 🔲 Planned | — | storage | No | Enhanced todo with priorities | |
-| transmission | 🔲 Planned | — | network | Yes | Torrent client status | |
-| travisci | ➖ N/A | — | — | — | CI status | Travis CI is largely deprecated |
-| twitch | 🔲 Planned | — | network | Yes | Stream online status | |
-| twitter | ➖ N/A | — | — | — | Tweet feed | Twitter/X API deprecated for free tier |
-| twitterstats | ➖ N/A | — | — | — | Account stats | Twitter/X API deprecated for free tier |
-| unknown | ➖ N/A | — | — | — | Internal wtfutil placeholder | |
-| updown | 🔲 Planned | — | network | Yes | Uptime monitoring | |
-| uptimekuma | 🔲 Planned | — | network | Yes | Self-hosted uptime monitor | |
-| uptimerobot | 🔲 Planned | — | network | Yes | Uptime monitoring | |
-| urlcheck | 🔲 Planned | — | network | No | URL health check | Simple HTTP HEAD checks |
-| victorops | 🔲 Planned | — | network | Yes | Incident management | |
-| weatherservices | ✅ Plugin | `weather` | network | Yes | Weather forecast | OpenWeatherMap API |
-| zendesk | 🔲 Planned | — | network | Yes | Support ticket viewer | |
+## Planned (43)
+
+Modules that are feasible but not yet implemented.
+
+| wtfutil Module | Permissions Needed | Needs API Token | Description | Notes |
+|----------------|--------------------|-----------------|-------------|-------|
+| airbrake | network | Yes | Error tracking dashboard | |
+| asana | network | Yes | Task management viewer | |
+| azuredevops | network | Yes | CI/CD pipeline status | |
+| azurelogs | network | Yes | Azure log viewer | |
+| bamboohr | network | Yes | HR time-off/directory | |
+| buildkite | network | Yes | CI build status | |
+| circleci | network | Yes | CI pipeline status | |
+| cryptocurrency | network | No | Crypto price ticker | Public APIs available |
+| datadog | network | Yes | Monitoring dashboard | |
+| digitalocean | network | Yes | Cloud droplet status | |
+| football | network | Yes | Sports scores | |
+| gcal | network | Yes (OAuth) | Google Calendar events | Needs OAuth flow |
+| gerrit | network | Yes | Code review status | |
+| gitlab | network | Yes | GitLab MRs and issues | |
+| gitlabtodo | network | Yes | GitLab todo items | |
+| googleanalytics | network | Yes (OAuth) | Site analytics | Needs OAuth flow |
+| grafana | network | Yes | Alert/dashboard status | |
+| gspreadsheets | network | Yes (OAuth) | Google Sheets viewer | Needs OAuth flow |
+| healthchecks | network | Yes | Cron job monitoring | |
+| hibp | network | Yes | Breach notification check | |
+| jenkins | network | Yes | CI build status | |
+| jira | network | Yes | Issue tracking viewer | |
+| krisinformation | network | No | Swedish crisis alerts | Public API |
+| nbascore | network | No | Basketball scores | Public APIs available |
+| newrelic | network | Yes | APM dashboard | |
+| nextbus | network | No | Transit arrival times | Public APIs available |
+| opsgenie | network | Yes | Alert management | |
+| pagerduty | network | Yes | Incident management | |
+| ping | raw_network | No | ICMP ping latency | |
+| pivotal | network | Yes | Pivotal Tracker stories | |
+| pocket | network | Yes (OAuth) | Saved articles list | Needs OAuth flow |
+| rollbar | network | Yes | Error tracking dashboard | |
+| spotify | exec | No | Now playing (local client) | Via `spotify` CLI |
+| spotifyweb | network | Yes (OAuth) | Spotify web playback | Needs OAuth flow |
+| steam | network | Yes | Game library/friends | |
+| stocks | network | Yes | Stock price ticker | Most APIs require keys |
+| todo | storage | No | Local todo list | Needs KV storage |
+| todo_plus | storage | No | Enhanced todo with priorities | |
+| transmission | network | Yes | Torrent client status | |
+| twitch | network | Yes | Stream online status | |
+| updown | network | Yes | Uptime monitoring | |
+| uptimekuma | network | Yes | Self-hosted uptime monitor | |
+| uptimerobot | network | Yes | Uptime monitoring | |
+| urlcheck | network | No | URL health check | Simple HTTP HEAD checks |
+| victorops | network | Yes | Incident management | |
+| zendesk | network | Yes | Support ticket viewer | |
+
+## Not Planned (8)
+
+Modules that are deprecated, internal, or not applicable.
+
+| wtfutil Module | Reason |
+|----------------|--------|
+| bargraph | Demo/placeholder widget |
+| gitter | Gitter is deprecated |
+| logger | wtfutil internal debug log, not a user-facing feature |
+| progress | Demo/placeholder widget |
+| travisci | Travis CI is largely deprecated |
+| twitter | Twitter/X API deprecated for free tier |
+| twitterstats | Twitter/X API deprecated for free tier |
+| unknown | Internal wtfutil placeholder |
 
 ## Summary
 
 | Category | Count |
 |----------|-------|
-| ✅ Implemented | 22 |
+| ✅ Migrated | 22 |
 | 🔲 Planned | 43 |
-| ➖ N/A | 8 |
+| ➖ Not Planned | 8 |
 | **Total** | 73 |
 
 ## Slate-Only Features (not in wtfutil)
