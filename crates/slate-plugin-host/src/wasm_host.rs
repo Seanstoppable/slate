@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use extism::{Function, Manifest, Plugin, UserData, Val, Wasm, PTR};
 use slate_plugin_sdk::{Permissions, WidgetAction, WidgetConfig, WidgetContent, WidgetMetadata};
 use std::path::Path;
+use tracing::warn;
 
 use crate::permissions::PermissionGuard;
 
@@ -310,13 +311,27 @@ fn widget_content_from_refresh_result(
         Ok(json_str) => parse_widget_content(&json_str),
         Err(e) => {
             let msg = e.to_string();
+            warn!(plugin = metadata_name, error = %msg, "Plugin refresh failed");
             // Produce a user-friendly message for common errors
-            let friendly = if msg.contains("Connection refused") {
-                format!("Connection refused.\nCheck that the service is running\nand the URL is correct.")
-            } else if msg.contains("timed out") || msg.contains("Timeout") {
-                format!("Request timed out.\nThe host may be unreachable.")
-            } else if msg.contains("certificate") || msg.contains("SSL") || msg.contains("tls") {
-                format!("TLS/SSL error.\nTry using http:// instead of https://\nunless the server has a valid certificate.")
+            let friendly = if msg.contains("Connection refused")
+                || msg.contains("connection refused")
+            {
+                "Connection refused.\nCheck that the service is running\nand the URL is correct."
+                    .to_string()
+            } else if msg.contains("timed out")
+                || msg.contains("Timeout")
+                || msg.contains("deadline has elapsed")
+            {
+                "Request timed out.\nThe host may be unreachable.".to_string()
+            } else if msg.contains("certificate")
+                || msg.contains("SSL")
+                || msg.contains("tls")
+                || msg.contains("ssl")
+            {
+                "TLS/SSL error.\nTry using http:// instead of https://\nunless the server has a valid certificate.".to_string()
+            } else if msg.contains("wasm backtrace") || msg.contains("http::request") {
+                "Network request failed.\nCheck that the URL is correct\nand the host is reachable."
+                    .to_string()
             } else {
                 format!("Error: {}", msg)
             };
@@ -355,11 +370,14 @@ impl slate_plugin_sdk::Widget for WasmPlugin {
             Ok(call_result) => {
                 widget_content_from_refresh_result(call_result, &self.metadata.name)
             }
-            Err(_) => WidgetContent::Text {
-                content: format!("[{}] Plugin crashed during refresh", self.metadata.name),
-                scrollable: false,
-                wrap: true,
-            },
+            Err(_) => {
+                warn!(plugin = %self.metadata.name, "Plugin panicked during refresh");
+                WidgetContent::Text {
+                    content: format!("[{}] Plugin crashed during refresh", self.metadata.name),
+                    scrollable: false,
+                    wrap: true,
+                }
+            }
         }
     }
 

@@ -19,6 +19,7 @@ clap = { workspace = true }
 anyhow = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+tracing-appender = "0.2"
 shellexpand = "3"
 sysinfo = "0.34"
 crossterm = { workspace = true }

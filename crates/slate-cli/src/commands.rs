@@ -1457,7 +1457,7 @@ mod tests {
         assert!(cargo.contains("extism-pdk = \"1\""));
 
         let plugin = std::fs::read_to_string(plugin_path).unwrap();
-        assert!(plugin.contains("[metadata]"));
+        assert!(plugin.contains("[plugin]"));
         assert!(plugin.contains("test-plugin"));
         assert!(plugin.contains("description = \"A Slate plugin\""));
 

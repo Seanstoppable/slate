@@ -1,10 +1,32 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use tracing_subscriber::EnvFilter;
+use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 mod builtins;
 mod commands;
 mod docs;
+
+/// Get the slate config directory path.
+fn dirs_config_dir() -> Option<std::path::PathBuf> {
+    #[cfg(target_os = "windows")]
+    {
+        std::env::var("APPDATA")
+            .ok()
+            .map(|p| std::path::PathBuf::from(p).join("slate"))
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        std::env::var("XDG_CONFIG_HOME")
+            .ok()
+            .map(std::path::PathBuf::from)
+            .or_else(|| {
+                std::env::var("HOME")
+                    .ok()
+                    .map(|h| std::path::PathBuf::from(h).join(".config"))
+            })
+            .map(|p| p.join("slate"))
+    }
+}
 
 #[derive(Parser)]
 #[command(
@@ -89,11 +111,42 @@ async fn main() -> Result<()> {
         default_hook(info);
     }));
 
-    tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env())
-        .init();
-
     let cli = Cli::parse();
+
+    // Set up logging: file-based for dashboard, stderr for CLI commands
+    let is_dashboard = matches!(cli.command, None | Some(Commands::Run { .. }));
+    if is_dashboard {
+        // Log to ~/.config/slate/slate.log (or %APPDATA%/slate/slate.log on Windows)
+        let log_dir = dirs_config_dir();
+        if let Some(dir) = &log_dir {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        let log_path = log_dir
+            .map(|d| d.join("slate.log"))
+            .unwrap_or_else(|| std::path::PathBuf::from("slate.log"));
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_path)
+            .ok();
+        if let Some(file) = file {
+            let file_layer = fmt::layer()
+                .with_writer(std::sync::Mutex::new(file))
+                .with_ansi(false);
+            tracing_subscriber::registry()
+                .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn")))
+                .with(file_layer)
+                .init();
+        } else {
+            tracing_subscriber::fmt()
+                .with_env_filter(EnvFilter::from_default_env())
+                .init();
+        }
+    } else {
+        tracing_subscriber::fmt()
+            .with_env_filter(EnvFilter::from_default_env())
+            .init();
+    }
 
     match cli.command {
         None | Some(Commands::Run { .. }) => {
