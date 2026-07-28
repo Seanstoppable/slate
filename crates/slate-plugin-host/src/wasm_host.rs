@@ -308,11 +308,24 @@ fn widget_content_from_refresh_result(
 ) -> WidgetContent {
     match result {
         Ok(json_str) => parse_widget_content(&json_str),
-        Err(e) => WidgetContent::Text {
-            content: format!("[{}] Error: {}", metadata_name, e),
-            scrollable: false,
-            wrap: true,
-        },
+        Err(e) => {
+            let msg = e.to_string();
+            // Produce a user-friendly message for common errors
+            let friendly = if msg.contains("Connection refused") {
+                format!("Connection refused.\nCheck that the service is running\nand the URL is correct.")
+            } else if msg.contains("timed out") || msg.contains("Timeout") {
+                format!("Request timed out.\nThe host may be unreachable.")
+            } else if msg.contains("certificate") || msg.contains("SSL") || msg.contains("tls") {
+                format!("TLS/SSL error.\nTry using http:// instead of https://\nunless the server has a valid certificate.")
+            } else {
+                format!("Error: {}", msg)
+            };
+            WidgetContent::Text {
+                content: format!("[{}] {}", metadata_name, friendly),
+                scrollable: false,
+                wrap: true,
+            }
+        }
     }
 }
 
