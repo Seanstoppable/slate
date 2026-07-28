@@ -1,3 +1,5 @@
+mod clock;
+mod digital_clock;
 mod firewall;
 mod ipaddresses;
 mod power;
@@ -15,6 +17,8 @@ pub fn create_builtin(
     config: WidgetConfig,
 ) -> Result<Box<dyn slate_plugin_sdk::Widget>> {
     match name {
+        "clock" => Ok(Box::new(clock::ClockWidget::new())),
+        "digital_clock" => Ok(Box::new(digital_clock::DigitalClockWidget::new())),
         "resource_usage" => Ok(Box::new(resource_usage::ResourceUsageWidget::new(config))),
         "power" => Ok(Box::new(power::PowerWidget::new())),
         "firewall" => Ok(Box::new(firewall::FirewallWidget::new())),

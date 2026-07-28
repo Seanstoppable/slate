@@ -128,6 +128,11 @@ fn build_resource_content(
             "Temp".to_string(),
             slate_plugin_sdk::Cell::colored(format!("{temp:.0}°C ({label})"), temp_color),
         ));
+    } else {
+        pairs.push((
+            "Temp".to_string(),
+            slate_plugin_sdk::Cell::plain("N/A (unavailable)".to_string()),
+        ));
     }
 
     WidgetContent::KeyValue { pairs }
@@ -211,7 +216,7 @@ mod tests {
         match content {
             WidgetContent::KeyValue { pairs } => {
                 let keys: Vec<_> = pairs.iter().map(|(key, _)| key.as_str()).collect();
-                assert_eq!(keys, vec!["CPU", "Memory", "Swap", "CPUs"]);
+                assert_eq!(keys, vec!["CPU", "Memory", "Swap", "CPUs", "Temp"]);
             }
             other => panic!("expected key-value content, got {other:?}"),
         }
