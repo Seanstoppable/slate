@@ -1,6 +1,7 @@
 [plugin]
 name = "istats"
 description = "System stats via iStats (macOS) - CPU temp, fan speeds, battery"
+tags = ["system", "hardware", "macos"]
 version = "0.1.0"
 author = "Slate Community"
 language = "zig"

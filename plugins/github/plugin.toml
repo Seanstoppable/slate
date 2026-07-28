@@ -1,6 +1,7 @@
 [plugin]
 name = "github"
 description = "GitHub PRs, issues, and repo stats"
+tags = ["dev", "git", "github"]
 version = "0.1.0"
 author = "Slate Community"
 language = "rust"

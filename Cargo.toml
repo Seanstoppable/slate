@@ -16,6 +16,7 @@ exclude = [
     "plugins/github",
     "plugins/lunarphase",
     "plugins/pihole",
+    "plugins/subreddit",
     "plugins/vcs",
 ]
 resolver = "2"

@@ -1,0 +1,8 @@
+[plugin]
+name = "Subreddit"
+description = "Shows posts from Reddit subreddits"
+tags = ["news", "social", "reddit"]
+version = "0.1.0"
+
+[permissions]
+network = ["www.reddit.com"]

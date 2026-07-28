@@ -1,6 +1,7 @@
 [plugin]
 name = "weather"
 description = "Current weather conditions via OpenWeatherMap API"
+tags = ["weather", "utility"]
 version = "0.1.0"
 author = "Slate Community"
 language = "rust"

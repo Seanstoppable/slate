@@ -1,6 +1,7 @@
 [plugin]
 name = "feedreader"
 description = "RSS/Atom feed reader with selectable items"
+tags = ["news", "rss", "feed"]
 version = "0.1.0"
 author = "Slate Community"
 language = "rust"

@@ -1,6 +1,7 @@
 [plugin]
 name = "Digital Clock"
 description = "Displays the current time as large ASCII art digits"
+tags = ["time", "clock", "ascii-art"]
 version = "0.1.0"
 
 [permissions]

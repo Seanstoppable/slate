@@ -1,6 +1,7 @@
 [plugin]
 name = "hackernews"
 description = "Hacker News top stories"
+tags = ["news", "tech", "hackernews"]
 version = "0.1.0"
 author = "Slate Community"
 language = "rust"
