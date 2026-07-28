@@ -436,7 +436,7 @@ pub fn on_key(input: String) -> FnResult<String> {
     std::fs::write(dir.join("src").join("lib.rs"), lib_rs)?;
 
     println!("Created plugin scaffold in '{}'", name);
-    println!("  Build with: cargo build --target wasm32-unknown-unknown --release");
+    println!("  Build with: cargo build --target wasm32-wasip1 --release");
     Ok(())
 }
 
@@ -605,7 +605,7 @@ pub async fn check(config_path: Option<&str>) -> Result<()> {
 
         if entry.widget_type.starts_with("builtin:") {
             let name = entry.widget_type.trim_start_matches("builtin:");
-            let known = ["clock", "digital_clock", "resource_usage", "power", "firewall", "ipaddresses", "vcs"];
+            let known = ["resource_usage", "power", "firewall", "ipaddresses", "vcs"];
             if known.contains(&name) {
                 println!("  {:2}. {} ✓ builtin", i + 1, label);
                 ok += 1;

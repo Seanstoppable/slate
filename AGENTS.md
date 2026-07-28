@@ -164,7 +164,7 @@ cargo test -p slate-core
 cargo build --release
 
 # Build a WASM plugin
-cd plugins/clock && cargo build --release --target wasm32-unknown-unknown
+cd plugins/clock && cargo build --release --target wasm32-wasip1
 
 # Check code coverage (outputs JSON to target/)
 cargo tarpaulin --workspace -o json --skip-clean --output-dir target
@@ -185,7 +185,9 @@ Four required WASM exports:
 3. `on_key(input: String) -> String` — Handle key press, return action or empty
 4. `on_action(input: String) -> String` — Handle list action, return action or empty
 
-Scaffold with `slate create my-plugin`, build with `cargo build --target wasm32-unknown-unknown --release`.
+Scaffold with `slate create my-plugin`, build with `cargo build --target wasm32-wasip1 --release`.
+
+Plugins use WASI Preview 1, granting access to system clock (`std::time::SystemTime`) and randomness without permissions. Filesystem/environment are not pre-opened by the host.
 
 ## Code Conventions
 

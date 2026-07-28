@@ -14,7 +14,7 @@ const session = await joinSession({
         {
             name: "scaffold_slate_plugin",
             description:
-                "Create a new Slate WASM plugin with the correct project structure, Cargo.toml, plugin.toml, and starter code. The plugin will compile to wasm32-unknown-unknown and export metadata, refresh, on_key, and on_action functions.",
+                "Create a new Slate WASM plugin with the correct project structure, Cargo.toml, plugin.toml, and starter code. The plugin will compile to wasm32-wasip1 and export metadata, refresh, on_key, and on_action functions.",
             parameters: {
                 type: "object",
                 properties: {
@@ -125,11 +125,11 @@ Files created:
 
 To build:
   cd ${pluginDir}
-  cargo build --release --target wasm32-unknown-unknown
+  cargo build --release --target wasm32-wasip1
 
 To use in slate.toml:
   [[widget]]
-  type = "wasm:path/to/${pluginDir}/target/wasm32-unknown-unknown/release/${crateName.replace(/-/g, "_")}.wasm"
+  type = "wasm:path/to/${pluginDir}/target/wasm32-wasip1/release/${crateName.replace(/-/g, "_")}.wasm"
   position = { row = 0, col = 0 }
 
 Content type: ${content_type}

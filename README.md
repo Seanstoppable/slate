@@ -29,7 +29,7 @@ cargo build --release
 
 # Build WASM plugins (from project root)
 for dir in plugins/*/; do
-  (cd "$dir" && cargo build --release --target wasm32-unknown-unknown)
+  (cd "$dir" && cargo build --release --target wasm32-wasip1)
 done
 
 # Run
@@ -126,7 +126,7 @@ slate create <name>    # Scaffold a new plugin project
 
 ### Creating a Plugin
 
-Plugins are Rust crates compiled to `wasm32-unknown-unknown` using [Extism PDK](https://extism.org/):
+Plugins are Rust crates compiled to `wasm32-wasip1` using [Extism PDK](https://extism.org/):
 
 ```rust
 use extism_pdk::*;
@@ -166,7 +166,7 @@ pub fn on_key(_input: String) -> FnResult<String> {
 }
 ```
 
-Build: `cargo build --release --target wasm32-unknown-unknown`
+Build: `cargo build --release --target wasm32-wasip1`
 
 ### Multi-Language Plugins
 
@@ -174,7 +174,7 @@ Plugins can be written in any language that compiles to WASM via [Extism PDK](ht
 
 | Language | Build Command | Binary Size |
 |----------|--------------|-------------|
-| **Rust** | `cargo build --target wasm32-unknown-unknown --release` | ~200 KB |
+| **Rust** | `cargo build --target wasm32-wasip1 --release` | ~200 KB |
 | **Go** (TinyGo) | `tinygo build -o plugin.wasm -target wasi main.go` | ~1.1 MB |
 | **JavaScript** | `extism-js src/index.js -i src/index.d.ts -o plugin.wasm` | ~2.4 MB |
 | **Zig** | `zig build-exe src/main.zig -target wasm32-freestanding ...` | ~2 KB |
@@ -324,11 +324,11 @@ See `scripts/` for more examples: brew outdated, disk usage, docker containers, 
 
 ## Requirements
 
-- Rust 1.70+ with `wasm32-unknown-unknown` target
+- Rust 1.70+ with `wasm32-wasip1` target
 - Windows: MSVC Build Tools (for native compilation)
 
 ```bash
-rustup target add wasm32-unknown-unknown
+rustup target add wasm32-wasip1
 ```
 
 ## License

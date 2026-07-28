@@ -52,10 +52,15 @@ pub fn on_blur(_input: String) -> FnResult<String>;
 ### Building
 
 ```bash
-cargo build --target wasm32-unknown-unknown --release
+cargo build --target wasm32-wasip1 --release
 ```
 
-The `.wasm` file is in `target/wasm32-unknown-unknown/release/`.
+The `.wasm` file is in `target/wasm32-wasip1/release/`.
+
+> **WASI support:** Plugins are built with WASI Preview 1, giving them access to
+> `std::time::SystemTime` (clock) and randomness without any permission declaration.
+> Filesystem and environment access are **not** provided by default — those require
+> explicit host pre-opens which Slate does not grant.
 
 ### Content Types
 

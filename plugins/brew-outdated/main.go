@@ -1,5 +1,5 @@
 // Brew Outdated plugin — shows outdated Homebrew packages.
-// Language: Go (compiled via TinyGo to wasm32-unknown-unknown)
+// Language: Go (compiled via TinyGo to wasm32-wasip1)
 package main
 
 import (
