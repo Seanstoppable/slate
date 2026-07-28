@@ -13,7 +13,7 @@ use ratatui::{
 use slate_plugin_sdk::{BoxedWidget, WidgetAction, WidgetContent, WidgetMetadata};
 
 use crate::config::SlateConfig;
-use crate::layout::{compute_grid, FocusPosition};
+use crate::layout::{compute_grid, compute_widget_area, FocusPosition};
 use crate::notifications::UpdateNotifications;
 use crate::render::{render_status_bar, render_widget};
 
@@ -24,6 +24,8 @@ struct WidgetInstance {
     content: WidgetContent,
     row: u16,
     col: u16,
+    row_span: u16,
+    col_span: u16,
     last_refresh: Instant,
     refresh_interval: Duration,
     /// Selected index for list widgets
@@ -74,6 +76,8 @@ impl App {
         mut widget: BoxedWidget,
         row: u16,
         col: u16,
+        row_span: u16,
+        col_span: u16,
         refresh_interval: Option<u64>,
     ) {
         let metadata = widget.metadata();
@@ -90,6 +94,8 @@ impl App {
             content,
             row,
             col,
+            row_span: row_span.max(1),
+            col_span: col_span.max(1),
             last_refresh: Instant::now(),
             refresh_interval: Duration::from_secs(interval),
             selected,
@@ -153,38 +159,43 @@ impl App {
                     compute_grid(main_area, self.config.layout.rows, self.config.layout.cols);
 
                 for instance in &self.widgets {
-                    let row = instance.row as usize;
-                    let col = instance.col as usize;
-                    if row < grid.len() && col < grid[row].len() {
-                        let area = grid[row][col];
-                        let focused =
-                            self.focus.row == instance.row && self.focus.col == instance.col;
+                    let area = match compute_widget_area(
+                        &grid,
+                        instance.row,
+                        instance.col,
+                        instance.row_span,
+                        instance.col_span,
+                    ) {
+                        Some(a) => a,
+                        None => continue,
+                    };
+                    let focused =
+                        self.focus.row == instance.row && self.focus.col == instance.col;
 
-                        // Show detail view if set, otherwise normal content
-                        if let Some(detail) = &instance.detail_content {
-                            let detail_widget_content = WidgetContent::Text {
-                                content: detail.clone(),
-                                scrollable: true,
-                                wrap: true,
-                            };
-                            render_widget(
-                                frame,
-                                area,
-                                &detail_widget_content,
-                                &instance.metadata,
-                                focused,
-                                None,
-                            );
-                        } else {
-                            render_widget(
-                                frame,
-                                area,
-                                &instance.content,
-                                &instance.metadata,
-                                focused,
-                                instance.selected,
-                            );
-                        }
+                    // Show detail view if set, otherwise normal content
+                    if let Some(detail) = &instance.detail_content {
+                        let detail_widget_content = WidgetContent::Text {
+                            content: detail.clone(),
+                            scrollable: true,
+                            wrap: true,
+                        };
+                        render_widget(
+                            frame,
+                            area,
+                            &detail_widget_content,
+                            &instance.metadata,
+                            focused,
+                            None,
+                        );
+                    } else {
+                        render_widget(
+                            frame,
+                            area,
+                            &instance.content,
+                            &instance.metadata,
+                            focused,
+                            instance.selected,
+                        );
                     }
                 }
 
@@ -544,7 +555,7 @@ mod tests {
         let config = SlateConfig::default();
         let mut app = App::new(config);
         let widget = MockListWidget::new(action);
-        app.add_widget(Box::new(widget), 0, 0, Some(300));
+        app.add_widget(Box::new(widget), 0, 0, 1, 1, Some(300));
         app
     }
 
@@ -554,6 +565,8 @@ mod tests {
         let mut app = App::new(SlateConfig::default());
         app.add_widget(
             Box::new(CounterTextWidget::new(refresh_count.clone())),
+            1,
+            1,
             1,
             1,
             Some(60),
@@ -575,7 +588,7 @@ mod tests {
         config.global.refresh_interval = 42;
         let mut app = App::new(config);
 
-        app.add_widget(Box::new(MockListWidget::new(None)), 0, 0, None);
+        app.add_widget(Box::new(MockListWidget::new(None)), 0, 0, 1, 1, None);
 
         assert_eq!(app.widgets[0].refresh_interval, Duration::from_secs(42));
         assert_eq!(app.widgets[0].selected, Some(0));
@@ -587,8 +600,8 @@ mod tests {
         config.layout.rows = 1;
         config.layout.cols = 2;
         let mut app = App::new(config);
-        app.add_widget(Box::new(MockTextWidget), 0, 0, Some(60));
-        app.add_widget(Box::new(MockListWidget::new(None)), 0, 1, Some(60));
+        app.add_widget(Box::new(MockTextWidget), 0, 0, 1, 1, Some(60));
+        app.add_widget(Box::new(MockListWidget::new(None)), 0, 1, 1, 1, Some(60));
 
         assert_eq!(
             app.focused_widget()
@@ -612,6 +625,8 @@ mod tests {
             Box::new(CounterTextWidget::new(refresh_count)),
             0,
             0,
+             1,
+             1,
             Some(1),
         );
 
@@ -629,6 +644,8 @@ mod tests {
             Box::new(CounterTextWidget::new(refresh_count)),
             0,
             0,
+             1,
+             1,
             Some(60),
         );
 
@@ -798,8 +815,10 @@ mod tests {
         let mut app = App::new(SlateConfig::default());
         app.add_widget(
             Box::new(RecordingWidget::new(last_key.clone())),
-            0,
-            0,
+             0,
+             0,
+             1,
+             1,
             Some(60),
         );
 
@@ -816,8 +835,8 @@ mod tests {
         config.layout.rows = 1;
         config.layout.cols = 2;
         let mut app = App::new(config);
-        app.add_widget(Box::new(MockTextWidget), 0, 0, Some(300));
-        app.add_widget(Box::new(MockTextWidget), 0, 1, Some(300));
+        app.add_widget(Box::new(MockTextWidget), 0, 0, 1, 1, Some(300));
+        app.add_widget(Box::new(MockTextWidget), 0, 1, 1, 1, Some(300));
 
         assert_eq!(app.focus.row, 0);
         assert_eq!(app.focus.col, 0);
@@ -835,7 +854,7 @@ mod tests {
         config.layout.rows = 1;
         config.layout.cols = 1;
         let mut app = App::new(config);
-        app.add_widget(Box::new(MockTextWidget), 0, 0, Some(60));
+        app.add_widget(Box::new(MockTextWidget), 0, 0, 1, 1, Some(60));
 
         app.handle_key(make_key(KeyCode::Tab));
         assert_eq!((app.focus.row, app.focus.col), (0, 0));
@@ -897,8 +916,10 @@ mod tests {
         let mut app = App::new(SlateConfig::default());
         app.add_widget(
             Box::new(CounterTextWidget::new(refresh_count.clone())),
-            0,
-            0,
+             0,
+             0,
+             1,
+             1,
             Some(60),
         );
 
@@ -952,7 +973,7 @@ mod tests {
         config.layout.rows = 2;
         config.layout.cols = 2;
         let mut app = App::new(config);
-        app.add_widget(Box::new(MockTextWidget), 0, 0, Some(60));
+        app.add_widget(Box::new(MockTextWidget), 0, 0, 1, 1, Some(60));
 
         app.handle_key(make_key(KeyCode::Right));
         assert_eq!((app.focus.row, app.focus.col), (0, 1));
@@ -986,8 +1007,8 @@ mod tests {
         config.layout.rows = 1;
         config.layout.cols = 2;
         let mut app = App::new(config);
-        app.add_widget(Box::new(MockTextWidget), 0, 0, Some(60));
-        app.add_widget(Box::new(MockTextWidget), 0, 1, Some(60));
+        app.add_widget(Box::new(MockTextWidget), 0, 0, 1, 1, Some(60));
+        app.add_widget(Box::new(MockTextWidget), 0, 1, 1, 1, Some(60));
         app.focus.col = 1;
 
         app.handle_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL));
@@ -1020,7 +1041,7 @@ mod tests {
         let mut app = App::new(SlateConfig::default());
         let last_key = Arc::new(Mutex::new(None));
         let widget = RecordingWidget::new(last_key.clone());
-        app.add_widget(Box::new(widget), 0, 0, Some(60));
+        app.add_widget(Box::new(widget), 0, 0, 1, 1, Some(60));
         app.handle_key(make_key(KeyCode::Char('x')));
         assert_eq!(last_key.lock().unwrap().as_deref(), Some("Char('x')"));
     }
@@ -1031,8 +1052,10 @@ mod tests {
         let mut app = App::new(SlateConfig::default());
         app.add_widget(
             Box::new(RecordingWidget::new(last_key.clone())),
-            0,
-            0,
+             0,
+             0,
+             1,
+             1,
             Some(60),
         );
 

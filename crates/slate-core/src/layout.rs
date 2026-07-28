@@ -26,6 +26,33 @@ pub fn compute_grid(area: Rect, rows: u16, cols: u16) -> Vec<Vec<Rect>> {
         .collect()
 }
 
+/// Compute the area for a widget that may span multiple grid cells.
+/// Returns the union of grid cells from (row, col) to (row + row_span - 1, col + col_span - 1).
+pub fn compute_widget_area(grid: &[Vec<Rect>], row: u16, col: u16, row_span: u16, col_span: u16) -> Option<Rect> {
+    let row = row as usize;
+    let col = col as usize;
+    let row_span = row_span.max(1) as usize;
+    let col_span = col_span.max(1) as usize;
+
+    // Check bounds
+    if row >= grid.len() || col >= grid.get(0).map_or(0, |r| r.len()) {
+        return None;
+    }
+
+    let end_row = (row + row_span).min(grid.len());
+    let end_col = (col + col_span).min(grid.get(0).map_or(0, |r| r.len()));
+
+    let top_left = grid[row][col];
+    let bottom_right = grid[end_row - 1][end_col - 1];
+
+    Some(Rect::new(
+        top_left.x,
+        top_left.y,
+        bottom_right.x + bottom_right.width - top_left.x,
+        bottom_right.y + bottom_right.height - top_left.y,
+    ))
+}
+
 /// Represents the focused widget position.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FocusPosition {
@@ -182,5 +209,67 @@ mod tests {
         focus.move_prev(3, 4);
 
         assert_eq!((focus.row, focus.col), (0, 3));
+    }
+
+    #[test]
+    fn compute_widget_area_single_cell() {
+        let area = Rect::new(0, 0, 90, 30);
+        let grid = compute_grid(area, 3, 3);
+        // Single cell (1x1 span) matches grid cell
+        let result = compute_widget_area(&grid, 1, 1, 1, 1).unwrap();
+        assert_eq!(result, grid[1][1]);
+    }
+
+    #[test]
+    fn compute_widget_area_col_span() {
+        let area = Rect::new(0, 0, 90, 30);
+        let grid = compute_grid(area, 3, 3);
+        // Widget at (0,0) spanning 2 columns
+        let result = compute_widget_area(&grid, 0, 0, 1, 2).unwrap();
+        assert_eq!(result.x, 0);
+        assert_eq!(result.y, 0);
+        assert_eq!(result.width, 60); // 2 cols * 30
+        assert_eq!(result.height, 10); // 1 row
+    }
+
+    #[test]
+    fn compute_widget_area_row_span() {
+        let area = Rect::new(0, 0, 90, 30);
+        let grid = compute_grid(area, 3, 3);
+        // Widget at (0,0) spanning 2 rows
+        let result = compute_widget_area(&grid, 0, 0, 2, 1).unwrap();
+        assert_eq!(result.x, 0);
+        assert_eq!(result.y, 0);
+        assert_eq!(result.width, 30);
+        assert_eq!(result.height, 20); // 2 rows * 10
+    }
+
+    #[test]
+    fn compute_widget_area_both_spans() {
+        let area = Rect::new(0, 0, 90, 30);
+        let grid = compute_grid(area, 3, 3);
+        // Widget at (1,1) spanning 2x2
+        let result = compute_widget_area(&grid, 1, 1, 2, 2).unwrap();
+        assert_eq!(result.x, 30);
+        assert_eq!(result.y, 10);
+        assert_eq!(result.width, 60);
+        assert_eq!(result.height, 20);
+    }
+
+    #[test]
+    fn compute_widget_area_clamps_to_grid_bounds() {
+        let area = Rect::new(0, 0, 90, 30);
+        let grid = compute_grid(area, 3, 3);
+        // Widget at (2,2) with span 3x3 — clamped to grid edge
+        let result = compute_widget_area(&grid, 2, 2, 3, 3).unwrap();
+        assert_eq!(result, grid[2][2]); // Only 1 cell available
+    }
+
+    #[test]
+    fn compute_widget_area_out_of_bounds_returns_none() {
+        let area = Rect::new(0, 0, 90, 30);
+        let grid = compute_grid(area, 3, 3);
+        assert!(compute_widget_area(&grid, 5, 0, 1, 1).is_none());
+        assert!(compute_widget_area(&grid, 0, 5, 1, 1).is_none());
     }
 }

@@ -214,6 +214,8 @@ pub async fn run(config_path: Option<&str>) -> Result<()> {
             widget,
             entry.position.row,
             entry.position.col,
+            entry.position.row_span,
+            entry.position.col_span,
             entry.refresh_interval,
         );
     }
@@ -221,7 +223,7 @@ pub async fn run(config_path: Option<&str>) -> Result<()> {
     // If no widgets configured, show a welcome message
     if config.widget.is_empty() {
         let widget = builtins::WelcomeWidget;
-        app.add_widget(Box::new(widget), 0, 0, None);
+        app.add_widget(Box::new(widget), 0, 0, 1, 1, None);
     }
 
     app.run()
