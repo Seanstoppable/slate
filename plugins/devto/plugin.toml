@@ -1,0 +1,7 @@
+[plugin]
+name = "Dev.to"
+description = "Shows articles from dev.to (by tag, user, or state)"
+version = "0.1.0"
+
+[permissions]
+network = ["dev.to"]

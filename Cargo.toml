@@ -8,6 +8,8 @@ members = [
 ]
 exclude = [
     "plugins/clock",
+    "plugins/devto",
+    "plugins/digitalclock",
     "plugins/docker",
     "plugins/ipinfo",
     "plugins/hackernews",

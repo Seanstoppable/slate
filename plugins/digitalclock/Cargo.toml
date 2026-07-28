@@ -1,0 +1,15 @@
+[package]
+name = "slate-digitalclock"
+version = "0.1.0"
+edition = "2021"
+description = "Large ASCII art digital clock widget for Slate"
+
+[lib]
+crate-type = ["cdylib"]
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+extism-pdk = "1"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
