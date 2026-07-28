@@ -197,3 +197,37 @@ Plugins use WASI Preview 1, granting access to system clock (`std::time::SystemT
 - Dev dependencies: `tempfile` for filesystem tests, `wat` for WASM binary creation
 - Platform-specific code uses `cfg(target_os = "...")` with fallbacks
 - Widget settings flow: TOML → `HashMap<String, serde_json::Value>` → passed to `init()`/`refresh()`
+
+## Delegation Guide
+
+When implementing new WASM plugins or Lua scripts, delegate to a cheaper/faster model (e.g., Sonnet, Haiku, GPT-5-mini). These tasks are well-scoped and follow established patterns.
+
+### What to delegate
+
+- New WASM plugins (follow the pattern in any `plugins/*/src/lib.rs`)
+- New Lua scripts (follow the pattern in any `scripts/*.lua`)
+- Adding unit tests to existing plugins
+- Adding `tags` or config fields to `plugin.toml` files
+- Updating `docs/wtfutil-compatibility.md` entries
+
+### How to prompt the delegated model
+
+Include in the prompt:
+1. **The pattern to follow** — point to an existing similar plugin (e.g., "Follow the structure of `plugins/pihole/src/lib.rs`")
+2. **The cfg-gating pattern** — `extism-pdk` behind `cfg(target_arch = "wasm32")`, pure logic always available, tests at bottom
+3. **Required files** — `Cargo.toml`, `plugin.toml` (with tags), `src/lib.rs`
+4. **Cargo.toml template**:
+   ```toml
+   [target.'cfg(target_arch = "wasm32")'.dependencies]
+   extism-pdk = "1"
+   ```
+5. **Test expectations** — extract pure logic into functions, test those natively with `cargo test`
+6. **Add to workspace excludes** in root `Cargo.toml`
+7. **API details** — the actual API endpoints, response format, and what fields to display
+
+### Verification after delegation
+
+After receiving the implementation:
+- Run `cargo test --manifest-path plugins/<name>/Cargo.toml`
+- Verify the plugin is in workspace `exclude` list
+- Check that `plugin.toml` has name, description, version, tags, and permissions
