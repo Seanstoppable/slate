@@ -80,7 +80,9 @@ impl WasmPlugin {
             .to_string();
 
         let wasm = Wasm::data(wasm_bytes);
-        let manifest = Manifest::new([wasm]).with_allowed_hosts(["*".to_string()].into_iter());
+        let manifest = Manifest::new([wasm])
+            .with_allowed_hosts(["*".to_string()].into_iter())
+            .with_timeout(std::time::Duration::from_secs(10));
 
         let host_functions = [make_exec_function()];
         let mut plugin = Plugin::new(&manifest, host_functions, true)
@@ -107,7 +109,9 @@ impl WasmPlugin {
         permissions: Permissions,
     ) -> Result<Self> {
         let wasm = Wasm::data(bytes);
-        let manifest = Manifest::new([wasm]).with_allowed_hosts(["*".to_string()].into_iter());
+        let manifest = Manifest::new([wasm])
+            .with_allowed_hosts(["*".to_string()].into_iter())
+            .with_timeout(std::time::Duration::from_secs(10));
         let host_functions = [make_exec_function()];
         let plugin = Plugin::new(&manifest, host_functions, true)?;
 

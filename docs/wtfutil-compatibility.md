@@ -32,7 +32,7 @@ Modules that have been fully implemented in Slate.
 | textfile | Builtin | `logfile` | — | No | Display/tail any text file | |
 | weatherservices | Plugin | `weather` | network | Yes | Weather forecast | OpenWeatherMap API |
 
-## Planned (47)
+## Planned (43)
 
 Modules that are feasible but not yet implemented.
 
@@ -45,10 +45,6 @@ Modules that are feasible but not yet implemented.
 | bamboohr | network | Yes | HR time-off/directory | |
 | buildkite | network | Yes | CI build status | |
 | circleci | network | Yes | CI pipeline status | |
-| cryptocurrency/bittrex | network | Yes | Bittrex exchange prices | |
-| cryptocurrency/blockfolio | network | Yes | Blockfolio portfolio tracker | |
-| cryptocurrency/cryptolive | network | No | Live crypto prices | Public APIs available |
-| cryptocurrency/mempool | network | No | Bitcoin mempool stats | Public API |
 | datadog | network | Yes | Monitoring dashboard | |
 | digitalocean | network | Yes | Cloud droplet status | |
 | football | network | Yes | Sports scores | |
@@ -87,13 +83,17 @@ Modules that are feasible but not yet implemented.
 | victorops | network | Yes | Incident management | |
 | zendesk | network | Yes | Support ticket viewer | |
 
-## Not Planned (8)
+## Not Planned (14)
 
 Modules that are deprecated, internal, or not applicable.
 
 | wtfutil Module | Reason |
 |----------------|--------|
 | bargraph | Demo/placeholder widget |
+| cryptocurrency/bittrex | Bittrex exchange shut down in 2023 |
+| cryptocurrency/blockfolio | Rebranded to FTX (now defunct) |
+| cryptocurrency/cryptolive | Niche; community can create plugin |
+| cryptocurrency/mempool | Niche; community can create plugin |
 | gitter | Gitter shut down in 2023; migrated to Matrix |
 | logger | wtfutil internal debug log, not a user-facing feature |
 | progress | Demo/placeholder widget |
@@ -109,8 +109,8 @@ Modules that are deprecated, internal, or not applicable.
 | Category | Count |
 |----------|-------|
 | ✅ Migrated | 22 |
-| 🔲 Planned | 47 |
-| ➖ Not Planned | 10 |
+| 🔲 Planned | 43 |
+| ➖ Not Planned | 14 |
 | **Total** | 79 |
 
 ## Slate-Only Features (not in wtfutil)

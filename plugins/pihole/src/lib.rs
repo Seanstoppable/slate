@@ -85,7 +85,7 @@ pub fn refresh(input: String) -> FnResult<String> {
 
     let base_url = settings["apiUrl"]
         .as_str()
-        .unwrap_or("http://pi.hole/admin/api.php");
+        .unwrap_or("https://pi.hole/admin/api.php");
 
     let url = format!("{}?summaryRaw", base_url);
     let req = HttpRequest::new(&url)
