@@ -85,15 +85,28 @@ pub fn refresh(input: String) -> FnResult<String> {
 
     let base_url = settings["apiUrl"]
         .as_str()
-        .unwrap_or("https://pi.hole/admin/api.php");
+        .unwrap_or("http://pi.hole/admin/api.php");
 
-    let url = format!("{}?summaryRaw", base_url);
+    let auth_token = settings["authToken"].as_str().unwrap_or("");
+
+    let url = if auth_token.is_empty() {
+        format!("{}?summaryRaw", base_url)
+    } else {
+        format!("{}?summaryRaw&auth={}", base_url, auth_token)
+    };
+
     let req = HttpRequest::new(&url)
         .with_header("Accept", "application/json");
 
-    let response = match http::request::<String>(&req, None) {
-        Ok(r) => r,
-        Err(e) => {
+    // extism_pdk::http::request can panic on network errors (SSL, timeout, etc.)
+    // Use catch_unwind to convert panics into graceful error display
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        http::request::<Vec<u8>>(&req, None)
+    }));
+
+    let body_bytes = match result {
+        Ok(Ok(response)) => response.body().to_vec(),
+        Ok(Err(e)) => {
             let error_content = json!({
                 "type": "text",
                 "content": format!("Failed to connect to Pi-hole:\n{}", e),
@@ -102,10 +115,18 @@ pub fn refresh(input: String) -> FnResult<String> {
             });
             return Ok(error_content.to_string());
         }
+        Err(_) => {
+            let error_content = json!({
+                "type": "text",
+                "content": format!("Pi-hole connection failed.\nCheck URL: {}\nTip: Use http:// (not https) unless your Pi-hole has TLS configured.", base_url),
+                "scrollable": false,
+                "wrap": true
+            });
+            return Ok(error_content.to_string());
+        }
     };
-    let body = response.body();
-    let body_str = std::str::from_utf8(&body).unwrap_or("{}");
 
+    let body_str = std::str::from_utf8(&body_bytes).unwrap_or("{}");
     let summary: PiholeSummary = serde_json::from_str(body_str).unwrap_or_default();
     let content = build_summary_content(&summary);
     Ok(content.to_string())

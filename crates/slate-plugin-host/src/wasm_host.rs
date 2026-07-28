@@ -335,15 +335,26 @@ impl slate_plugin_sdk::Widget for WasmPlugin {
     fn refresh(&mut self) -> WidgetContent {
         let settings = build_refresh_settings(self.config.as_ref());
         let input = serde_json::to_string(&settings).unwrap_or_default();
-        widget_content_from_refresh_result(
-            self.plugin.call::<&str, String>("refresh", &input),
-            &self.metadata.name,
-        )
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            self.plugin.call::<&str, String>("refresh", &input)
+        }));
+        match result {
+            Ok(call_result) => {
+                widget_content_from_refresh_result(call_result, &self.metadata.name)
+            }
+            Err(_) => WidgetContent::Text {
+                content: format!("[{}] Plugin crashed during refresh", self.metadata.name),
+                scrollable: false,
+                wrap: true,
+            },
+        }
     }
 
     fn on_key(&mut self, key: &str, action: &str) {
         let input = serde_json::json!({ "key": key, "action": action }).to_string();
-        let _ = self.plugin.call::<&str, String>("on_key", &input);
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            self.plugin.call::<&str, String>("on_key", &input)
+        }));
     }
 
     fn on_action(
@@ -352,7 +363,13 @@ impl slate_plugin_sdk::Widget for WasmPlugin {
         item_id: &str,
     ) -> Option<slate_plugin_sdk::WidgetAction> {
         let input = serde_json::json!({ "action_id": action_id, "item_id": item_id }).to_string();
-        widget_action_from_result(self.plugin.call::<&str, String>("on_action", &input))
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            self.plugin.call::<&str, String>("on_action", &input)
+        }));
+        match result {
+            Ok(call_result) => widget_action_from_result(call_result),
+            Err(_) => None,
+        }
     }
 
     fn on_focus(&mut self) {}
