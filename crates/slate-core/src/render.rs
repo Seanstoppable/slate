@@ -1,13 +1,126 @@
 use ratatui::{
+    backend::TestBackend,
     layout::Rect,
     style::{Color as RatColor, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Row, Table, Wrap},
-    Frame,
+    Frame, Terminal,
 };
 use slate_plugin_sdk::{Color, WidgetContent, WidgetMetadata};
 
 use crate::layout::FocusPosition;
+
+/// Render a widget's content to a self-contained HTML snippet, preserving the same
+/// colors/styles the widget would show in the real terminal UI. Used to generate
+/// "live" widget snapshots for the plugin registry documentation.
+pub fn render_snapshot_html(
+    content: &WidgetContent,
+    metadata: &WidgetMetadata,
+    width: u16,
+    height: u16,
+) -> String {
+    let backend = TestBackend::new(width, height);
+    let mut terminal = Terminal::new(backend).expect("test backend terminal");
+    terminal
+        .draw(|frame| {
+            render_widget(
+                frame,
+                Rect::new(0, 0, width, height),
+                content,
+                metadata,
+                false,
+                None,
+                None,
+            );
+        })
+        .expect("draw snapshot");
+
+    let buffer = terminal.backend().buffer();
+    let mut html = String::from("<pre class=\"snapshot\">");
+    for y in 0..height {
+        if y > 0 {
+            html.push('\n');
+        }
+        for x in 0..width {
+            let cell = &buffer[(x, y)];
+            let symbol = cell.symbol();
+            let escaped = html_escape_char(symbol);
+            let mut style_parts = Vec::new();
+            if let Some(css) = rat_color_to_css_fg(cell.fg) {
+                style_parts.push(format!("color:{}", css));
+            }
+            if let Some(css) = rat_color_to_css_bg(cell.bg) {
+                style_parts.push(format!("background:{}", css));
+            }
+            if cell.modifier.contains(Modifier::BOLD) {
+                style_parts.push("font-weight:bold".to_string());
+            }
+            if cell.modifier.contains(Modifier::ITALIC) {
+                style_parts.push("font-style:italic".to_string());
+            }
+            if style_parts.is_empty() {
+                html.push_str(&escaped);
+            } else {
+                html.push_str(&format!(
+                    "<span style=\"{}\">{}</span>",
+                    style_parts.join(";"),
+                    escaped
+                ));
+            }
+        }
+    }
+    html.push_str("</pre>");
+    html
+}
+
+fn html_escape_char(s: &str) -> String {
+    match s {
+        "&" => "&amp;".to_string(),
+        "<" => "&lt;".to_string(),
+        ">" => "&gt;".to_string(),
+        " " => "&nbsp;".to_string(),
+        "" => "&nbsp;".to_string(),
+        other => other.to_string(),
+    }
+}
+
+fn rat_color_to_css_fg(color: RatColor) -> Option<String> {
+    rat_color_to_css(color, "#e6edf3")
+}
+
+fn rat_color_to_css_bg(color: RatColor) -> Option<String> {
+    rat_color_to_css(color, "#0d1117")
+}
+
+/// Maps a ratatui color to a CSS color string, skipping the given default so we
+/// don't emit redundant inline styles for the common case.
+fn rat_color_to_css(color: RatColor, default: &str) -> Option<String> {
+    let css = match color {
+        RatColor::Reset => return None,
+        RatColor::Black => "#484f58",
+        RatColor::Red => "#f85149",
+        RatColor::Green => "#3fb950",
+        RatColor::Yellow => "#d29922",
+        RatColor::Blue => "#58a6ff",
+        RatColor::Magenta => "#bc8cff",
+        RatColor::Cyan => "#39c5cf",
+        RatColor::Gray | RatColor::White => "#e6edf3",
+        RatColor::DarkGray => "#8b949e",
+        RatColor::LightRed => "#ff7b72",
+        RatColor::LightGreen => "#56d364",
+        RatColor::LightYellow => "#e3b341",
+        RatColor::LightBlue => "#79c0ff",
+        RatColor::LightMagenta => "#d2a8ff",
+        RatColor::LightCyan => "#76e3ea",
+        RatColor::Rgb(r, g, b) => return Some(format!("#{:02x}{:02x}{:02x}", r, g, b)),
+        RatColor::Indexed(_) => return None,
+    };
+    if css == default {
+        None
+    } else {
+        Some(css.to_string())
+    }
+}
 
 /// Render a widget's content into a frame area.
 pub fn render_widget(
@@ -248,7 +361,7 @@ mod tests {
         let mut rendered = String::new();
         for y in 0..height {
             for x in 0..width {
-                rendered.push_str(buffer.get(x, y).symbol());
+                rendered.push_str(buffer[(x, y)].symbol());
             }
             rendered.push('\n');
         }
@@ -271,7 +384,7 @@ mod tests {
         let buffer = terminal.backend().buffer();
         let mut rendered = String::new();
         for x in 0..80 {
-            rendered.push_str(buffer.get(x, 1).symbol());
+            rendered.push_str(buffer[(x, 1)].symbol());
         }
         rendered
     }

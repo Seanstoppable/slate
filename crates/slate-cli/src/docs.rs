@@ -73,6 +73,9 @@ struct PluginInfo {
     kind: &'static str,
     config_example: String,
     install_hint: String,
+    /// A live-rendered HTML snapshot of the widget's actual terminal output, generated at
+    /// docs-build time from real widget content (builtins and Lua scripts only).
+    snapshot: Option<String>,
 }
 
 pub async fn docs(output_dir: Option<&str>) -> Result<()> {
@@ -152,6 +155,7 @@ pub async fn docs(output_dir: Option<&str>) -> Result<()> {
                             kind: "plugin",
                             config_example,
                             install_hint,
+                            snapshot: None,
                         });
                     }
                 }
@@ -183,6 +187,7 @@ pub async fn docs(output_dir: Option<&str>) -> Result<()> {
             kind: "builtin",
             config_example: config.to_string(),
             install_hint: "Built-in - no installation needed. Just add to slate.toml.".to_string(),
+            snapshot: snapshot_builtin(name),
         });
     }
 
@@ -233,6 +238,7 @@ pub async fn docs(output_dir: Option<&str>) -> Result<()> {
                             "Copy {} to your scripts/ folder and add to slate.toml.",
                             filename
                         ),
+                        snapshot: snapshot_lua_script(&path),
                     });
                 }
             }
@@ -306,6 +312,72 @@ fn generate_config_example(name: &str, _kind: &str, manifest: &DocsManifest) -> 
     }
 
     lines.join("\n")
+}
+
+/// Default snapshot canvas size: wide enough for typical widget content, tall enough
+/// to show a handful of rows without the docs page HTML getting unwieldy.
+const SNAPSHOT_WIDTH: u16 = 42;
+const SNAPSHOT_HEIGHT: u16 = 8;
+
+/// Render a real, live snapshot of a built-in widget by instantiating it and calling its
+/// actual `refresh()` — the same code path used in the running dashboard — then rasterizing
+/// the resulting content through the real ratatui renderer into HTML. Returns `None` if the
+/// widget can't be constructed on this machine (e.g. unsupported OS API).
+fn snapshot_builtin(name: &str) -> Option<String> {
+    use slate_plugin_sdk::{Position, WidgetConfig};
+
+    let config = WidgetConfig {
+        position: Position {
+            row: 0,
+            col: 0,
+            row_span: 1,
+            col_span: 1,
+        },
+        settings: Default::default(),
+        refresh_interval: None,
+    };
+
+    let mut widget = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        crate::builtins::create_builtin(name, config)
+    }))
+    .ok()?
+    .ok()?;
+
+    let (metadata, content) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        (widget.metadata(), widget.refresh())
+    }))
+    .ok()?;
+
+    Some(slate_core::render::render_snapshot_html(
+        &content,
+        &metadata,
+        SNAPSHOT_WIDTH,
+        SNAPSHOT_HEIGHT,
+    ))
+}
+
+/// Render a real, live snapshot of a Lua script widget by loading and executing it exactly
+/// as the dashboard does, then rasterizing its output into HTML. Runs the script's actual
+/// `refresh` logic (e.g. shelling out to `git`, `docker`, etc.), so the snapshot reflects
+/// real output on the machine generating the docs. Returns `None` on any load/execution
+/// failure so a single broken script can't break the whole docs build.
+fn snapshot_lua_script(path: &Path) -> Option<String> {
+    use slate_plugin_host::LuaPlugin;
+    use slate_plugin_sdk::Widget;
+
+    let path = path.to_path_buf();
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+        let mut widget = LuaPlugin::from_file(&path).ok()?;
+        let metadata = widget.metadata();
+        let content = widget.refresh();
+        Some(slate_core::render::render_snapshot_html(
+            &content,
+            &metadata,
+            SNAPSHOT_WIDTH,
+            SNAPSHOT_HEIGHT,
+        ))
+    }))
+    .ok()?
 }
 
 fn extract_lua_field(source: &str, field: &str) -> Option<String> {
@@ -449,7 +521,7 @@ fn generate_docs_html(plugins: &[PluginInfo]) -> Result<String> {
             .collect::<Vec<_>>()
             .join(",");
         plugin_data.push_str(&format!(
-            r#"  {{name:"{}",desc:"{}",version:"{}",author:"{}",lang:"{}",kind:"{}",os:[{}],perms:[{}],tags:[{}],config:"{}",install:"{}"}}"#,
+            r#"  {{name:"{}",desc:"{}",version:"{}",author:"{}",lang:"{}",kind:"{}",os:[{}],perms:[{}],tags:[{}],config:"{}",install:"{}",snapshot:{}}}"#,
             js_escape(&p.name),
             js_escape(&p.description),
             js_escape(&p.version),
@@ -461,14 +533,19 @@ fn generate_docs_html(plugins: &[PluginInfo]) -> Result<String> {
             p.tags.iter().map(|t| format!("\"{}\"", js_escape(t))).collect::<Vec<_>>().join(","),
             js_escape(&p.config_example),
             js_escape(&p.install_hint),
+            match &p.snapshot {
+                Some(html) => format!("\"{}\"", js_escape(html)),
+                None => "null".to_string(),
+            },
         ));
     }
     plugin_data.push_str("\n]");
 
     let template = load_template()?;
-    Ok(template
-        .replace("{{CARDS}}", &cards)
-        .replace("{{PLUGIN_DATA}}", &plugin_data))
+    Ok(template.replace("{{CARDS}}", &cards).replace(
+        "{{PLUGIN_DATA}}",
+        &plugin_data.replace("</script>", "<\\/script>"),
+    ))
 }
 
 fn load_template() -> Result<String> {
@@ -553,6 +630,7 @@ mod tests {
             config_example: "[[widget]]\ntype = \"github.com/slate-community/slate-weather\""
                 .to_string(),
             install_hint: "Add to slate.toml".to_string(),
+            snapshot: None,
         }
     }
 
@@ -569,6 +647,7 @@ mod tests {
             kind: "builtin",
             config_example: "[[widget]]\ntype = \"builtin:power\"".to_string(),
             install_hint: "Built-in".to_string(),
+            snapshot: None,
         }
     }
 
@@ -585,6 +664,7 @@ mod tests {
             kind: "script",
             config_example: "[[widget]]\ntype = \"lua:scripts/local.lua\"".to_string(),
             install_hint: "Copy to scripts/".to_string(),
+            snapshot: None,
         }
     }
 
@@ -730,23 +810,31 @@ mod tests {
         assert!(config_example.contains("enabled = true  # Turn on the widget"));
         assert!(config_example.contains("count = 1  # (required)"));
 
-        let weather = generate_config_example("weather", "plugin", &DocsManifest {
-            permissions: DocsManifestPermissions {
-                network: vec!["api.openweathermap.org".to_string()],
+        let weather = generate_config_example(
+            "weather",
+            "plugin",
+            &DocsManifest {
+                permissions: DocsManifestPermissions {
+                    network: vec!["api.openweathermap.org".to_string()],
+                    ..Default::default()
+                },
                 ..Default::default()
             },
-            ..Default::default()
-        });
+        );
         assert!(weather.contains("provider = \"openweathermap\""));
         assert!(weather.contains("location = \"San Francisco\""));
 
-        let wego = generate_config_example("wego", "plugin", &DocsManifest {
-            permissions: DocsManifestPermissions {
-                exec: vec!["wego".to_string()],
+        let wego = generate_config_example(
+            "wego",
+            "plugin",
+            &DocsManifest {
+                permissions: DocsManifestPermissions {
+                    exec: vec!["wego".to_string()],
+                    ..Default::default()
+                },
                 ..Default::default()
             },
-            ..Default::default()
-        });
+        );
         assert!(wego.contains("days = \"1\""));
     }
 
@@ -823,6 +911,7 @@ mod tests {
                 kind: "plugin",
                 config_example: String::new(),
                 install_hint: String::new(),
+                snapshot: None,
             },
             PluginInfo {
                 name: "zig-tool".to_string(),
@@ -836,6 +925,7 @@ mod tests {
                 kind: "plugin",
                 config_example: String::new(),
                 install_hint: String::new(),
+                snapshot: None,
             },
             PluginInfo {
                 name: "ts-tool".to_string(),
@@ -849,6 +939,7 @@ mod tests {
                 kind: "plugin",
                 config_example: String::new(),
                 install_hint: String::new(),
+                snapshot: None,
             },
         ])
         .unwrap();
