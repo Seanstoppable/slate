@@ -628,6 +628,51 @@ mod tests {
     }
 
     #[test]
+    fn pomodoro_script_is_stateful_and_key_driven() {
+        // scripts/pomodoro.lua demonstrates that a Lua widget can be fully
+        // interactive -- state machine, keybindings, rendering -- without
+        // touching any Rust code or recompiling the host binary.
+        let script_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scripts/pomodoro.lua");
+        let mut plugin = LuaPlugin::from_file(&script_path).unwrap();
+
+        // Starts paused, showing the full work session.
+        let content = plugin.refresh();
+        let text = match &content {
+            WidgetContent::Text { content, .. } => content.clone(),
+            other => panic!("expected text content, got {:?}", other),
+        };
+        assert!(text.contains("paused"));
+        assert!(text.contains("25:00"));
+
+        // 's' starts the countdown -- state mutated purely via on_key.
+        plugin.on_key("Char('s')", "");
+        let content = plugin.refresh();
+        match content {
+            WidgetContent::Text { content, .. } => assert!(content.contains("running")),
+            other => panic!("expected text content, got {:?}", other),
+        }
+
+        // 'p' pauses again.
+        plugin.on_key("Char('p')", "");
+        let content = plugin.refresh();
+        match content {
+            WidgetContent::Text { content, .. } => assert!(content.contains("paused")),
+            other => panic!("expected text content, got {:?}", other),
+        }
+
+        // 'x' resets back to a fresh work session.
+        plugin.on_key("Char('x')", "");
+        let content = plugin.refresh();
+        match content {
+            WidgetContent::Text { content, .. } => {
+                assert!(content.contains("paused"));
+                assert!(content.contains("25:00"));
+            }
+            other => panic!("expected text content, got {:?}", other),
+        }
+    }
+
+    #[test]
     fn lua_plugin_from_file_errors_on_missing_file() {
         let result = LuaPlugin::from_file(Path::new("/nonexistent/script.lua"));
         assert!(result.is_err());

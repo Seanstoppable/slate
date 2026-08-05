@@ -333,10 +333,18 @@ impl App {
                 }
             }
             _ => {
-                // Forward other keys to focused widget
+                // Forward other keys to focused widget, then immediately
+                // re-render so any state mutated by on_key (e.g. a Lua
+                // widget's interactive state machine) shows up right away
+                // instead of waiting for the next scheduled refresh.
                 if let Some(instance) = self.focused_widget_mut() {
                     let key_str = format!("{:?}", key.code);
                     instance.widget.on_key(&key_str, "");
+                    instance.content = instance.widget.refresh();
+                    instance.last_refresh = Instant::now();
+                    if instance.content.is_selectable_list() && instance.selected.is_none() {
+                        instance.selected = Some(0);
+                    }
                 }
             }
         }
@@ -551,6 +559,71 @@ mod tests {
         fn on_key(&mut self, key: &str, _action: &str) {
             *self.last_key.lock().unwrap() = Some(key.to_string());
         }
+    }
+
+    struct StatefulWidget {
+        toggled: bool,
+    }
+
+    impl Widget for StatefulWidget {
+        fn metadata(&self) -> WidgetMetadata {
+            WidgetMetadata {
+                name: "Stateful".to_string(),
+                description: "Tracks toggled state".to_string(),
+                version: "0.1.0".to_string(),
+                author: None,
+                homepage: None,
+            }
+        }
+
+        fn init(&mut self, _config: WidgetConfig) {}
+
+        fn refresh(&mut self) -> WidgetContent {
+            WidgetContent::Text {
+                content: if self.toggled {
+                    "on".to_string()
+                } else {
+                    "off".to_string()
+                },
+                scrollable: false,
+                wrap: true,
+            }
+        }
+
+        fn on_key(&mut self, key: &str, _action: &str) {
+            if key == "Char('s')" {
+                self.toggled = true;
+            }
+        }
+    }
+
+    #[test]
+    fn forwarded_key_immediately_refreshes_widget_content() {
+        // Interactive widgets (e.g. Lua scripts using on_key) mutate their own
+        // state on keypress; the host must re-render right away instead of
+        // waiting for the next scheduled refresh tick.
+        let mut app = App::new(SlateConfig::default());
+        app.add_widget(
+            Box::new(StatefulWidget { toggled: false }),
+            0,
+            0,
+            1,
+            1,
+            Some(6000),
+            None,
+        );
+
+        assert!(matches!(
+            &app.widgets[0].content,
+            WidgetContent::Text { content, .. } if content == "off"
+        ));
+
+        app.handle_key(make_key(KeyCode::Char('s')));
+
+        assert!(matches!(
+            &app.widgets[0].content,
+            WidgetContent::Text { content, .. } if content == "on"
+        ));
     }
 
     fn make_key(code: KeyCode) -> KeyEvent {

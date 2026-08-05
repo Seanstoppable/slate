@@ -27,6 +27,7 @@ Modules that have been fully implemented in Slate.
 | security | Builtin | `firewall` | — | No | Firewall status/rules | Renamed from `security` |
 | spacex | Lua | `scripts/spacex.lua` | network | No | Next SpaceX launch info | Uses public SpaceX API |
 | status | Plugin | `status-pages` | network | No | Service status pages | GitHub, Slack, etc. |
+| stocks/yfinance | Plugin | `yfinance` | network | No | Stock prices via Yahoo Finance | Public chart API |
 | subreddit | Plugin | `subreddit` | network | No | Reddit subreddit posts | Sort by hot/new/top; NSFW filter |
 | system | Builtin | `resource_usage` | — | No | System info | Merged into resource_usage |
 | textfile | Builtin | `logfile` | — | No | Display/tail any text file | |
@@ -72,7 +73,6 @@ Modules that are feasible but not yet implemented.
 | rollbar | network | Yes | Error tracking dashboard | |
 | steam | network | Yes | Game library/friends | |
 | stocks/finnhub | network | Yes | Stock prices via Finnhub API | |
-| stocks/yfinance | network | No | Stock prices via Yahoo Finance | Public API |
 | todo | storage | No | Local todo list | Needs KV storage |
 | todo_plus | storage | No | Enhanced todo with priorities | |
 | transmission | network | Yes | Torrent client status | |

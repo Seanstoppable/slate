@@ -46,6 +46,22 @@ All widgets implement this regardless of runtime tier:
 - `on_action(action_id, item_id)` → handle list item actions, returns optional WidgetAction
 - `on_focus()` / `on_blur()` → lifecycle hooks
 
+**Interactivity gotcha:** `on_key` only mutates a widget's internal state — it does not
+repaint by itself. `slate-core/src/app.rs`'s key handler calls `widget.refresh()`
+immediately after every forwarded `on_key`, so state changes appear on the very next
+frame. If you add a new key-handling code path in `app.rs`, make sure it re-renders too,
+or keypresses will look like no-ops until the next scheduled refresh tick.
+
+For any widget whose state changes over time on its own (timers, counters, anything
+ticking while focused), set a short per-widget `refresh_interval` (e.g. `1` second) in
+its `[[widget]]` config entry — the `[global] refresh_interval` default (300s) is tuned
+for passive polling widgets, not live countdowns. See `scripts/pomodoro.lua` and its
+config entry in `examples/slate.toml` for the pattern.
+
+Focused widgets render with a double-line border (`BorderType::Double` in
+`slate-core/src/render.rs`) in addition to the cyan highlight color, so keep both in
+sync if you touch focus rendering.
+
 ### WidgetContent (`slate-plugin-sdk/src/content.rs`)
 Six display types: `Text`, `Table`, `KeyValue`, `List`, `Chart`, `Empty`
 
@@ -109,6 +125,7 @@ Environment variable interpolation: `token = "${GITHUB_TOKEN}"`
 | brew-outdated | Go (TinyGo) | `exec: [brew]` |
 | istats | Zig | `exec: [istats]` |
 | wego | AssemblyScript | `exec: [wego]` |
+| yfinance | Rust | `network: [query1.finance.yahoo.com]` |
 
 ## Host Functions
 
@@ -182,11 +199,18 @@ cargo test --workspace
 
 If `cargo fmt --all -- --check` reports diffs, run `cargo fmt --all` to fix them in place. If `cargo clippy` reports warnings, fix them or add a scoped `#[allow(...)]` with justification — do not suppress lints workspace-wide.
 
+**Run `cargo fmt --all` right after editing any `.rs` file, not just before opening the PR.** CI's lint job has failed in this project before purely because formatting was fixed up only at commit time; if you edit Rust across multiple turns, reformat after each edit batch so a stray fmt diff doesn't surprise you at PR time.
+
+## Known Flaky CI Checks
+
+- `slate-plugin-manager` has tests (`check_single_returns_update...`, `check_outdated_collects_only...`, and similar) that hit the *real* GitHub releases API. These occasionally fail on `macos-latest` CI runners due to network flakiness, not code changes. If a PR you didn't touch `slate-plugin-manager` in shows these failing, verify the same tests pass locally and on the base branch's latest run, then just re-run CI — do not "fix" by loosening assertions or skipping the tests.
+- A macOS job failure in the test matrix can cause ubuntu/windows jobs to show as canceled rather than failed — re-run the whole workflow, not just the failed job, if you see a mix of "failure" and "cancelled".
+
 ## CI
 
 - **Tests**: Run on ubuntu, windows, macos
-- **Lint**: `cargo fmt --check` + `cargo clippy --workspace`
-- **Coverage**: Must stay above **85%**, measured by `cargo tarpaulin --workspace` on `ubuntu-latest` only. The margin is thin (has hovered right at 85%), so don't assume there's slack — see "Coverage Gotchas" below.
+- **Lint**: `cargo fmt --check` + `cargo clippy --workspace --all-targets -- -D warnings` (any clippy warning fails the build)
+- **Coverage**: Must stay above **85%**, measured by `cargo tarpaulin --workspace` on `ubuntu-latest` only (currently ~90%, but the margin can still be thin for new low-level code — see "Coverage Gotchas" below).
 - Triggers on PR and push to main branch
 
 ## Coverage Gotchas
@@ -196,6 +220,13 @@ Learned the hard way while fixing a failing coverage check on the urlcheck PR:
 - **Local coverage % is not reliable cross-platform.** `cargo tarpaulin` run locally on Windows/macOS can report a *different total line count* than the CI's `ubuntu-latest` job for the exact same file, because `#[cfg(windows)]`/`#[cfg(not(windows))]`-gated code (including test-only branches) changes what gets compiled and counted per OS. Don't trust a local pass to predict CI — verify against Linux (Docker `rust:latest` + `cargo install cargo-tarpaulin`, or WSL) before assuming a fix is sufficient.
 - **Extism host-function closures are structurally hard to cover.** The `Function::new(name, ..., |plugin, inputs, outputs, _| { ... })` closures registered in `wasm_host.rs` (e.g. `make_exec_function`, `make_safe_http_function`) can only execute via a real WASM guest calling through the full Extism ABI (alloc/input/output plumbing) — no native unit test can invoke them directly. Pull all real logic out into a plain, testable function (as already done) and accept the thin wrapper closure as an uncovered gap; don't try to force coverage of the glue itself.
 - **New host-function-style code should over-invest in tests.** Because the threshold has so little margin, adding even a small, well-factored feature (a handful of untestable glue lines) can tip total coverage below 85%. When adding code in `slate-plugin-host` or similar low-level plumbing, add extra tests for every reachable branch (e.g. local `TcpListener`-backed tests for HTTP success/error/header paths, following the pattern in `host_functions.rs`) rather than assuming the existing suite has slack to absorb it.
+
+### Lessons from prior sessions
+
+- **New `WidgetContent` variants need matching parser coverage.** `wasm_host.rs` hand-parses widget JSON with `serde_json::Value` indexing rather than relying on the SDK's tagged-enum deserialization — it's a parallel, easy-to-forget schema. Adding a new content type (e.g. a `table` cell/style branch) requires tests for *every* parsing branch (each color, each style flag, missing/malformed fields), not just the happy path, or the workspace coverage can dip below the 85% CI threshold.
+- **Rebase early, and check for upstream CI-relevant changes first.** Before triaging a CI failure as "pre-existing" or "flaky," run `git log --oneline HEAD..origin/<base-branch>` to see whether the base branch has already fixed it or changed enforcement (e.g. added `-D warnings` to clippy). A stale branch can show failures that a simple rebase resolves.
+- **Verify "flaky" test failures locally before writing them off.** Run `cargo test -p <crate> --lib <module>::` for the specific failing tests. If they pass locally, the failure is very likely CI-environment or base-branch drift, not a real flake in your changes.
+- **Watch for unexpected merge commits after `git rebase`.** In this environment a rebase was once followed by an automatic extra merge commit. Always inspect `git log --graph` and `git reflog` after rebasing, and `git reset --hard` to the actual rebased tip before force-pushing, to keep history linear.
 
 ## Plugin Authoring
 

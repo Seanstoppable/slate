@@ -19,6 +19,7 @@ exclude = [
     "plugins/subreddit",
     "plugins/urlcheck",
     "plugins/vcs",
+    "plugins/yfinance",
 ]
 resolver = "2"
 

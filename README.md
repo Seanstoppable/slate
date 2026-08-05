@@ -16,7 +16,7 @@ We loved wtfutil but wanted to start from a **blank slate** (pun intended) to ad
 - **5 built-in widgets** — Resources, power, firewall, network interfaces, VCS (git/hg)
 - **6 WASM plugins (Rust)** — Clock, weather, HN, feeds, IP info, GitHub
 - **4 WASM plugins (polyglot)** — Status pages (JS), iStats (Zig), wego (AssemblyScript), cmdrunner (Go)
-- **Lua scripting** — Quick personal widgets with zero compilation (brew outdated, docker ps, disk usage, git log, todo.txt)
+- **Lua scripting** — Quick personal widgets with zero compilation (brew outdated, docker ps, disk usage, git log, todo.txt), including fully **interactive**, key-driven widgets (pomodoro timer) with no Rust code or recompilation involved
 - **Plugin manager** — Install from GitHub repos, lockfile-based versioning, update notifications
 - **Interactive lists** — Navigate items with j/k, open links with Enter
 - **Vim-style navigation** — h/j/k/l, Tab cycling, focus management
@@ -112,6 +112,7 @@ Environment variables are interpolated with `${VAR_NAME}` syntax.
 | `brew-outdated` | WASM | Go | Outdated Homebrew packages (polyglot demo; prefer `scripts/brew-outdated.lua`) |
 | `istats` | WASM | Zig | System stats via iStats (macOS) |
 | `wego` | WASM | AssemblyScript | Weather display via wego CLI |
+| `pomodoro` | Lua | Lua | Interactive focus timer (start/pause/reset with s / p / x), no compilation |
 
 ### Plugin Management
 
@@ -322,6 +323,41 @@ path = "/path/to/repo"
 ```
 
 See `scripts/` for more examples: brew outdated, disk usage, docker containers, git log, todo.txt.
+
+#### Interactive Lua widgets
+
+Lua widgets aren't limited to read-only output. Like every widget tier, they implement `on_key`
+and `on_action`, and the Lua interpreter for a widget stays alive for as long as the widget does —
+so a script's local variables act as real state across keypresses and refresh ticks. That means
+you can build a fully interactive widget (a timer, a counter, a toggle, a form) in one `.lua`
+file, with **no Rust code and no recompilation**. This is the key difference from wtfutil: adding
+interactive behavior there means forking the Go binary and shipping a new build; here it's saving
+a text file.
+
+`scripts/pomodoro.lua` is a working example — a focus timer with its own state machine:
+
+```lua
+-- scripts/pomodoro.lua (excerpt)
+local running = false
+local remaining = nil
+
+function refresh()
+    -- ...tick the countdown, render a progress bar...
+    return slate.text(bar .. "  " .. time_left, {wrap = false})
+end
+
+-- Called for any keypress the host doesn't reserve for navigation.
+function on_key(key, _action)
+    if key == "Char('s')" then running = true
+    elseif key == "Char('p')" then running = false
+    elseif key == "Char('x')" then remaining = nil; running = false
+    end
+end
+```
+
+Focus the widget and press `s` to start, `p` to pause, `x` to reset — state changes made in
+`on_key` are picked up by the very next `refresh()`. See `docs/plugin-authoring.md` for the full
+`on_key`/`on_action`/`on_focus`/`on_blur` hook reference shared by every widget tier.
 
 ## Requirements
 
