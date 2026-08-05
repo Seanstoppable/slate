@@ -2,7 +2,7 @@
 
 Status of wtfutil module equivalents in Slate.
 
-## Migrated (22)
+## Migrated (23)
 
 Modules that have been fully implemented in Slate.
 
@@ -30,9 +30,10 @@ Modules that have been fully implemented in Slate.
 | subreddit | Plugin | `subreddit` | network | No | Reddit subreddit posts | Sort by hot/new/top; NSFW filter |
 | system | Builtin | `resource_usage` | — | No | System info | Merged into resource_usage |
 | textfile | Builtin | `logfile` | — | No | Display/tail any text file | |
+| urlcheck | Plugin | `urlcheck` | network | No | URL health check | Selectable list; open in browser; HEAD requests |
 | weatherservices | Plugin | `weather` | network | Yes | Weather forecast | OpenWeatherMap API |
 
-## Planned (43)
+## Planned (42)
 
 Modules that are feasible but not yet implemented.
 
@@ -79,7 +80,6 @@ Modules that are feasible but not yet implemented.
 | updown | network | Yes | Uptime monitoring | |
 | uptimekuma | network | Yes | Self-hosted uptime monitor | |
 | uptimerobot | network | Yes | Uptime monitoring | |
-| urlcheck | network | No | URL health check | Simple HTTP HEAD checks |
 | victorops | network | Yes | Incident management | |
 | zendesk | network | Yes | Support ticket viewer | |
 
@@ -108,8 +108,8 @@ Modules that are deprecated, internal, or not applicable.
 
 | Category | Count |
 |----------|-------|
-| ✅ Migrated | 22 |
-| 🔲 Planned | 43 |
+| ✅ Migrated | 23 |
+| 🔲 Planned | 42 |
 | ➖ Not Planned | 14 |
 | **Total** | 79 |
 

@@ -108,6 +108,7 @@ Environment variables are interpolated with `${VAR_NAME}` syntax.
 | `feedreader` | WASM | Rust | RSS/Atom feed reader |
 | `github` | WASM | Rust | GitHub PRs, issues, repo stats |
 | `status-pages` | WASM | JavaScript | Service status page monitor (Statuspage APIs) |
+| `urlcheck` | WASM | Rust | URL health checks (HTTP HEAD, selectable list) |
 | `brew-outdated` | WASM | Go | Outdated Homebrew packages (polyglot demo; prefer `scripts/brew-outdated.lua`) |
 | `istats` | WASM | Zig | System stats via iStats (macOS) |
 | `wego` | WASM | AssemblyScript | Weather display via wego CLI |

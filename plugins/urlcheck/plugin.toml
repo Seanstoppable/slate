@@ -1,0 +1,12 @@
+[plugin]
+name = "URL Check"
+description = "Checks the reachability of a list of URLs and reports their HTTP status"
+tags = ["devops", "health", "monitoring", "url"]
+version = "0.1.0"
+author = "Slate Community"
+
+[permissions]
+network = ["*"]
+
+[config]
+urls = { type = "array", required = true, description = "List of URLs to check (e.g. [\"https://example.com\"])" }
