@@ -47,7 +47,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Install cargo-tarpaulin
-        run: cargo install cargo-tarpaulin
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-tarpaulin
 
       - name: Run coverage
         run: cargo tarpaulin --workspace --out xml --output-dir coverage/
@@ -60,7 +62,13 @@ jobs:
 
       - name: Check coverage threshold
         run: |
-          COVERAGE=$(cargo tarpaulin --workspace --skip-clean 2>&1 | grep -oP '[\d.]+(?=% coverage)')
+          # Parse coverage from the cobertura.xml already produced above instead
+          # of re-running the (slow, instrumented) tarpaulin build a second time.
+          COVERAGE=$(python3 -c "
+          import xml.etree.ElementTree as ET
+          root = ET.parse('coverage/cobertura.xml').getroot()
+          print(round(float(root.attrib['line-rate']) * 100, 2))
+          ")
           echo "Coverage: ${COVERAGE}%"
           THRESHOLD=85
           if [ "$(echo "$COVERAGE < $THRESHOLD" | bc -l)" -eq 1 ]; then

@@ -22,6 +22,16 @@ exclude = [
 ]
 resolver = "2"
 
+# Trim PDB/debuginfo generation for dev + test builds. Full debuginfo is the
+# dominant linker cost on Windows for this workspace (mlua/luau, extism,
+# wasmparser); line-tables-only keeps panic backtraces useful while cutting
+# link time noticeably.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.test]
+debug = "line-tables-only"
+
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
