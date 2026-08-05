@@ -3,7 +3,7 @@ use ratatui::{
     layout::Rect,
     style::{Color as RatColor, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Row, Table, Wrap},
+    widgets::{Block, BorderType, Borders, List, ListItem, ListState, Paragraph, Row, Table, Wrap},
     Frame, Terminal,
 };
 use slate_plugin_sdk::{Color, WidgetContent, WidgetMetadata};
@@ -140,9 +140,18 @@ pub fn render_widget(
         Style::default().fg(RatColor::DarkGray)
     };
 
+    // Focused widgets get a double-line border so it's unmistakable which
+    // widget is currently receiving keypresses, even at a glance.
+    let border_type = if focused {
+        BorderType::Double
+    } else {
+        BorderType::Plain
+    };
+
     let block = Block::default()
         .title(format!(" {} ", metadata.name))
         .borders(Borders::ALL)
+        .border_type(border_type)
         .border_style(border_style);
 
     let inner = block.inner(area);
