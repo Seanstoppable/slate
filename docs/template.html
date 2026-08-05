@@ -246,6 +246,22 @@ header p { color: var(--text-muted); font-size: 1.1rem; margin-top: 0.5rem; }
   font-size: 0.9rem;
   white-space: pre-wrap;
 }
+.snapshot {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.75rem;
+  overflow-x: auto;
+  font-family: 'SF Mono', Menlo, monospace;
+  font-size: 0.8rem;
+  line-height: 1.3;
+  white-space: pre;
+}
+.snapshot-hint {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-style: italic;
+}
 </style>
 </head>
 <body>
@@ -293,6 +309,10 @@ header p { color: var(--text-muted); font-size: 1.1rem; margin-top: 0.5rem; }
     <div class="section">
       <h4>Configuration</h4>
       <pre><code id="modal-config"></code></pre>
+    </div>
+    <div class="section" id="modal-snapshot-section">
+      <h4>Live Snapshot</h4>
+      <div id="modal-snapshot"></div>
     </div>
     <div class="section">
       <h4>Platform Support</h4>
@@ -393,6 +413,16 @@ function showDetail(idx) {
   document.getElementById('modal-meta').textContent = 'v' + p.version + ' · ' + p.author + ' · ' + p.lang;
   document.getElementById('modal-desc').textContent = p.desc;
   document.getElementById('modal-config').textContent = p.config;
+
+  const snapshotSection = document.getElementById('modal-snapshot-section');
+  const snapshotEl = document.getElementById('modal-snapshot');
+  if (p.snapshot) {
+    snapshotEl.innerHTML = p.snapshot;
+    snapshotSection.style.display = '';
+  } else {
+    snapshotEl.innerHTML = '<span class="snapshot-hint">No live snapshot available for this plugin type.</span>';
+    snapshotSection.style.display = '';
+  }
 
   const osEl = document.getElementById('modal-os');
   const osIcons = {macos: '🍎', linux: '🐧', windows: '🪟'};

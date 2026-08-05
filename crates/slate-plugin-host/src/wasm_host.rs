@@ -149,7 +149,14 @@ fn parse_widget_metadata(json_str: &str, fallback_name: &str) -> WidgetMetadata 
     }
 }
 
-fn parse_widget_content(json_str: &str) -> WidgetContent {
+/// Parse a plugin's raw JSON `refresh()` output into a `WidgetContent`.
+///
+/// This is the canonical "wire format" parser that real WASM/Lua plugins'
+/// JSON output is decoded through. It is exposed publicly so callers (e.g.
+/// `slate docs`) can render realistic mock snapshots for plugins that would
+/// otherwise require live credentials/network access, by parsing a static
+/// fixture file through the exact same code path used at runtime.
+pub fn parse_widget_content(json_str: &str) -> WidgetContent {
     let Ok(val) = serde_json::from_str::<serde_json::Value>(json_str) else {
         return WidgetContent::Text {
             content: json_str.to_string(),
