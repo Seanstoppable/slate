@@ -788,6 +788,57 @@ mod tests {
     }
 
     #[test]
+    fn safe_http_request_sync_reports_status_and_sends_headers_to_local_server() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let response = "HTTP/1.1 404 Not Found\r\ncontent-length: 0\r\nconnection: close\r\n\r\n";
+
+        let handle = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buf = [0_u8; 2048];
+            let read = stream.read(&mut buf).unwrap();
+            let request_text = String::from_utf8_lossy(&buf[..read]).to_string();
+            stream.write_all(response.as_bytes()).unwrap();
+            request_text
+        });
+
+        let headers = vec![("x-demo".to_string(), "yes".to_string())];
+        let status =
+            run_safe_http_request_sync(&format!("http://{addr}/status"), "HEAD", &headers).unwrap();
+        assert_eq!(status, 404);
+
+        let request_text = handle.join().unwrap();
+        assert!(request_text.contains("HEAD /status HTTP/1.1"));
+        assert!(request_text.to_lowercase().contains("x-demo: yes"));
+    }
+
+    #[test]
+    fn safe_http_request_reports_ok_true_for_a_real_http_status() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let response = "HTTP/1.1 200 OK\r\ncontent-length: 0\r\nconnection: close\r\n\r\n";
+
+        std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buf = [0_u8; 2048];
+            let _ = stream.read(&mut buf).unwrap();
+            stream.write_all(response.as_bytes()).unwrap();
+        });
+
+        let input =
+            format!(r#"{{"url":"http://{addr}/ok","method":"HEAD","headers":{{"x-demo":"yes"}}}}"#);
+        let result = run_safe_http_request(&input).unwrap();
+        assert!(result.contains("\"ok\":true"));
+        assert!(result.contains("\"status\":200"));
+    }
+
+    #[test]
     #[ignore] // manual verification only: hits the network and a real built artifact
     fn urlcheck_plugin_reports_per_url_results_without_trapping_on_unreachable_host() {
         let wasm_path =
