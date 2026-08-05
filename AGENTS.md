@@ -186,9 +186,16 @@ If `cargo fmt --all -- --check` reports diffs, run `cargo fmt --all` to fix them
 ## CI
 
 - **Tests**: Run on ubuntu, windows, macos
-- **Lint**: `cargo fmt --check` + `cargo clippy --workspace`
+- **Lint**: `cargo fmt --check` + `cargo clippy --workspace --all-targets -- -D warnings` (any clippy warning fails the build)
 - **Coverage**: Must stay above **85%** (currently ~90%)
 - Triggers on PR and push to main branch
+
+### Lessons from prior sessions
+
+- **New `WidgetContent` variants need matching parser coverage.** `wasm_host.rs` hand-parses widget JSON with `serde_json::Value` indexing rather than relying on the SDK's tagged-enum deserialization — it's a parallel, easy-to-forget schema. Adding a new content type (e.g. a `table` cell/style branch) requires tests for *every* parsing branch (each color, each style flag, missing/malformed fields), not just the happy path, or the workspace coverage can dip below the 85% CI threshold.
+- **Rebase early, and check for upstream CI-relevant changes first.** Before triaging a CI failure as "pre-existing" or "flaky," run `git log --oneline HEAD..origin/<base-branch>` to see whether the base branch has already fixed it or changed enforcement (e.g. added `-D warnings` to clippy). A stale branch can show failures that a simple rebase resolves.
+- **Verify "flaky" test failures locally before writing them off.** Run `cargo test -p <crate> --lib <module>::` for the specific failing tests. If they pass locally, the failure is very likely CI-environment or base-branch drift, not a real flake in your changes.
+- **Watch for unexpected merge commits after `git rebase`.** In this environment a rebase was once followed by an automatic extra merge commit. Always inspect `git log --graph` and `git reflog` after rebasing, and `git reset --hard` to the actual rebased tip before force-pushing, to keep history linear.
 
 ## Plugin Authoring
 
