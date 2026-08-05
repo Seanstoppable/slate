@@ -5,6 +5,12 @@ use extism_pdk::*;
 use serde::Deserialize;
 use serde_json::json;
 
+#[cfg(target_arch = "wasm32")]
+#[host_fn("extism:host/user")]
+extern "ExtismHost" {
+    fn safe_http_request(input: String) -> String;
+}
+
 /// Sentinel status code used when a URL could not be checked at all
 /// (invalid URL, connection error, or timeout). Mirrors wtfutil's
 /// `InvalidResultCode`.
@@ -61,11 +67,9 @@ fn check_url(url: &str) -> UrlCheckResult {
         };
     }
 
-    let req = HttpRequest::new(url).with_method("HEAD");
-
-    match http::request::<Vec<u8>>(&req, None) {
-        Ok(response) => {
-            let status_code = response.status_code();
+    match call_safe_http_request(url, "HEAD") {
+        Ok(SafeHttpResponse { ok: true, status }) => {
+            let status_code = status.unwrap_or(INVALID_STATUS_CODE);
             let message = if status_code < 400 {
                 "OK".to_string()
             } else {
@@ -78,13 +82,40 @@ fn check_url(url: &str) -> UrlCheckResult {
                 message,
             }
         }
-        Err(_) => UrlCheckResult {
+        Ok(SafeHttpResponse { ok: false, .. }) | Err(_) => UrlCheckResult {
             url: url.to_string(),
             is_valid: true,
             status_code: INVALID_STATUS_CODE,
             message: "Unreachable".to_string(),
         },
     }
+}
+
+/// Result of the host's `safe_http_request` call, which never traps:
+/// network failures (DNS, connection refused, TLS, timeout) come back as
+/// `{"ok": false, "error": "..."}` instead of aborting the whole plugin
+/// call the way Extism's built-in `http_request` host function does.
+#[cfg(target_arch = "wasm32")]
+#[derive(Deserialize)]
+struct SafeHttpResponse {
+    ok: bool,
+    status: Option<u16>,
+}
+
+/// Call the host-provided `safe_http_request` function, which performs
+/// the HTTP request outside the WASM sandbox and always returns a JSON
+/// result rather than trapping the plugin call on network failure.
+#[cfg(target_arch = "wasm32")]
+fn call_safe_http_request(url: &str, method: &str) -> Result<SafeHttpResponse, Error> {
+    let request = json!({
+        "url": url,
+        "method": method
+    })
+    .to_string();
+
+    let response = unsafe { safe_http_request(request)? };
+    serde_json::from_str(&response)
+        .map_err(|e| Error::msg(format!("Failed to parse safe_http_request result: {}", e)))
 }
 
 #[cfg(target_arch = "wasm32")]
