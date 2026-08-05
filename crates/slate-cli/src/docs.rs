@@ -155,7 +155,7 @@ pub async fn docs(output_dir: Option<&str>) -> Result<()> {
                             kind: "plugin",
                             config_example,
                             install_hint,
-                            snapshot: None,
+                            snapshot: snapshot_manifest_plugin(&entry.path(), &p.name),
                         });
                     }
                 }
@@ -378,6 +378,37 @@ fn snapshot_lua_script(path: &Path) -> Option<String> {
         ))
     }))
     .ok()?
+}
+
+/// Render a mock snapshot for a manifest-based (WASM/Go/Zig/etc.) plugin from a static
+/// fixture file, `<plugin_dir>/docs_fixture.json`. Most of these plugins require live
+/// credentials or network access (API tokens, `docker`/`brew` on PATH, etc.) that aren't
+/// available in the docs-build environment, so instead of executing them we decode a
+/// realistic sample of their actual `refresh()` JSON output through the exact same
+/// wire-format parser (`slate_plugin_host::parse_widget_content`) the runtime host uses,
+/// then rasterize it with the real renderer. Returns `None` if no fixture is present or it
+/// fails to parse, in which case the docs page falls back to a "no live preview" hint.
+fn snapshot_manifest_plugin(plugin_dir: &Path, name: &str) -> Option<String> {
+    let fixture_path = plugin_dir.join("docs_fixture.json");
+    let raw = std::fs::read_to_string(fixture_path).ok()?;
+
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let content = slate_plugin_host::parse_widget_content(&raw);
+        let metadata = slate_plugin_sdk::WidgetMetadata {
+            name: name.to_string(),
+            description: String::new(),
+            version: String::new(),
+            author: None,
+            homepage: None,
+        };
+        slate_core::render::render_snapshot_html(
+            &content,
+            &metadata,
+            SNAPSHOT_WIDTH,
+            SNAPSHOT_HEIGHT,
+        )
+    }))
+    .ok()
 }
 
 fn extract_lua_field(source: &str, field: &str) -> Option<String> {
