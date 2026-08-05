@@ -221,11 +221,72 @@ pub fn parse_widget_content(json_str: &str) -> WidgetContent {
                 actions: vec![],
             }
         }
+        "table" => {
+            let headers: Vec<String> = val["headers"]
+                .as_array()
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|h| h.as_str().map(String::from))
+                        .collect()
+                })
+                .unwrap_or_default();
+            let rows: Vec<Vec<slate_plugin_sdk::Cell>> = val["rows"]
+                .as_array()
+                .map(|arr| {
+                    arr.iter()
+                        .map(|row| {
+                            row.as_array()
+                                .map(|cells| cells.iter().map(parse_cell).collect())
+                                .unwrap_or_default()
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            WidgetContent::Table {
+                headers,
+                rows,
+                selectable: val["selectable"].as_bool().unwrap_or(false),
+            }
+        }
         _ => WidgetContent::Text {
             content: val["content"].as_str().unwrap_or(json_str).to_string(),
             scrollable: false,
             wrap: true,
         },
+    }
+}
+
+/// Parse a single table cell, which may be a plain string or an object with
+/// `text` and an optional `style` (`fg`/`bg`/`bold`/`italic`).
+fn parse_cell(val: &serde_json::Value) -> slate_plugin_sdk::Cell {
+    if let Some(text) = val.as_str() {
+        return slate_plugin_sdk::Cell::plain(text.to_string());
+    }
+
+    let text = val["text"].as_str().unwrap_or("").to_string();
+    let style = slate_plugin_sdk::CellStyle {
+        fg: val["style"]["fg"].as_str().and_then(parse_color),
+        bg: val["style"]["bg"].as_str().and_then(parse_color),
+        bold: val["style"]["bold"].as_bool().unwrap_or(false),
+        italic: val["style"]["italic"].as_bool().unwrap_or(false),
+    };
+    slate_plugin_sdk::Cell { text, style }
+}
+
+/// Parse a color name into a `Color`. Supports the named palette
+/// (`red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`, `gray`).
+fn parse_color(name: &str) -> Option<slate_plugin_sdk::Color> {
+    use slate_plugin_sdk::Color;
+    match name.to_ascii_lowercase().as_str() {
+        "red" => Some(Color::Red),
+        "green" => Some(Color::Green),
+        "yellow" => Some(Color::Yellow),
+        "blue" => Some(Color::Blue),
+        "magenta" => Some(Color::Magenta),
+        "cyan" => Some(Color::Cyan),
+        "white" => Some(Color::White),
+        "gray" | "grey" => Some(Color::Gray),
+        _ => None,
     }
 }
 
@@ -455,6 +516,69 @@ mod tests {
                 assert_eq!(pairs[1].1.text, "4 GB");
             }
             other => panic!("expected key_value content, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_color_maps_all_named_colors_case_insensitively() {
+        use slate_plugin_sdk::Color;
+
+        assert!(matches!(parse_color("red"), Some(Color::Red)));
+        assert!(matches!(parse_color("GREEN"), Some(Color::Green)));
+        assert!(matches!(parse_color("Yellow"), Some(Color::Yellow)));
+        assert!(matches!(parse_color("blue"), Some(Color::Blue)));
+        assert!(matches!(parse_color("magenta"), Some(Color::Magenta)));
+        assert!(matches!(parse_color("cyan"), Some(Color::Cyan)));
+        assert!(matches!(parse_color("white"), Some(Color::White)));
+        assert!(matches!(parse_color("gray"), Some(Color::Gray)));
+        assert!(matches!(parse_color("grey"), Some(Color::Gray)));
+        assert!(parse_color("not-a-color").is_none());
+    }
+
+    #[test]
+    fn parse_cell_handles_bg_and_italic_style_and_missing_style() {
+        let cell = parse_cell(&serde_json::json!({
+            "text": "warn",
+            "style": {"bg": "red", "italic": true}
+        }));
+        assert_eq!(cell.text, "warn");
+        assert!(matches!(cell.style.bg, Some(slate_plugin_sdk::Color::Red)));
+        assert!(cell.style.italic);
+        assert!(!cell.style.bold);
+        assert!(cell.style.fg.is_none());
+
+        let plain = parse_cell(&serde_json::json!({"text": "no style"}));
+        assert_eq!(plain.text, "no style");
+        assert!(plain.style.fg.is_none());
+        assert!(plain.style.bg.is_none());
+    }
+
+    #[test]
+    fn parse_widget_content_handles_table_content() {
+        let content = parse_widget_content(
+            r#"{"type":"table","headers":["Symbol","Price"],"rows":[[{"text":"AAPL","style":{"bold":true}},{"text":"+1.96%","style":{"fg":"green"}}],["Plain","Row"]],"selectable":true}"#,
+        );
+
+        match content {
+            WidgetContent::Table {
+                headers,
+                rows,
+                selectable,
+            } => {
+                assert_eq!(headers, vec!["Symbol", "Price"]);
+                assert!(selectable);
+                assert_eq!(rows.len(), 2);
+                assert_eq!(rows[0][0].text, "AAPL");
+                assert!(rows[0][0].style.bold);
+                assert_eq!(rows[0][1].text, "+1.96%");
+                assert!(matches!(
+                    rows[0][1].style.fg,
+                    Some(slate_plugin_sdk::Color::Green)
+                ));
+                assert_eq!(rows[1][0].text, "Plain");
+                assert_eq!(rows[1][1].text, "Row");
+            }
+            other => panic!("expected table content, got {other:?}"),
         }
     }
 

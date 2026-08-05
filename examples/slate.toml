@@ -52,6 +52,13 @@ numberOfStories = 10
 # api_key = "${OPENWEATHER_API_KEY}"
 # location = "New York"
 
+# Yahoo Finance stock quotes (no API key required)
+# [[widget]]
+# type = "github.com/slate-community/slate-yfinance"
+# position = { row = 2, col = 2 }
+# symbols = ["AAPL", "MSFT", "GC=F"]
+# sort = true
+
 # Lua script widget
 # [[widget]]
 # type = "lua:~/.config/slate/scripts/greeting.lua"

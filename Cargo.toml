@@ -18,6 +18,7 @@ exclude = [
     "plugins/pihole",
     "plugins/subreddit",
     "plugins/vcs",
+    "plugins/yfinance",
 ]
 resolver = "2"
 

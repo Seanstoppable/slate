@@ -109,6 +109,7 @@ Environment variable interpolation: `token = "${GITHUB_TOKEN}"`
 | brew-outdated | Go (TinyGo) | `exec: [brew]` |
 | istats | Zig | `exec: [istats]` |
 | wego | AssemblyScript | `exec: [wego]` |
+| yfinance | Rust | `network: [query1.finance.yahoo.com]` |
 
 ## Host Functions
 
