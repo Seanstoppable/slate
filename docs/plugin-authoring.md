@@ -126,6 +126,33 @@ type = "lua:~/.config/slate/scripts/my_widget.lua"
 position = { row = 0, col = 0 }
 ```
 
+### Making a Lua plugin interactive
+
+Lua plugins get the same `on_key`/`on_action`/`on_focus`/`on_blur` hooks as WASM and builtin
+plugins — just define them as top-level functions and the host calls them automatically:
+
+```lua
+local count = 0
+
+function refresh()
+    return slate.text("Count: " .. count .. "\n[space] increment")
+end
+
+-- key is the Rust `KeyCode` debug string, e.g. "Char(' ')", "Esc", "Enter".
+-- Reserved navigation keys (h/j/k/l, arrows, tab, enter, r, q) never reach on_key.
+function on_key(key, _action)
+    if key == "Char(' ')" then
+        count = count + 1
+    end
+end
+```
+
+The `Lua` interpreter backing a widget stays alive for the widget's whole lifetime, so local
+state set in `on_key` persists and shows up the next time `refresh()` runs — no extra
+plumbing required. See `scripts/pomodoro.lua` for a complete interactive example (a start /
+pause / reset focus timer), and its test in `crates/slate-plugin-host/src/lua_host.rs` for how
+to exercise `on_key`-driven state in isolation.
+
 ## Publishing
 
 1. Create a GitHub release with your `.wasm` file as an asset

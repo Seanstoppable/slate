@@ -57,6 +57,14 @@ numberOfStories = 10
 # type = "lua:~/.config/slate/scripts/greeting.lua"
 # position = { row = 2, col = 2 }
 
+# Interactive Lua widget -- press s/p/x while focused to control it.
+# No compilation needed, unlike wtfutil's Go widgets.
+# [[widget]]
+# type = "lua:scripts/pomodoro.lua"
+# position = { row = 2, col = 2 }
+# work_minutes = 25
+# break_minutes = 5
+
 [updates]
 check_interval = "daily"
 notify = true
