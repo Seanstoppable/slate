@@ -17,6 +17,7 @@ exclude = [
     "plugins/lunarphase",
     "plugins/pihole",
     "plugins/subreddit",
+    "plugins/urlcheck",
     "plugins/vcs",
     "plugins/yfinance",
 ]

@@ -68,6 +68,88 @@ fn make_exec_function() -> Function {
     )
 }
 
+/// Run a "safe" HTTP request that never traps: unlike Extism's built-in
+/// `http_request` (which aborts the whole plugin call on DNS failures,
+/// connection refused, TLS errors, or timeouts), this always returns a
+/// JSON result to the caller so plugins can report per-request failures
+/// (e.g. urlcheck-style widgets checking many URLs in one `refresh()`).
+///
+/// Input JSON: {"url": "...", "method": "HEAD"|"GET"|..., "headers": {...}}
+/// Success:    {"ok": true, "status": 200}
+/// Failure:    {"ok": false, "error": "..."}
+fn run_safe_http_request(input: &str) -> Result<String, extism::Error> {
+    let request: serde_json::Value = serde_json::from_str(input)
+        .map_err(|e| extism::Error::msg(format!("Invalid http request JSON: {}", e)))?;
+
+    let url = request["url"].as_str().unwrap_or("");
+    if url.is_empty() {
+        return Ok(
+            serde_json::json!({"ok": false, "error": "safe_http_request: 'url' field is required"})
+                .to_string(),
+        );
+    }
+
+    let method = request["method"].as_str().unwrap_or("GET").to_uppercase();
+    let headers: Vec<(String, String)> = request["headers"]
+        .as_object()
+        .map(|obj| {
+            obj.iter()
+                .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let result = match run_safe_http_request_sync(url, &method, &headers) {
+        Ok(status) => serde_json::json!({"ok": true, "status": status}),
+        Err(e) => serde_json::json!({"ok": false, "error": e}),
+    };
+
+    Ok(result.to_string())
+}
+
+/// Perform the actual HTTP request synchronously, returning the status
+/// code on success or a human-readable error string on failure. Split
+/// out from `run_safe_http_request` so the network call itself is
+/// testable without going through the WASM host function plumbing.
+fn run_safe_http_request_sync(
+    url: &str,
+    method: &str,
+    headers: &[(String, String)],
+) -> Result<u16, String> {
+    let config = ureq::Agent::config_builder()
+        .timeout_global(Some(std::time::Duration::from_secs(8)))
+        .http_status_as_error(false)
+        .build();
+    let agent = ureq::Agent::new_with_config(config);
+
+    let mut builder = ureq::http::request::Builder::new().method(method).uri(url);
+    for (key, value) in headers {
+        builder = builder.header(key, value);
+    }
+    let request = builder.body(()).map_err(|e| e.to_string())?;
+
+    agent
+        .run(request)
+        .map(|res| res.status().as_u16())
+        .map_err(|e| e.to_string())
+}
+
+fn make_safe_http_function() -> Function {
+    Function::new(
+        "safe_http_request",
+        [PTR],
+        [PTR],
+        UserData::new(()),
+        |plugin: &mut extism::CurrentPlugin, inputs: &[Val], outputs: &mut [Val], _user_data| {
+            let input: String = plugin.memory_get_val(&inputs[0])?;
+            let result = run_safe_http_request(&input)?;
+            let handle = plugin.memory_new(result)?;
+            outputs[0] = plugin.memory_to_val(handle);
+            Ok(())
+        },
+    )
+}
+
 impl WasmPlugin {
     /// Load a WASM plugin from a file path.
     pub fn from_file(path: &Path, permissions: Permissions) -> Result<Self> {
@@ -85,7 +167,7 @@ impl WasmPlugin {
             .with_allowed_hosts(["*".to_string()].into_iter())
             .with_timeout(std::time::Duration::from_secs(10));
 
-        let host_functions = [make_exec_function()];
+        let host_functions = [make_exec_function(), make_safe_http_function()];
         let mut plugin = Plugin::new(&manifest, host_functions, true)
             .with_context(|| format!("Failed to create WASM plugin: {}", path.display()))?;
 
@@ -113,7 +195,7 @@ impl WasmPlugin {
         let manifest = Manifest::new([wasm])
             .with_allowed_hosts(["*".to_string()].into_iter())
             .with_timeout(std::time::Duration::from_secs(10));
-        let host_functions = [make_exec_function()];
+        let host_functions = [make_exec_function(), make_safe_http_function()];
         let plugin = Plugin::new(&manifest, host_functions, true)?;
 
         Ok(Self {
@@ -795,6 +877,129 @@ mod tests {
             widget_action_from_result(Err(extism::Error::msg("boom"))),
             None
         );
+    }
+
+    #[test]
+    fn safe_http_request_never_traps_on_missing_url() {
+        let result = run_safe_http_request(r#"{}"#).unwrap();
+        assert!(result.contains("\"ok\":false"));
+        assert!(result.contains("'url' field is required"));
+    }
+
+    #[test]
+    fn safe_http_request_returns_ok_on_invalid_json_input() {
+        // Even malformed input should not panic; parsing errors surface as a
+        // regular `Err` from the JSON parse step, not a WASM trap (the WASM
+        // trap only happens with Extism's *built-in* http_request, which
+        // this function replaces).
+        assert!(run_safe_http_request("not-json").is_err());
+    }
+
+    #[test]
+    fn safe_http_request_sync_reports_connection_failures_without_panicking() {
+        // A reserved, non-routable address should fail fast with a
+        // connection error rather than trap or hang indefinitely.
+        let result = run_safe_http_request_sync("http://127.0.0.1:1", "HEAD", &[]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn safe_http_request_wraps_connection_failures_as_ok_false() {
+        let input = r#"{"url":"http://127.0.0.1:1","method":"HEAD"}"#;
+        let result = run_safe_http_request(input).unwrap();
+        assert!(result.contains("\"ok\":false"));
+        assert!(result.contains("\"error\""));
+    }
+
+    #[test]
+    fn safe_http_request_sync_reports_status_and_sends_headers_to_local_server() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let response = "HTTP/1.1 404 Not Found\r\ncontent-length: 0\r\nconnection: close\r\n\r\n";
+
+        let handle = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buf = [0_u8; 2048];
+            let read = stream.read(&mut buf).unwrap();
+            let request_text = String::from_utf8_lossy(&buf[..read]).to_string();
+            stream.write_all(response.as_bytes()).unwrap();
+            request_text
+        });
+
+        let headers = vec![("x-demo".to_string(), "yes".to_string())];
+        let status =
+            run_safe_http_request_sync(&format!("http://{addr}/status"), "HEAD", &headers).unwrap();
+        assert_eq!(status, 404);
+
+        let request_text = handle.join().unwrap();
+        assert!(request_text.contains("HEAD /status HTTP/1.1"));
+        assert!(request_text.to_lowercase().contains("x-demo: yes"));
+    }
+
+    #[test]
+    fn safe_http_request_reports_ok_true_for_a_real_http_status() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let response = "HTTP/1.1 200 OK\r\ncontent-length: 0\r\nconnection: close\r\n\r\n";
+
+        std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buf = [0_u8; 2048];
+            let _ = stream.read(&mut buf).unwrap();
+            stream.write_all(response.as_bytes()).unwrap();
+        });
+
+        let input =
+            format!(r#"{{"url":"http://{addr}/ok","method":"HEAD","headers":{{"x-demo":"yes"}}}}"#);
+        let result = run_safe_http_request(&input).unwrap();
+        assert!(result.contains("\"ok\":true"));
+        assert!(result.contains("\"status\":200"));
+    }
+
+    #[test]
+    #[ignore] // manual verification only: hits the network and a real built artifact
+    fn urlcheck_plugin_reports_per_url_results_without_trapping_on_unreachable_host() {
+        let wasm_path =
+            Path::new("../../plugins/urlcheck/target/wasm32-wasip1/release/slate_urlcheck.wasm");
+        let mut plugin =
+            WasmPlugin::from_file(wasm_path, Permissions::default()).expect("load plugin");
+        plugin.init(WidgetConfig {
+            position: slate_plugin_sdk::Position {
+                row: 0,
+                col: 0,
+                row_span: 1,
+                col_span: 1,
+            },
+            settings: std::collections::HashMap::from([(
+                "urls".to_string(),
+                serde_json::json!([
+                    "https://github.com",
+                    "https://example.com",
+                    "https://httpbin.org/status/500",
+                    "not-a-valid-url",
+                    "https://this-domain-does-not-exist-12345.example"
+                ]),
+            )]),
+            refresh_interval: None,
+        });
+
+        let content = plugin.refresh();
+        match content {
+            WidgetContent::List { items, .. } => {
+                assert_eq!(
+                    items.len(),
+                    5,
+                    "expected all 5 URLs to be reported, got {items:?}"
+                );
+            }
+            other => panic!("expected list content with per-url results, got {other:?}"),
+        }
     }
 
     #[test]

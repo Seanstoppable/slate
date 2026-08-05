@@ -210,8 +210,16 @@ If `cargo fmt --all -- --check` reports diffs, run `cargo fmt --all` to fix them
 
 - **Tests**: Run on ubuntu, windows, macos
 - **Lint**: `cargo fmt --check` + `cargo clippy --workspace --all-targets -- -D warnings` (any clippy warning fails the build)
-- **Coverage**: Must stay above **85%** (currently ~90%)
+- **Coverage**: Must stay above **85%**, measured by `cargo tarpaulin --workspace` on `ubuntu-latest` only (currently ~90%, but the margin can still be thin for new low-level code — see "Coverage Gotchas" below).
 - Triggers on PR and push to main branch
+
+## Coverage Gotchas
+
+Learned the hard way while fixing a failing coverage check on the urlcheck PR:
+
+- **Local coverage % is not reliable cross-platform.** `cargo tarpaulin` run locally on Windows/macOS can report a *different total line count* than the CI's `ubuntu-latest` job for the exact same file, because `#[cfg(windows)]`/`#[cfg(not(windows))]`-gated code (including test-only branches) changes what gets compiled and counted per OS. Don't trust a local pass to predict CI — verify against Linux (Docker `rust:latest` + `cargo install cargo-tarpaulin`, or WSL) before assuming a fix is sufficient.
+- **Extism host-function closures are structurally hard to cover.** The `Function::new(name, ..., |plugin, inputs, outputs, _| { ... })` closures registered in `wasm_host.rs` (e.g. `make_exec_function`, `make_safe_http_function`) can only execute via a real WASM guest calling through the full Extism ABI (alloc/input/output plumbing) — no native unit test can invoke them directly. Pull all real logic out into a plain, testable function (as already done) and accept the thin wrapper closure as an uncovered gap; don't try to force coverage of the glue itself.
+- **New host-function-style code should over-invest in tests.** Because the threshold has so little margin, adding even a small, well-factored feature (a handful of untestable glue lines) can tip total coverage below 85%. When adding code in `slate-plugin-host` or similar low-level plumbing, add extra tests for every reachable branch (e.g. local `TcpListener`-backed tests for HTTP success/error/header paths, following the pattern in `host_functions.rs`) rather than assuming the existing suite has slack to absorb it.
 
 ### Lessons from prior sessions
 

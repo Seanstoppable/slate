@@ -1,0 +1,1 @@
+{"type":"list","items":[{"id":"https://example.com","title":"🟢 [200] https://example.com","subtitle":"OK","style":{}},{"id":"https://status.example.org","title":"🔴 [503] https://status.example.org","subtitle":"HTTP 503","style":{}}],"selectable":true,"actions":[{"id":"open","label":"Open in browser","key":"o","confirm":false}]}
