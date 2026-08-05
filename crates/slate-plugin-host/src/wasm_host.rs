@@ -537,7 +537,10 @@ mod tests {
                 assert_eq!(rows[0][0].text, "AAPL");
                 assert!(rows[0][0].style.bold);
                 assert_eq!(rows[0][1].text, "+1.96%");
-                assert!(matches!(rows[0][1].style.fg, Some(slate_plugin_sdk::Color::Green)));
+                assert!(matches!(
+                    rows[0][1].style.fg,
+                    Some(slate_plugin_sdk::Color::Green)
+                ));
                 assert_eq!(rows[1][0].text, "Plain");
                 assert_eq!(rows[1][1].text, "Row");
             }
