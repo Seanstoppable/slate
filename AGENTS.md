@@ -46,6 +46,22 @@ All widgets implement this regardless of runtime tier:
 - `on_action(action_id, item_id)` → handle list item actions, returns optional WidgetAction
 - `on_focus()` / `on_blur()` → lifecycle hooks
 
+**Interactivity gotcha:** `on_key` only mutates a widget's internal state — it does not
+repaint by itself. `slate-core/src/app.rs`'s key handler calls `widget.refresh()`
+immediately after every forwarded `on_key`, so state changes appear on the very next
+frame. If you add a new key-handling code path in `app.rs`, make sure it re-renders too,
+or keypresses will look like no-ops until the next scheduled refresh tick.
+
+For any widget whose state changes over time on its own (timers, counters, anything
+ticking while focused), set a short per-widget `refresh_interval` (e.g. `1` second) in
+its `[[widget]]` config entry — the `[global] refresh_interval` default (300s) is tuned
+for passive polling widgets, not live countdowns. See `scripts/pomodoro.lua` and its
+config entry in `examples/slate.toml` for the pattern.
+
+Focused widgets render with a double-line border (`BorderType::Double` in
+`slate-core/src/render.rs`) in addition to the cyan highlight color, so keep both in
+sync if you touch focus rendering.
+
 ### WidgetContent (`slate-plugin-sdk/src/content.rs`)
 Six display types: `Text`, `Table`, `KeyValue`, `List`, `Chart`, `Empty`
 
@@ -182,6 +198,13 @@ cargo test --workspace
 ```
 
 If `cargo fmt --all -- --check` reports diffs, run `cargo fmt --all` to fix them in place. If `cargo clippy` reports warnings, fix them or add a scoped `#[allow(...)]` with justification — do not suppress lints workspace-wide.
+
+**Run `cargo fmt --all` right after editing any `.rs` file, not just before opening the PR.** CI's lint job has failed in this project before purely because formatting was fixed up only at commit time; if you edit Rust across multiple turns, reformat after each edit batch so a stray fmt diff doesn't surprise you at PR time.
+
+## Known Flaky CI Checks
+
+- `slate-plugin-manager` has tests (`check_single_returns_update...`, `check_outdated_collects_only...`, and similar) that hit the *real* GitHub releases API. These occasionally fail on `macos-latest` CI runners due to network flakiness, not code changes. If a PR you didn't touch `slate-plugin-manager` in shows these failing, verify the same tests pass locally and on the base branch's latest run, then just re-run CI — do not "fix" by loosening assertions or skipping the tests.
+- A macOS job failure in the test matrix can cause ubuntu/windows jobs to show as canceled rather than failed — re-run the whole workflow, not just the failed job, if you see a mix of "failure" and "cancelled".
 
 ## CI
 
