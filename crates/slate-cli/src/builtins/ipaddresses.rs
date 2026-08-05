@@ -52,7 +52,7 @@ fn get_network_interfaces() -> Vec<(String, String)> {
     let networks = sysinfo::Networks::new_with_refreshed_list();
     let mut results: Vec<(String, String)> = Vec::new();
 
-    for (name, _data) in networks.iter() {
+    for name in networks.keys() {
         let ip = get_interface_ip(name);
         results.push((name.clone(), ip));
     }

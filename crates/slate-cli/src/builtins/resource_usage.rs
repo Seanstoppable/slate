@@ -208,7 +208,7 @@ mod tests {
             8 * 1_073_741_824,
             4 * 1_073_741_824,
             2 * 1_073_741_824,
-            1 * 1_073_741_824,
+            1_073_741_824,
             8,
             None,
         );
@@ -253,8 +253,7 @@ mod tests {
 
         match content {
             WidgetContent::KeyValue { pairs } => {
-                let map: HashMap<_, _> =
-                    pairs.into_iter().map(|(key, value)| (key, value)).collect();
+                let map: HashMap<_, _> = pairs.into_iter().collect();
                 assert_eq!(map.get("CPU").map(|cell| cell.text.as_str()), Some("55.0%"));
                 assert_eq!(
                     map.get("Memory").map(|cell| cell.text.as_str()),
@@ -287,8 +286,7 @@ mod tests {
 
         match content {
             WidgetContent::KeyValue { pairs } => {
-                let map: HashMap<_, _> =
-                    pairs.into_iter().map(|(key, value)| (key, value)).collect();
+                let map: HashMap<_, _> = pairs.into_iter().collect();
                 assert_eq!(
                     map.get("Memory").map(|cell| cell.text.as_str()),
                     Some("7.0/10.0 GB (70%)")

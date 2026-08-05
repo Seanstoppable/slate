@@ -28,19 +28,25 @@ pub fn compute_grid(area: Rect, rows: u16, cols: u16) -> Vec<Vec<Rect>> {
 
 /// Compute the area for a widget that may span multiple grid cells.
 /// Returns the union of grid cells from (row, col) to (row + row_span - 1, col + col_span - 1).
-pub fn compute_widget_area(grid: &[Vec<Rect>], row: u16, col: u16, row_span: u16, col_span: u16) -> Option<Rect> {
+pub fn compute_widget_area(
+    grid: &[Vec<Rect>],
+    row: u16,
+    col: u16,
+    row_span: u16,
+    col_span: u16,
+) -> Option<Rect> {
     let row = row as usize;
     let col = col as usize;
     let row_span = row_span.max(1) as usize;
     let col_span = col_span.max(1) as usize;
 
     // Check bounds
-    if row >= grid.len() || col >= grid.get(0).map_or(0, |r| r.len()) {
+    if row >= grid.len() || col >= grid.first().map_or(0, |r| r.len()) {
         return None;
     }
 
     let end_row = (row + row_span).min(grid.len());
-    let end_col = (col + col_span).min(grid.get(0).map_or(0, |r| r.len()));
+    let end_col = (col + col_span).min(grid.first().map_or(0, |r| r.len()));
 
     let top_left = grid[row][col];
     let bottom_right = grid[end_row - 1][end_col - 1];

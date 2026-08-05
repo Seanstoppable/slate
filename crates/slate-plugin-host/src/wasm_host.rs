@@ -188,13 +188,13 @@ fn parse_widget_content(json_str: &str) -> WidgetContent {
                 .as_array()
                 .map(|arr| {
                     arr.iter()
-                        .filter_map(|item| {
+                        .map(|item| {
                             let title = item["title"]
                                 .as_str()
                                 .or_else(|| item["text"].as_str())
                                 .or_else(|| item.as_str())
                                 .unwrap_or("");
-                            Some(slate_plugin_sdk::ListItem {
+                            slate_plugin_sdk::ListItem {
                                 id: item["id"].as_str().unwrap_or("").to_string(),
                                 title: title.to_string(),
                                 subtitle: item["subtitle"]
@@ -203,7 +203,7 @@ fn parse_widget_content(json_str: &str) -> WidgetContent {
                                     .map(String::from),
                                 icon: item["icon"].as_str().map(String::from),
                                 style: Default::default(),
-                            })
+                            }
                         })
                         .collect()
                 })
@@ -367,9 +367,7 @@ impl slate_plugin_sdk::Widget for WasmPlugin {
             self.plugin.call::<&str, String>("refresh", &input)
         }));
         match result {
-            Ok(call_result) => {
-                widget_content_from_refresh_result(call_result, &self.metadata.name)
-            }
+            Ok(call_result) => widget_content_from_refresh_result(call_result, &self.metadata.name),
             Err(_) => {
                 warn!(plugin = %self.metadata.name, "Plugin panicked during refresh");
                 WidgetContent::Text {

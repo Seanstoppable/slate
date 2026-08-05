@@ -182,7 +182,7 @@ impl slate_plugin_sdk::Widget for LuaPlugin {
         match result {
             Ok(content) => {
                 // Try to parse as JSON WidgetContent
-                serde_json::from_str(&content).unwrap_or_else(|_| WidgetContent::Text {
+                serde_json::from_str(&content).unwrap_or(WidgetContent::Text {
                     content,
                     scrollable: false,
                     wrap: true,
@@ -208,12 +208,10 @@ impl slate_plugin_sdk::Widget for LuaPlugin {
         item_id: &str,
     ) -> Option<slate_plugin_sdk::WidgetAction> {
         if let Ok(func) = self.lua.globals().get::<LuaFunction>("on_action") {
-            if let Ok(result) =
+            if let Ok(Some(json_str)) =
                 func.call::<Option<String>>((action_id.to_string(), item_id.to_string()))
             {
-                if let Some(json_str) = result {
-                    return parse_widget_action(&json_str);
-                }
+                return parse_widget_action(&json_str);
             }
         }
         None
@@ -243,12 +241,11 @@ fn parse_widget_action(json_str: &str) -> Option<slate_plugin_sdk::WidgetAction>
         Some(slate_plugin_sdk::WidgetAction::OpenUrl(url.to_string()))
     } else if let Some(msg) = value.get("notify").and_then(|v| v.as_str()) {
         Some(slate_plugin_sdk::WidgetAction::Notify(msg.to_string()))
-    } else if let Some(detail) = value.get("show_detail").and_then(|v| v.as_str()) {
-        Some(slate_plugin_sdk::WidgetAction::ShowDetail(
-            detail.to_string(),
-        ))
     } else {
-        None
+        value
+            .get("show_detail")
+            .and_then(|v| v.as_str())
+            .map(|detail| slate_plugin_sdk::WidgetAction::ShowDetail(detail.to_string()))
     }
 }
 
@@ -787,17 +784,25 @@ mod tests {
         let dir = std::env::temp_dir().join("slate_test_lua_helpers_text");
         std::fs::create_dir_all(&dir).unwrap();
         let script_path = dir.join("helpers_text.lua");
-        std::fs::write(&script_path, r#"
+        std::fs::write(
+            &script_path,
+            r#"
             name = "Helpers Text"
             function refresh()
                 return slate.text("Hello\nWorld", {scrollable = true, wrap = false})
             end
-        "#).unwrap();
+        "#,
+        )
+        .unwrap();
 
         let mut plugin = LuaPlugin::from_file(&script_path).unwrap();
         let content = plugin.refresh();
         match content {
-            WidgetContent::Text { content, scrollable, wrap } => {
+            WidgetContent::Text {
+                content,
+                scrollable,
+                wrap,
+            } => {
                 assert_eq!(content, "Hello\nWorld");
                 assert!(scrollable);
                 assert!(!wrap);
@@ -812,7 +817,9 @@ mod tests {
         let dir = std::env::temp_dir().join("slate_test_lua_helpers_list");
         std::fs::create_dir_all(&dir).unwrap();
         let script_path = dir.join("helpers_list.lua");
-        std::fs::write(&script_path, r#"
+        std::fs::write(
+            &script_path,
+            r#"
             name = "Helpers List"
             function refresh()
                 local items = {
@@ -821,12 +828,16 @@ mod tests {
                 }
                 return slate.list(items, {selectable = true})
             end
-        "#).unwrap();
+        "#,
+        )
+        .unwrap();
 
         let mut plugin = LuaPlugin::from_file(&script_path).unwrap();
         let content = plugin.refresh();
         match content {
-            WidgetContent::List { items, selectable, .. } => {
+            WidgetContent::List {
+                items, selectable, ..
+            } => {
                 assert_eq!(items.len(), 2);
                 assert_eq!(items[0].id, "a");
                 assert_eq!(items[0].title, "First");
@@ -843,7 +854,9 @@ mod tests {
         let dir = std::env::temp_dir().join("slate_test_lua_helpers_kv");
         std::fs::create_dir_all(&dir).unwrap();
         let script_path = dir.join("helpers_kv.lua");
-        std::fs::write(&script_path, r#"
+        std::fs::write(
+            &script_path,
+            r#"
             name = "Helpers KV"
             function refresh()
                 local pairs = {
@@ -852,7 +865,9 @@ mod tests {
                 }
                 return slate.key_value(pairs)
             end
-        "#).unwrap();
+        "#,
+        )
+        .unwrap();
 
         let mut plugin = LuaPlugin::from_file(&script_path).unwrap();
         let content = plugin.refresh();
@@ -872,12 +887,16 @@ mod tests {
         let dir = std::env::temp_dir().join("slate_test_lua_helpers_esc");
         std::fs::create_dir_all(&dir).unwrap();
         let script_path = dir.join("helpers_esc.lua");
-        std::fs::write(&script_path, r#"
+        std::fs::write(
+            &script_path,
+            r#"
             name = "Helpers Escape"
             function refresh()
                 return slate.text('He said "hello"\nand left')
             end
-        "#).unwrap();
+        "#,
+        )
+        .unwrap();
 
         let mut plugin = LuaPlugin::from_file(&script_path).unwrap();
         let content = plugin.refresh();
@@ -896,17 +915,26 @@ mod tests {
         let dir = std::env::temp_dir().join("slate_test_lua_helpers_notify");
         std::fs::create_dir_all(&dir).unwrap();
         let script_path = dir.join("helpers_notify.lua");
-        std::fs::write(&script_path, r#"
+        std::fs::write(
+            &script_path,
+            r#"
             name = "Helpers Notify"
             function refresh() return slate.text("hi") end
             function on_action(action_id, item_id)
                 return slate.notify("Something happened!")
             end
-        "#).unwrap();
+        "#,
+        )
+        .unwrap();
 
         let mut plugin = LuaPlugin::from_file(&script_path).unwrap();
         let result = plugin.on_action("select", "item1");
-        assert_eq!(result, Some(slate_plugin_sdk::WidgetAction::Notify("Something happened!".to_string())));
+        assert_eq!(
+            result,
+            Some(slate_plugin_sdk::WidgetAction::Notify(
+                "Something happened!".to_string()
+            ))
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 }

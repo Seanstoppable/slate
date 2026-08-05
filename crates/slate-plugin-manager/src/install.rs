@@ -360,9 +360,7 @@ mod tests {
             Err(err) => err,
         };
 
-        if err
-            .to_string()
-            .contains("error sending request for url")
+        if err.to_string().contains("error sending request for url")
             || err.to_string().contains("tunnel error")
         {
             eprintln!("skipping network-dependent assertion: {err}");
@@ -396,7 +394,10 @@ mod tests {
         let installer = PluginInstaller::new(plugins_dir.clone());
 
         let err = installer
-            .install("github.com/sqlc-dev/definitely-no-such-plugin-for-slate-tests", None)
+            .install(
+                "github.com/sqlc-dev/definitely-no-such-plugin-for-slate-tests",
+                None,
+            )
             .await
             .unwrap_err();
 

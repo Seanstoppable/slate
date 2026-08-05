@@ -255,8 +255,7 @@ mod tests {
         let charging = build_power_content(true, "Charging", 85);
         match charging {
             WidgetContent::KeyValue { pairs } => {
-                let map: HashMap<_, _> =
-                    pairs.into_iter().map(|(key, value)| (key, value)).collect();
+                let map: HashMap<_, _> = pairs.into_iter().collect();
                 assert_eq!(
                     map.get("Status").map(|cell| cell.text.as_str()),
                     Some("Charging")
@@ -272,8 +271,7 @@ mod tests {
         let low = build_power_content(true, "Low", 10);
         match low {
             WidgetContent::KeyValue { pairs } => {
-                let map: HashMap<_, _> =
-                    pairs.into_iter().map(|(key, value)| (key, value)).collect();
+                let map: HashMap<_, _> = pairs.into_iter().collect();
                 assert_eq!(
                     map.get("Status").map(|cell| cell.text.as_str()),
                     Some("Low")
@@ -293,8 +291,7 @@ mod tests {
         let unknown = build_power_content(false, "Unknown", 0);
         match unknown {
             WidgetContent::KeyValue { pairs } => {
-                let map: HashMap<_, _> =
-                    pairs.into_iter().map(|(key, value)| (key, value)).collect();
+                let map: HashMap<_, _> = pairs.into_iter().collect();
                 assert_eq!(
                     map.get("Status").map(|cell| cell.text.as_str()),
                     Some("Unknown")
@@ -313,8 +310,7 @@ mod tests {
         ] {
             match build_power_content(true, expected_status, percent) {
                 WidgetContent::KeyValue { pairs } => {
-                    let map: HashMap<_, _> =
-                        pairs.into_iter().map(|(key, value)| (key, value)).collect();
+                    let map: HashMap<_, _> = pairs.into_iter().collect();
                     assert_eq!(
                         map.get("Status").map(|cell| cell.text.as_str()),
                         Some(expected_status)

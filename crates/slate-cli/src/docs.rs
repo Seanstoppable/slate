@@ -239,7 +239,7 @@ pub async fn docs(output_dir: Option<&str>) -> Result<()> {
         }
     }
 
-    plugins.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    plugins.sort_by_key(|a| a.name.to_lowercase());
 
     let html = generate_docs_html(&plugins)?;
     let out_file = out.join("index.html");
@@ -295,11 +295,12 @@ fn generate_config_example(name: &str, _kind: &str, manifest: &DocsManifest) -> 
             lines.push(format!("{} = \"${{{}}}\"", secret, secret.to_uppercase()));
         }
     }
-    if !manifest.permissions.network.is_empty() && manifest.permissions.network[0] != "*" {
-        if name == "weather" {
-            lines.push("provider = \"openweathermap\"".to_string());
-            lines.push("location = \"San Francisco\"".to_string());
-        }
+    if !manifest.permissions.network.is_empty()
+        && manifest.permissions.network[0] != "*"
+        && name == "weather"
+    {
+        lines.push("provider = \"openweathermap\"".to_string());
+        lines.push("location = \"San Francisco\"".to_string());
     }
     if !manifest.permissions.exec.is_empty() && name == "wego" {
         lines.push("days = \"1\"".to_string());
@@ -730,23 +731,31 @@ mod tests {
         assert!(config_example.contains("enabled = true  # Turn on the widget"));
         assert!(config_example.contains("count = 1  # (required)"));
 
-        let weather = generate_config_example("weather", "plugin", &DocsManifest {
-            permissions: DocsManifestPermissions {
-                network: vec!["api.openweathermap.org".to_string()],
+        let weather = generate_config_example(
+            "weather",
+            "plugin",
+            &DocsManifest {
+                permissions: DocsManifestPermissions {
+                    network: vec!["api.openweathermap.org".to_string()],
+                    ..Default::default()
+                },
                 ..Default::default()
             },
-            ..Default::default()
-        });
+        );
         assert!(weather.contains("provider = \"openweathermap\""));
         assert!(weather.contains("location = \"San Francisco\""));
 
-        let wego = generate_config_example("wego", "plugin", &DocsManifest {
-            permissions: DocsManifestPermissions {
-                exec: vec!["wego".to_string()],
+        let wego = generate_config_example(
+            "wego",
+            "plugin",
+            &DocsManifest {
+                permissions: DocsManifestPermissions {
+                    exec: vec!["wego".to_string()],
+                    ..Default::default()
+                },
                 ..Default::default()
             },
-            ..Default::default()
-        });
+        );
         assert!(wego.contains("days = \"1\""));
     }
 
@@ -889,6 +898,7 @@ mod tests {
     }
 
     #[tokio::test(flavor = "current_thread")]
+    #[allow(clippy::await_holding_lock)]
     async fn docs_generates_from_plugin_builtin_and_script_directories() {
         let _lock = cwd_lock().lock().unwrap();
         let dir = tempdir().unwrap();
@@ -977,6 +987,7 @@ function refresh() return '{"type":"text","content":"Hello","scrollable":false,"
     }
 
     #[tokio::test(flavor = "current_thread")]
+    #[allow(clippy::await_holding_lock)]
     async fn docs_uses_default_output_and_skips_invalid_entries() {
         let _lock = cwd_lock().lock().unwrap();
         let dir = tempdir().unwrap();

@@ -5,7 +5,7 @@ use crate::lockfile::Lockfile;
 
 /// Check for available plugin updates.
 pub struct UpdateChecker {
-    installer: PluginInstaller,
+    _installer: PluginInstaller,
 }
 
 #[derive(Debug, Clone)]
@@ -18,7 +18,9 @@ pub struct AvailableUpdate {
 
 impl UpdateChecker {
     pub fn new(installer: PluginInstaller) -> Self {
-        Self { installer }
+        Self {
+            _installer: installer,
+        }
     }
 
     /// Check all locked plugins for available updates.
@@ -120,7 +122,7 @@ mod tests {
     #[test]
     fn new_stores_installer() {
         let checker = UpdateChecker::new(PluginInstaller::new(PathBuf::from("plugins")));
-        let _ = checker.installer;
+        let _ = checker._installer;
     }
 
     #[tokio::test]
