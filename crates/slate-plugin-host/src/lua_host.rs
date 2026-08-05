@@ -632,8 +632,7 @@ mod tests {
         // scripts/pomodoro.lua demonstrates that a Lua widget can be fully
         // interactive -- state machine, keybindings, rendering -- without
         // touching any Rust code or recompiling the host binary.
-        let script_path =
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scripts/pomodoro.lua");
+        let script_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scripts/pomodoro.lua");
         let mut plugin = LuaPlugin::from_file(&script_path).unwrap();
 
         // Starts paused, showing the full work session.

@@ -580,7 +580,11 @@ mod tests {
 
         fn refresh(&mut self) -> WidgetContent {
             WidgetContent::Text {
-                content: if self.toggled { "on".to_string() } else { "off".to_string() },
+                content: if self.toggled {
+                    "on".to_string()
+                } else {
+                    "off".to_string()
+                },
                 scrollable: false,
                 wrap: true,
             }
