@@ -1,0 +1,14 @@
+[plugin]
+name = "yfinance"
+description = "Stock, ETF, and futures quotes via Yahoo Finance (no API key required)"
+tags = ["finance", "stocks"]
+version = "0.1.0"
+author = "Slate Community"
+language = "rust"
+
+[permissions]
+network = ["query1.finance.yahoo.com"]
+
+[config]
+symbols = { type = "array", required = true, description = "Yahoo Finance symbols to track (e.g. ['AAPL', 'MSFT', 'GC=F'])" }
+sort = { type = "boolean", required = false, description = "Sort quotes by percent change, descending (default: false)" }
