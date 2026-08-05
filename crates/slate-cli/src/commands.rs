@@ -46,8 +46,8 @@ fn load_widget_or_error(
             let name = entry
                 .widget_type
                 .split('/')
-                .last()
-                .or_else(|| entry.widget_type.split(':').last())
+                .next_back()
+                .or_else(|| entry.widget_type.split(':').next_back())
                 .unwrap_or(&entry.widget_type)
                 .to_string();
             eprintln!("Warning: Failed to load '{}': {}", entry.widget_type, e);
@@ -94,7 +94,7 @@ fn try_load_widget(
         let plugin_name = entry
             .widget_type
             .split('/')
-            .last()
+            .next_back()
             .unwrap_or(&entry.widget_type);
 
         let plugins_dir = PluginInstaller::default_dir()?;
@@ -280,7 +280,7 @@ pub async fn update() -> Result<()> {
             let plugin_name = entry
                 .widget_type
                 .split('/')
-                .last()
+                .next_back()
                 .unwrap_or(&entry.widget_type);
             print!("Updating {}...", plugin_name);
             match installer.install(&entry.widget_type, None).await {
@@ -321,10 +321,7 @@ pub async fn outdated() -> Result<()> {
     if updates.is_empty() {
         println!("All plugins are up to date.");
     } else {
-        println!(
-            "{:<20} {:<12} {:<12} {}",
-            "Plugin", "Current", "Latest", "Source"
-        );
+        println!("{:<20} {:<12} {:<12} Source", "Plugin", "Current", "Latest");
         println!("{}", "-".repeat(70));
         for update in &updates {
             println!(
@@ -345,13 +342,13 @@ pub async fn list() -> Result<()> {
     if installed.is_empty() {
         println!("No plugins installed.");
     } else {
-        println!("{:<20} {:<12} {}", "Plugin", "Version", "Source");
+        println!("{:<20} {:<12} Source", "Plugin", "Version");
         println!("{}", "-".repeat(60));
         for name in &installed {
             if let Some(locked) = lockfile.get(name) {
                 println!("{:<20} {:<12} {}", name, locked.version, locked.source);
             } else {
-                println!("{:<20} {:<12} {}", name, "?", "unlocked");
+                println!("{:<20} {:<12} unlocked", name, "?");
             }
         }
     }
@@ -502,30 +499,26 @@ fn validate_wasm_binary(path: &std::path::Path) -> Vec<String> {
     for payload in parser.parse_all(&bytes) {
         match payload {
             Ok(wasmparser::Payload::ExportSection(reader)) => {
-                for export in reader {
-                    if let Ok(export) = export {
-                        found_exports.push(export.name.to_string());
-                    }
+                for export in reader.into_iter().flatten() {
+                    found_exports.push(export.name.to_string());
                 }
             }
             Ok(wasmparser::Payload::ImportSection(reader)) => {
-                for import in reader {
-                    if let Ok(import) = import {
-                        // Flag imports from unknown namespaces that Extism won't provide
-                        let module = import.module;
-                        let known_modules = [
-                            "extism:host/env",
-                            "extism:host/user",
-                            "env",
-                            "wasi_snapshot_preview1",
-                            "wasi_unstable",
-                        ];
-                        if !known_modules.contains(&module) {
-                            bad_imports.push(format!(
-                                "{}::{} (unknown module '{}')",
-                                module, import.name, module
-                            ));
-                        }
+                for import in reader.into_iter().flatten() {
+                    // Flag imports from unknown namespaces that Extism won't provide
+                    let module = import.module;
+                    let known_modules = [
+                        "extism:host/env",
+                        "extism:host/user",
+                        "env",
+                        "wasi_snapshot_preview1",
+                        "wasi_unstable",
+                    ];
+                    if !known_modules.contains(&module) {
+                        bad_imports.push(format!(
+                            "{}::{} (unknown module '{}')",
+                            module, import.name, module
+                        ));
                     }
                 }
             }
@@ -576,7 +569,7 @@ fn resolve_wasm_path(widget_type: &str) -> Result<std::path::PathBuf> {
         let path = shellexpand::tilde(path);
         Ok(std::path::PathBuf::from(path.as_ref()))
     } else {
-        let plugin_name = widget_type.split('/').last().unwrap_or(widget_type);
+        let plugin_name = widget_type.split('/').next_back().unwrap_or(widget_type);
         let plugins_dir = PluginInstaller::default_dir()?;
         Ok(plugins_dir
             .join(plugin_name)
@@ -615,7 +608,13 @@ pub async fn check(config_path: Option<&str>) -> Result<()> {
 
         if entry.widget_type.starts_with("builtin:") {
             let name = entry.widget_type.trim_start_matches("builtin:");
-            let known = ["resource_usage", "power", "firewall", "ipaddresses", "logfile"];
+            let known = [
+                "resource_usage",
+                "power",
+                "firewall",
+                "ipaddresses",
+                "logfile",
+            ];
             if known.contains(&name) {
                 println!("  {:2}. {} ✓ builtin", i + 1, label);
                 ok += 1;
@@ -784,7 +783,7 @@ fn extract_config_keys_from_source(plugin_dir: &Path) -> Vec<(String, &'static s
                 entries
                     .filter_map(|e| e.ok())
                     .map(|e| e.path())
-                    .filter(|p| p.extension().map_or(false, |ext| ext == "rs"))
+                    .filter(|p| p.extension().is_some_and(|ext| ext == "rs"))
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default()
@@ -793,8 +792,7 @@ fn extract_config_keys_from_source(plugin_dir: &Path) -> Vec<(String, &'static s
     };
 
     let settings_re =
-        regex::Regex::new(r#"settings\["([a-zA-Z_][a-zA-Z0-9_]*)"\](\.[a-z_0-9]+\(\))?"#)
-            .unwrap();
+        regex::Regex::new(r#"settings\["([a-zA-Z_][a-zA-Z0-9_]*)"\](\.[a-z_0-9]+\(\))?"#).unwrap();
     let config_get_re = regex::Regex::new(r#"config::get\("([a-zA-Z_][a-zA-Z0-9_]*)"\)"#).unwrap();
 
     for file in files {
@@ -826,7 +824,7 @@ fn extract_config_keys_from_source(plugin_dir: &Path) -> Vec<(String, &'static s
         }
     }
 
-    keys.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
+    keys.sort_by_key(|a| a.0.to_lowercase());
     keys
 }
 
@@ -859,7 +857,12 @@ pub async fn lint(path: Option<&str>) -> Result<()> {
     if let Some(meta) = meta {
         // Check required fields
         for field in ["name", "description", "version"] {
-            if meta.get(field).and_then(|v| v.as_str()).unwrap_or("").is_empty() {
+            if meta
+                .get(field)
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .is_empty()
+            {
                 println!("  ✗ Missing required field: {}", field);
                 errors += 1;
             }
@@ -873,7 +876,7 @@ pub async fn lint(path: Option<&str>) -> Result<()> {
                 warnings += 1;
             } else {
                 let mut sorted = tag_strings.clone();
-                sorted.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+                sorted.sort_by_key(|a| a.to_lowercase());
                 if tag_strings != sorted {
                     println!(
                         "  ✗ tags are not alphabetically sorted\n    have: {:?}\n    want: {:?}",
@@ -947,7 +950,7 @@ pub async fn lint(path: Option<&str>) -> Result<()> {
         if let Some(table) = config_section {
             let keys: Vec<&String> = table.keys().collect();
             let mut sorted_keys = keys.clone();
-            sorted_keys.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+            sorted_keys.sort_by_key(|a| a.to_lowercase());
             if keys != sorted_keys {
                 println!("  ✗ [config] keys are not alphabetically sorted");
                 errors += 1;
@@ -960,10 +963,7 @@ pub async fn lint(path: Option<&str>) -> Result<()> {
     if errors == 0 && warnings == 0 {
         println!("✓ Plugin passes baseline");
     } else {
-        println!(
-            "Results: {} errors, {} warnings",
-            errors, warnings
-        );
+        println!("Results: {} errors, {} warnings", errors, warnings);
         if errors > 0 {
             println!("Run `slate lint --fix` to auto-generate [config] from source.");
         }
@@ -1231,12 +1231,7 @@ mod tests {
 
     #[test]
     fn current_os_matches_platform_constant() {
-        let expected = match std::env::consts::OS {
-            "macos" => "macos",
-            "linux" => "linux",
-            "windows" => "windows",
-            other => other,
-        };
+        let expected = std::env::consts::OS;
         assert_eq!(current_os(), expected);
     }
 
@@ -1493,7 +1488,11 @@ mod tests {
     #[tokio::test]
     async fn create_scaffolds_nested_plugin_project_paths() {
         let dir = tempdir().unwrap();
-        let name = dir.path().join("nested").join("plugins").join("sample-plugin");
+        let name = dir
+            .path()
+            .join("nested")
+            .join("plugins")
+            .join("sample-plugin");
 
         create(name.to_str().unwrap()).await.unwrap();
 
@@ -1941,6 +1940,7 @@ position = {{ row = 3, col = 1 }}
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn check_uses_default_config_and_handles_wasm_success_and_extism_failure() {
         let _lock = env_lock().lock().unwrap_or_else(|e| e.into_inner());
         let dir = tempdir().unwrap();
@@ -1991,6 +1991,7 @@ position = {{ row = 0, col = 1 }}
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn list_handles_empty_and_unlocked_plugins_in_default_directory() {
         let _lock = env_lock().lock().unwrap_or_else(|e| e.into_inner());
         let dir = tempdir().unwrap();
@@ -2017,6 +2018,7 @@ position = {{ row = 0, col = 1 }}
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn install_and_update_return_errors_for_invalid_default_config() {
         let _lock = env_lock().lock().unwrap_or_else(|e| e.into_inner());
         let dir = tempdir().unwrap();
@@ -2025,13 +2027,18 @@ position = {{ row = 0, col = 1 }}
         write_default_config("[[widget]]\ntype = ");
 
         let install_error = install().await.unwrap_err();
-        assert!(install_error.to_string().contains("Failed to parse slate.toml"));
+        assert!(install_error
+            .to_string()
+            .contains("Failed to parse slate.toml"));
 
         let update_error = update().await.unwrap_err();
-        assert!(update_error.to_string().contains("Failed to parse slate.toml"));
+        assert!(update_error
+            .to_string()
+            .contains("Failed to parse slate.toml"));
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn list_remove_and_outdated_return_errors_for_invalid_default_lockfile() {
         let _lock = env_lock().lock().unwrap_or_else(|e| e.into_inner());
         let dir = tempdir().unwrap();
@@ -2043,13 +2050,18 @@ position = {{ row = 0, col = 1 }}
         assert!(list_error.to_string().contains("Failed to parse lockfile"));
 
         let remove_error = remove("clock").await.unwrap_err();
-        assert!(remove_error.to_string().contains("Failed to parse lockfile"));
+        assert!(remove_error
+            .to_string()
+            .contains("Failed to parse lockfile"));
 
         let outdated_error = outdated().await.unwrap_err();
-        assert!(outdated_error.to_string().contains("Failed to parse lockfile"));
+        assert!(outdated_error
+            .to_string()
+            .contains("Failed to parse lockfile"));
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn list_and_remove_use_redirected_default_directories() {
         let _lock = env_lock().lock().unwrap_or_else(|e| e.into_inner());
         let dir = tempdir().unwrap();
@@ -2060,7 +2072,9 @@ position = {{ row = 0, col = 1 }}
         let plugin_name = "slate-cli-test-plugin";
         std::fs::create_dir_all(plugins_dir.join(plugin_name)).unwrap();
         std::fs::write(
-            plugins_dir.join(plugin_name).join(format!("{plugin_name}.wasm")),
+            plugins_dir
+                .join(plugin_name)
+                .join(format!("{plugin_name}.wasm")),
             b"wasm",
         )
         .unwrap();
@@ -2101,6 +2115,7 @@ position = {{ row = 0, col = 1 }}
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn outdated_returns_clean_result_with_empty_redirected_lockfile() {
         let _lock = env_lock().lock().unwrap_or_else(|e| e.into_inner());
         let dir = tempdir().unwrap();

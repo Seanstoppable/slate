@@ -186,7 +186,7 @@ mod tests {
     #[test]
     fn cli_parses_default_run_and_named_subcommands() {
         let cli = Cli::parse_from(["slate"]);
-        assert!(matches!(cli.command, None));
+        assert!(cli.command.is_none());
 
         let cli = Cli::parse_from(["slate", "run", "--config", "slate.toml"]);
         assert!(matches!(

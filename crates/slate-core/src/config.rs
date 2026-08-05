@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 /// Top-level slate configuration parsed from slate.toml.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Default)]
 pub struct SlateConfig {
     #[serde(default)]
     pub global: GlobalConfig,
@@ -139,17 +139,6 @@ impl SlateConfig {
     pub fn default_path() -> Result<PathBuf> {
         let config_dir = dirs::config_dir().context("Could not determine config directory")?;
         Ok(config_dir.join("slate").join("slate.toml"))
-    }
-}
-
-impl Default for SlateConfig {
-    fn default() -> Self {
-        Self {
-            global: GlobalConfig::default(),
-            layout: LayoutConfig::default(),
-            widget: vec![],
-            updates: UpdateConfig::default(),
-        }
     }
 }
 

@@ -12,7 +12,7 @@ impl LogfileWidget {
             .settings
             .get("filePath")
             .and_then(|v| v.as_str())
-            .map(|s| expand_path(s));
+            .map(expand_path);
 
         let max_lines = config
             .settings
@@ -90,7 +90,12 @@ fn expand_path(path: &str) -> PathBuf {
         if let Some(end) = result[start..].find('}') {
             let var_name = &result[start + 2..start + end];
             let value = std::env::var(var_name).unwrap_or_default();
-            result = format!("{}{}{}", &result[..start], value, &result[start + end + 1..]);
+            result = format!(
+                "{}{}{}",
+                &result[..start],
+                value,
+                &result[start + end + 1..]
+            );
         } else {
             break;
         }
@@ -168,8 +173,10 @@ mod tests {
         let expanded = expand_path("~/logs/app.log");
         let home = dirs_next_home().unwrap_or_default();
         assert!(expanded.to_string_lossy().starts_with(&home));
-        assert!(expanded.to_string_lossy().ends_with("logs/app.log")
-            || expanded.to_string_lossy().ends_with("logs\\app.log"));
+        assert!(
+            expanded.to_string_lossy().ends_with("logs/app.log")
+                || expanded.to_string_lossy().ends_with("logs\\app.log")
+        );
     }
 
     #[test]
@@ -208,7 +215,11 @@ mod tests {
         let mut widget = LogfileWidget::new(config);
         let content = widget.refresh();
         match content {
-            WidgetContent::Text { content, scrollable, .. } => {
+            WidgetContent::Text {
+                content,
+                scrollable,
+                ..
+            } => {
                 assert_eq!(content, "hello\nworld");
                 assert!(scrollable);
             }

@@ -73,6 +73,7 @@ impl App {
     }
 
     /// Register a widget into the application.
+    #[allow(clippy::too_many_arguments)]
     pub fn add_widget(
         &mut self,
         mut widget: BoxedWidget,
@@ -173,8 +174,7 @@ impl App {
                         Some(a) => a,
                         None => continue,
                     };
-                    let focused =
-                        self.focus.row == instance.row && self.focus.col == instance.col;
+                    let focused = self.focus.row == instance.row && self.focus.col == instance.col;
 
                     // Show detail view if set, otherwise normal content
                     if let Some(detail) = &instance.detail_content {
@@ -608,7 +608,15 @@ mod tests {
         config.layout.cols = 2;
         let mut app = App::new(config);
         app.add_widget(Box::new(MockTextWidget), 0, 0, 1, 1, Some(60), None);
-        app.add_widget(Box::new(MockListWidget::new(None)), 0, 1, 1, 1, Some(60), None);
+        app.add_widget(
+            Box::new(MockListWidget::new(None)),
+            0,
+            1,
+            1,
+            1,
+            Some(60),
+            None,
+        );
 
         assert_eq!(
             app.focused_widget()
@@ -632,9 +640,10 @@ mod tests {
             Box::new(CounterTextWidget::new(refresh_count)),
             0,
             0,
-             1,
-             1,
-            Some(1), None
+            1,
+            1,
+            Some(1),
+            None,
         );
 
         let now = Instant::now();
@@ -651,9 +660,10 @@ mod tests {
             Box::new(CounterTextWidget::new(refresh_count)),
             0,
             0,
-             1,
-             1,
-            Some(60), None
+            1,
+            1,
+            Some(60),
+            None,
         );
 
         let now = Instant::now();
@@ -822,11 +832,12 @@ mod tests {
         let mut app = App::new(SlateConfig::default());
         app.add_widget(
             Box::new(RecordingWidget::new(last_key.clone())),
-             0,
-             0,
-             1,
-             1,
-            Some(60), None
+            0,
+            0,
+            1,
+            1,
+            Some(60),
+            None,
         );
 
         app.handle_key(make_key(KeyCode::Enter));
@@ -923,11 +934,12 @@ mod tests {
         let mut app = App::new(SlateConfig::default());
         app.add_widget(
             Box::new(CounterTextWidget::new(refresh_count.clone())),
-             0,
-             0,
-             1,
-             1,
-            Some(60), None
+            0,
+            0,
+            1,
+            1,
+            Some(60),
+            None,
         );
 
         let previous_refresh = Instant::now() - Duration::from_secs(600);
@@ -1059,11 +1071,12 @@ mod tests {
         let mut app = App::new(SlateConfig::default());
         app.add_widget(
             Box::new(RecordingWidget::new(last_key.clone())),
-             0,
-             0,
-             1,
-             1,
-            Some(60), None
+            0,
+            0,
+            1,
+            1,
+            Some(60),
+            None,
         );
 
         app.handle_key(make_key(KeyCode::Esc));

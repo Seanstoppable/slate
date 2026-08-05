@@ -170,6 +170,18 @@ cd plugins/clock && cargo build --release --target wasm32-wasip1
 cargo tarpaulin --workspace -o json --skip-clean --output-dir target
 ```
 
+## Before Opening a PR
+
+Always run these locally before submitting a PR — CI's `lint` job runs the same checks and will fail the build otherwise:
+
+```bash
+cargo fmt --all -- --check   # or `cargo fmt --all` to auto-fix
+cargo clippy --workspace --all-targets
+cargo test --workspace
+```
+
+If `cargo fmt --all -- --check` reports diffs, run `cargo fmt --all` to fix them in place. If `cargo clippy` reports warnings, fix them or add a scoped `#[allow(...)]` with justification — do not suppress lints workspace-wide.
+
 ## CI
 
 - **Tests**: Run on ubuntu, windows, macos

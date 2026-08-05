@@ -248,7 +248,7 @@ mod tests {
         let mut rendered = String::new();
         for y in 0..height {
             for x in 0..width {
-                rendered.push_str(buffer.get(x, y).symbol());
+                rendered.push_str(buffer[(x, y)].symbol());
             }
             rendered.push('\n');
         }
@@ -271,7 +271,7 @@ mod tests {
         let buffer = terminal.backend().buffer();
         let mut rendered = String::new();
         for x in 0..80 {
-            rendered.push_str(buffer.get(x, 1).symbol());
+            rendered.push_str(buffer[(x, 1)].symbol());
         }
         rendered
     }
