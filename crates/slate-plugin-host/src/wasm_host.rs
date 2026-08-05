@@ -520,6 +520,40 @@ mod tests {
     }
 
     #[test]
+    fn parse_color_maps_all_named_colors_case_insensitively() {
+        use slate_plugin_sdk::Color;
+
+        assert!(matches!(parse_color("red"), Some(Color::Red)));
+        assert!(matches!(parse_color("GREEN"), Some(Color::Green)));
+        assert!(matches!(parse_color("Yellow"), Some(Color::Yellow)));
+        assert!(matches!(parse_color("blue"), Some(Color::Blue)));
+        assert!(matches!(parse_color("magenta"), Some(Color::Magenta)));
+        assert!(matches!(parse_color("cyan"), Some(Color::Cyan)));
+        assert!(matches!(parse_color("white"), Some(Color::White)));
+        assert!(matches!(parse_color("gray"), Some(Color::Gray)));
+        assert!(matches!(parse_color("grey"), Some(Color::Gray)));
+        assert!(parse_color("not-a-color").is_none());
+    }
+
+    #[test]
+    fn parse_cell_handles_bg_and_italic_style_and_missing_style() {
+        let cell = parse_cell(&serde_json::json!({
+            "text": "warn",
+            "style": {"bg": "red", "italic": true}
+        }));
+        assert_eq!(cell.text, "warn");
+        assert!(matches!(cell.style.bg, Some(slate_plugin_sdk::Color::Red)));
+        assert!(cell.style.italic);
+        assert!(!cell.style.bold);
+        assert!(cell.style.fg.is_none());
+
+        let plain = parse_cell(&serde_json::json!({"text": "no style"}));
+        assert_eq!(plain.text, "no style");
+        assert!(plain.style.fg.is_none());
+        assert!(plain.style.bg.is_none());
+    }
+
+    #[test]
     fn parse_widget_content_handles_table_content() {
         let content = parse_widget_content(
             r#"{"type":"table","headers":["Symbol","Price"],"rows":[[{"text":"AAPL","style":{"bold":true}},{"text":"+1.96%","style":{"fg":"green"}}],["Plain","Row"]],"selectable":true}"#,
