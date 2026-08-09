@@ -185,7 +185,7 @@ fn call_host(function: &str, request: serde_json::Value) -> Result<String, Error
     let request_str = request.to_string();
     let mem = Memory::from_bytes(request_str.as_bytes())?;
     let offset = unsafe { extism_pdk::extism_call(function, mem.offset()) };
-    if offset != 0 {
+    if offset == 0 {
         return Err(Error::msg(format!("{function} host function call failed")));
     }
     let output = extism_pdk::output_bytes()?;

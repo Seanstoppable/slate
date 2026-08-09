@@ -82,14 +82,11 @@ fn try_load_widget(
         let wasm_path = std::path::PathBuf::from(path.as_ref());
 
         if wasm_path.exists() {
-            let manifest = load_wasm_manifest(&wasm_path)?;
+            let manifest = read_plugin_manifest(&wasm_path);
             check_os_support(&wasm_path)?;
             let mut widget = WasmPlugin::from_file(
                 &wasm_path,
-                manifest
-                    .as_ref()
-                    .map(|manifest| manifest.permissions.clone())
-                    .unwrap_or_default(),
+                manifest.map(|manifest| manifest.permissions).unwrap_or_default(),
             )?;
             slate_plugin_sdk::Widget::init(&mut widget, widget_config);
             Ok(Box::new(widget))
@@ -113,14 +110,11 @@ fn try_load_widget(
             .join(format!("{}.wasm", plugin_name));
 
         if wasm_path.exists() {
-            let manifest = load_wasm_manifest(&wasm_path)?;
+            let manifest = read_plugin_manifest(&wasm_path);
             check_os_support(&wasm_path)?;
             let mut widget = WasmPlugin::from_file(
                 &wasm_path,
-                manifest
-                    .as_ref()
-                    .map(|manifest| manifest.permissions.clone())
-                    .unwrap_or_default(),
+                manifest.map(|manifest| manifest.permissions).unwrap_or_default(),
             )?;
             slate_plugin_sdk::Widget::init(&mut widget, widget_config);
             Ok(Box::new(widget))
@@ -169,10 +163,6 @@ fn read_plugin_manifest(wasm_path: &std::path::Path) -> Option<PluginManifest> {
         }
     }
     None
-}
-
-fn load_wasm_manifest(wasm_path: &std::path::Path) -> Result<Option<PluginManifest>> {
-    Ok(read_plugin_manifest(wasm_path))
 }
 
 /// Get the current OS as a normalized string matching plugin.toml conventions.
