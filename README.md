@@ -14,9 +14,9 @@ We loved wtfutil but wanted to start from a **blank slate** (pun intended) to ad
 
 - **WASM-sandboxed plugins** — Community plugins run in an Extism sandbox with capability-gated permissions
 - **5 built-in widgets** — Resources, power, firewall, network interfaces, VCS (git/hg)
-- **6 WASM plugins (Rust)** — Clock, weather, HN, feeds, IP info, GitHub
+- **8 WASM plugins (Rust)** — Clock, weather, HN, feeds, GitHub, IP info, URL check, Pomodoro
 - **4 WASM plugins (polyglot)** — Status pages (JS), iStats (Zig), wego (AssemblyScript), cmdrunner (Go)
-- **Lua scripting** — Quick personal widgets with zero compilation (brew outdated, docker ps, disk usage, git log, todo.txt), including fully **interactive**, key-driven widgets (pomodoro timer) with no Rust code or recompilation involved
+- **Lua scripting** — Quick personal widgets with zero compilation (brew outdated, docker ps, disk usage, git log, todo.txt), including fully **interactive**, key-driven widgets (pomodoro timer) with no Rust code or recompilation involved. Treat Lua scripts as trusted local code, not distributable community plugins.
 - **Plugin manager** — Install from GitHub repos, lockfile-based versioning, update notifications
 - **Interactive lists** — Navigate items with j/k, open links with Enter
 - **Vim-style navigation** — h/j/k/l, Tab cycling, focus management
@@ -111,6 +111,7 @@ Environment variables are interpolated with `${VAR_NAME}` syntax.
 | `hackernews` | WASM | Rust | Top stories (interactive list) |
 | `feedreader` | WASM | Rust | RSS/Atom feed reader |
 | `github` | WASM | Rust | GitHub PRs, issues, repo stats |
+| `pomodoro` | WASM | Rust | Persistent interactive pomodoro timer (survives restarts via plugin storage) |
 | `status-pages` | WASM | JavaScript | Service status page monitor (Statuspage APIs) |
 | `urlcheck` | WASM | Rust | URL health checks (HTTP HEAD, selectable list) |
 | `brew-outdated` | WASM | Go | Outdated Homebrew packages (polyglot demo; prefer `scripts/brew-outdated.lua`) |
@@ -187,13 +188,15 @@ Plugins can be written in any language that compiles to WASM via [Extism PDK](ht
 | **Zig** | `zig build-exe src/main.zig -target wasm32-freestanding ...` | ~2 KB |
 | **AssemblyScript** | `npx asc assembly/index.ts --outFile plugin.wasm` | ~16 KB |
 
-All plugins export the same 4 functions: `metadata`, `refresh`, `on_key`, `on_action`.
+All plugins export the same core functions: `metadata`, `refresh`, `on_key`, `on_action`. Plugins can also optionally export `on_focus` and `on_blur`.
 
 #### Host Functions
 
 Plugins can call host-provided functions:
 - **HTTP** (built-in to Extism) — make network requests
 - **exec_command** — run a system command (requires `exec` permission)
+- **store_get / store_set** — persist plugin state (requires `storage`)
+- **get_config** — read widget config from any lifecycle hook
 
 ```json
 // exec_command input
@@ -228,10 +231,11 @@ exec = ["docker"]                 # Run specific binaries
 storage = true                    # Sandboxed key-value store
 filesystem_read = ["~/.config"]   # Read specific paths
 raw_network = true                # ICMP/ping
-secrets = ["token"]               # Masked in UI
+secrets = ["token"]               # Documents expected secret-backed config values
 ```
 
 WASM enforces sandboxing architecturally — plugins cannot bypass permissions.
+Lua scripts do not use this permission model and should be treated as trusted local code.
 
 ## Keyboard Navigation
 

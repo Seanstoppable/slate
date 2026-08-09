@@ -1,0 +1,14 @@
+[plugin]
+name = "pomodoro"
+description = "Interactive pomodoro timer with persistent state"
+tags = ["focus", "productivity", "time"]
+version = "0.1.0"
+author = "Slate Community"
+language = "rust"
+
+[permissions]
+storage = true
+
+[config]
+break_minutes = { type = "number", required = false, description = "Break duration in minutes (default: 5)" }
+work_minutes = { type = "number", required = false, description = "Work duration in minutes (default: 25)" }

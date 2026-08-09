@@ -235,7 +235,7 @@ pub async fn docs(output_dir: Option<&str>) -> Result<()> {
                         kind: "script",
                         config_example,
                         install_hint: format!(
-                            "Copy {} to your scripts/ folder and add to slate.toml.",
+                            "Copy {} to your local scripts/ folder and add to slate.toml (trusted machines only).",
                             filename
                         ),
                         snapshot: snapshot_lua_script(&path),
