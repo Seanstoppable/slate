@@ -1,5 +1,4 @@
 use std::io;
-use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use crossterm::{
@@ -10,51 +9,17 @@ use crossterm::{
 use ratatui::{
     backend::CrosstermBackend, layout::Constraint, layout::Direction, layout::Layout, Terminal,
 };
-use slate_plugin_sdk::{BoxedWidget, Color, WidgetAction, WidgetContent, WidgetMetadata};
+use slate_plugin_sdk::{BoxedWidget, Color, WidgetAction, WidgetContent};
 
 use crate::config::SlateConfig;
+use crate::dashboard::{Dashboard, WidgetInstance};
 use crate::layout::{compute_grid, compute_widget_area, FocusPosition};
 use crate::notifications::UpdateNotifications;
 use crate::render::{render_status_bar, render_widget};
 
-/// A running widget instance with its state.
-struct WidgetInstance {
-    widget: BoxedWidget,
-    metadata: WidgetMetadata,
-    content: WidgetContent,
-    row: u16,
-    col: u16,
-    row_span: u16,
-    col_span: u16,
-    last_refresh: Instant,
-    refresh_interval: Duration,
-    /// Selected index for list widgets
-    selected: Option<usize>,
-    /// Detail view content (replaces normal rendering, suppresses refresh)
-    detail_content: Option<String>,
-    /// Per-widget border color from config
-    border_color: Option<Color>,
-}
-
-impl WidgetInstance {
-    fn should_refresh(&self, now: Instant, focus: &FocusPosition) -> bool {
-        if now.duration_since(self.last_refresh) < self.refresh_interval {
-            return false;
-        }
-
-        let is_focused = self.row == focus.row && self.col == focus.col;
-        if is_focused && self.content.is_selectable_list() {
-            return false;
-        }
-
-        self.detail_content.is_none()
-    }
-}
-
 /// The main Slate application.
 pub struct App {
-    config: SlateConfig,
-    widgets: Vec<WidgetInstance>,
+    dashboard: Dashboard,
     focus: FocusPosition,
     running: bool,
     notifications: UpdateNotifications,
@@ -62,10 +27,13 @@ pub struct App {
 
 impl App {
     pub fn new(config: SlateConfig) -> Self {
+        Self::from_dashboard(Dashboard::new(config))
+    }
+
+    pub fn from_dashboard(dashboard: Dashboard) -> Self {
         let notifications = UpdateNotifications::load();
         Self {
-            config,
-            widgets: Vec::new(),
+            dashboard,
             focus: FocusPosition::new(0, 0),
             running: true,
             notifications,
@@ -83,28 +51,15 @@ impl App {
         refresh_interval: Option<u64>,
         border_color: Option<Color>,
     ) {
-        let metadata = widget.metadata();
-        let interval = refresh_interval.unwrap_or(self.config.global.refresh_interval);
-        let content = widget.refresh();
-        let selected = if content.is_selectable_list() {
-            Some(0)
-        } else {
-            None
-        };
-        self.widgets.push(WidgetInstance {
+        self.dashboard.add_widget(
             widget,
-            metadata,
-            content,
             row,
             col,
-            row_span: row_span.max(1),
-            col_span: col_span.max(1),
-            last_refresh: Instant::now(),
-            refresh_interval: Duration::from_secs(interval),
-            selected,
-            detail_content: None,
+            row_span,
+            col_span,
+            refresh_interval,
             border_color,
-        });
+        );
     }
 
     /// Set update notification state (called before run).
@@ -136,18 +91,7 @@ impl App {
 
     fn main_loop(&mut self, terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<()> {
         while self.running {
-            // Refresh widgets that are due (skip focused list widgets to avoid disrupting navigation)
-            let now = Instant::now();
-            for instance in &mut self.widgets {
-                if instance.should_refresh(now, &self.focus) {
-                    instance.content = instance.widget.refresh();
-                    instance.last_refresh = now;
-                    // Initialize selection for new list content
-                    if instance.content.is_selectable_list() && instance.selected.is_none() {
-                        instance.selected = Some(0);
-                    }
-                }
-            }
+            self.dashboard.refresh_due(Some(&self.focus));
 
             // Draw
             terminal.draw(|frame| {
@@ -159,10 +103,13 @@ impl App {
                 let main_area = chunks[0];
                 let status_area = chunks[1];
 
-                let grid =
-                    compute_grid(main_area, self.config.layout.rows, self.config.layout.cols);
+                let grid = compute_grid(
+                    main_area,
+                    self.dashboard.config.layout.rows,
+                    self.dashboard.config.layout.cols,
+                );
 
-                for instance in &self.widgets {
+                for instance in &self.dashboard.widgets {
                     let area = match compute_widget_area(
                         &grid,
                         instance.row,
@@ -209,7 +156,7 @@ impl App {
                     frame,
                     status_area,
                     &self.focus,
-                    self.widgets.len(),
+                    self.dashboard.widget_count(),
                     self.notifications.status_message().as_deref(),
                 );
             })?;
@@ -261,18 +208,18 @@ impl App {
             KeyCode::Tab => {
                 // Move focus to next widget in reading order
                 self.focus
-                    .move_next(self.config.layout.rows, self.config.layout.cols);
+                    .move_next(self.dashboard.config.layout.rows, self.dashboard.config.layout.cols);
             }
             KeyCode::BackTab => {
                 // Move focus to previous widget
                 self.focus
-                    .move_prev(self.config.layout.rows, self.config.layout.cols);
+                    .move_prev(self.dashboard.config.layout.rows, self.dashboard.config.layout.cols);
             }
             KeyCode::Left | KeyCode::Char('h') => {
-                self.focus.move_left(self.config.layout.cols);
+                self.focus.move_left(self.dashboard.config.layout.cols);
             }
             KeyCode::Right | KeyCode::Char('l') => {
-                self.focus.move_right(self.config.layout.cols);
+                self.focus.move_right(self.dashboard.config.layout.cols);
             }
             KeyCode::Up | KeyCode::Char('k') => {
                 if focused_is_list {
@@ -284,7 +231,7 @@ impl App {
                         }
                     }
                 } else {
-                    self.focus.move_up(self.config.layout.rows);
+                    self.focus.move_up(self.dashboard.config.layout.rows);
                 }
             }
             KeyCode::Down | KeyCode::Char('j') => {
@@ -298,7 +245,7 @@ impl App {
                         }
                     }
                 } else {
-                    self.focus.move_down(self.config.layout.rows);
+                    self.focus.move_down(self.dashboard.config.layout.rows);
                 }
             }
             KeyCode::Enter => {
@@ -381,15 +328,31 @@ impl App {
     }
 
     fn focused_widget(&self) -> Option<&WidgetInstance> {
-        self.widgets
+        self.dashboard
+            .widgets
             .iter()
             .find(|w| w.row == self.focus.row && w.col == self.focus.col)
     }
 
     fn focused_widget_mut(&mut self) -> Option<&mut WidgetInstance> {
-        self.widgets
+        self.dashboard
+            .widgets
             .iter_mut()
             .find(|w| w.row == self.focus.row && w.col == self.focus.col)
+    }
+}
+
+impl std::ops::Deref for App {
+    type Target = Dashboard;
+
+    fn deref(&self) -> &Self::Target {
+        &self.dashboard
+    }
+}
+
+impl std::ops::DerefMut for App {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.dashboard
     }
 }
 
@@ -397,6 +360,7 @@ impl App {
 mod tests {
     use super::*;
     use slate_plugin_sdk::{Widget, WidgetConfig, WidgetContent, WidgetMetadata};
+    use std::time::{Duration, Instant};
     use std::sync::{
         atomic::{AtomicUsize, Ordering},
         Arc, Mutex,

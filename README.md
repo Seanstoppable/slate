@@ -20,6 +20,7 @@ We loved wtfutil but wanted to start from a **blank slate** (pun intended) to ad
 - **Plugin manager** — Install from GitHub repos, lockfile-based versioning, update notifications
 - **Interactive lists** — Navigate items with j/k, open links with Enter
 - **Vim-style navigation** — h/j/k/l, Tab cycling, focus management
+- **Read-only web view** — Serve the current dashboard to a browser or tablet
 
 ## Quick Start
 
@@ -34,6 +35,9 @@ done
 
 # Run
 ./target/release/slate
+
+# Or serve a read-only web dashboard
+./target/release/slate serve --host 0.0.0.0 --port 8787
 ```
 
 ## Configuration
@@ -122,6 +126,7 @@ slate list             # List installed plugins
 slate remove <name>    # Remove a plugin
 slate search <query>   # Search the plugin registry
 slate create <name>    # Scaffold a new plugin project
+slate serve            # Serve a read-only web dashboard
 ```
 
 ### Creating a Plugin

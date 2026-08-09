@@ -1,9 +1,17 @@
 use anyhow::Result;
-use slate_core::{App, SlateConfig};
+use axum::{
+    extract::State,
+    response::Html,
+    routing::get,
+    Json, Router,
+};
+use slate_core::{App, Dashboard, DashboardSnapshot, SlateConfig};
 use slate_plugin_host::{LuaPlugin, WasmPlugin};
 use slate_plugin_manager::{Lockfile, PluginInstaller, Registry};
 use slate_plugin_sdk::{Permissions, WidgetConfig, WidgetContent, WidgetMetadata};
 use std::path::Path;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use crate::builtins;
 
@@ -185,26 +193,16 @@ fn check_os_support(wasm_path: &std::path::Path) -> Result<()> {
     Ok(())
 }
 
-/// Run the dashboard.
-pub async fn run(config_path: Option<&str>) -> Result<()> {
-    let config = match config_path {
-        Some(path) => SlateConfig::load_from(Path::new(path))?,
-        None => SlateConfig::load_default()?,
-    };
+fn build_dashboard(config: SlateConfig) -> Dashboard {
+    let mut dashboard = Dashboard::new(config.clone());
 
-    let mut app = App::new(config.clone());
-
-    // Load widgets based on config — failures are shown in-cell, not fatal
     for entry in &config.widget {
         let widget_config = WidgetConfig {
             position: entry.position.clone(),
             settings: entry
                 .settings
                 .iter()
-                .map(|(k, v)| {
-                    let json_val = toml_to_json(v);
-                    (k.clone(), json_val)
-                })
+                .map(|(k, v)| (k.clone(), toml_to_json(v)))
                 .collect(),
             refresh_interval: entry.refresh_interval,
         };
@@ -215,7 +213,7 @@ pub async fn run(config_path: Option<&str>) -> Result<()> {
             .get("border_color")
             .and_then(|v| v.as_str())
             .and_then(parse_color);
-        app.add_widget(
+        dashboard.add_widget(
             widget,
             entry.position.row,
             entry.position.col,
@@ -226,13 +224,78 @@ pub async fn run(config_path: Option<&str>) -> Result<()> {
         );
     }
 
-    // If no widgets configured, show a welcome message
     if config.widget.is_empty() {
-        let widget = builtins::WelcomeWidget;
-        app.add_widget(Box::new(widget), 0, 0, 1, 1, None, None);
+        dashboard.add_widget(Box::new(builtins::WelcomeWidget), 0, 0, 1, 1, None, None);
     }
 
+    dashboard
+}
+
+/// Run the dashboard.
+pub async fn run(config_path: Option<&str>) -> Result<()> {
+    let config = match config_path {
+        Some(path) => SlateConfig::load_from(Path::new(path))?,
+        None => SlateConfig::load_default()?,
+    };
+    let dashboard = build_dashboard(config);
+    let mut app = App::from_dashboard(dashboard);
+
     app.run()
+}
+
+#[derive(Clone)]
+struct WebState {
+    dashboard: Arc<Mutex<Dashboard>>,
+}
+
+const DASHBOARD_HTML: &str = include_str!("web/dashboard.html");
+
+async fn web_index() -> Html<&'static str> {
+    Html(DASHBOARD_HTML)
+}
+
+async fn web_health() -> &'static str {
+    "ok"
+}
+
+async fn web_dashboard(State(state): State<WebState>) -> Json<DashboardSnapshot> {
+    let dashboard = state.dashboard.lock().unwrap();
+    Json(dashboard.snapshot())
+}
+
+pub async fn serve(config_path: Option<&str>, host: &str, port: u16) -> Result<()> {
+    let config = match config_path {
+        Some(path) => SlateConfig::load_from(Path::new(path))?,
+        None => SlateConfig::load_default()?,
+    };
+    let dashboard = Arc::new(Mutex::new(build_dashboard(config)));
+    let app = Router::new()
+        .route("/", get(web_index))
+        .route("/health", get(web_health))
+        .route("/api/dashboard", get(web_dashboard))
+        .with_state(WebState {
+            dashboard: Arc::clone(&dashboard),
+        });
+
+    let refresh_dashboard = Arc::clone(&dashboard);
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(1));
+        loop {
+            interval.tick().await;
+            if let Ok(mut dashboard) = refresh_dashboard.lock() {
+                dashboard.refresh_due(None);
+            }
+        }
+    });
+
+    let listener = tokio::net::TcpListener::bind((host, port)).await?;
+    println!(
+        "Serving Slate dashboard at http://{}:{}",
+        listener.local_addr()?.ip(),
+        listener.local_addr()?.port()
+    );
+    axum::serve(listener, app).await?;
+    Ok(())
 }
 
 /// Install all declared plugins.
@@ -2201,5 +2264,33 @@ position = {{ row = 0, col = 1 }}
         .unwrap();
 
         lint(Some(dir.path().to_str().unwrap())).await.unwrap();
+    }
+
+    #[test]
+    fn build_dashboard_adds_welcome_widget_when_config_is_empty() {
+        let dashboard = build_dashboard(SlateConfig::default());
+
+        assert_eq!(dashboard.widgets.len(), 1);
+        assert_eq!(dashboard.widgets[0].metadata.name, "Welcome");
+    }
+
+    #[tokio::test]
+    async fn web_dashboard_returns_snapshot_json() {
+        let dashboard = Arc::new(Mutex::new(build_dashboard(SlateConfig::default())));
+        let state = WebState { dashboard };
+
+        let Json(snapshot) = web_dashboard(State(state)).await;
+
+        assert_eq!(snapshot.layout.rows, 2);
+        assert_eq!(snapshot.layout.cols, 2);
+        assert_eq!(snapshot.widgets.len(), 1);
+        assert_eq!(snapshot.widgets[0].metadata.name, "Welcome");
+    }
+
+    #[tokio::test]
+    async fn web_endpoints_return_expected_static_content() {
+        assert_eq!(web_health().await, "ok");
+        assert!(web_index().await.0.contains("/api/dashboard"));
+        assert!(web_index().await.0.contains("Slate Dashboard"));
     }
 }
