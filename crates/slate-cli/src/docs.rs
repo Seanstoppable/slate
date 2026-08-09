@@ -782,7 +782,9 @@ mod tests {
         assert!(example.contains("The API URL"));
         assert!(
             example.find("count = 1  # Number of items").unwrap()
-                < example.find("url = \"...\"  # The API URL (required)").unwrap()
+                < example
+                    .find("url = \"...\"  # The API URL (required)")
+                    .unwrap()
         );
     }
 

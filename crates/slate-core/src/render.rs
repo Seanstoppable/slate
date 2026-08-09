@@ -3,9 +3,7 @@ use ratatui::{
     layout::Rect,
     style::{Color as RatColor, Modifier, Style},
     text::{Line, Span},
-    widgets::{
-        Block, BorderType, Borders, List, ListItem, ListState, Paragraph, Row, Table, Wrap,
-    },
+    widgets::{Block, BorderType, Borders, List, ListItem, ListState, Paragraph, Row, Table, Wrap},
     Frame, Terminal,
 };
 use slate_plugin_sdk::{Color, WidgetContent, WidgetMetadata};
