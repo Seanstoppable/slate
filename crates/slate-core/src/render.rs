@@ -3,7 +3,9 @@ use ratatui::{
     layout::Rect,
     style::{Color as RatColor, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, List, ListItem, ListState, Paragraph, Row, Table, Wrap},
+    widgets::{
+        Block, BorderType, Borders, List, ListItem, ListState, Paragraph, Row, Table, Wrap,
+    },
     Frame, Terminal,
 };
 use slate_plugin_sdk::{Color, WidgetContent, WidgetMetadata};
@@ -122,6 +124,15 @@ fn rat_color_to_css(color: RatColor, default: &str) -> Option<String> {
     }
 }
 
+const SLATE_SURFACE: RatColor = RatColor::Rgb(15, 23, 42);
+const SLATE_STATUS_BG: RatColor = RatColor::Rgb(2, 6, 23);
+const SLATE_BORDER: RatColor = RatColor::Rgb(71, 85, 105);
+const SLATE_BORDER_FOCUSED: RatColor = RatColor::Rgb(148, 163, 184);
+const SLATE_TEXT: RatColor = RatColor::Rgb(226, 232, 240);
+const SLATE_MUTED: RatColor = RatColor::Rgb(148, 163, 184);
+const SLATE_SELECTION_BG: RatColor = RatColor::Rgb(51, 65, 85);
+const SLATE_CHART: RatColor = RatColor::Rgb(125, 211, 252);
+
 /// Render a widget's content into a frame area.
 pub fn render_widget(
     frame: &mut Frame,
@@ -133,11 +144,11 @@ pub fn render_widget(
     border_color: Option<&Color>,
 ) {
     let border_style = if focused {
-        Style::default().fg(RatColor::Cyan)
+        Style::default().fg(SLATE_BORDER_FOCUSED)
     } else if let Some(color) = border_color {
         Style::default().fg(convert_color(color))
     } else {
-        Style::default().fg(RatColor::DarkGray)
+        Style::default().fg(SLATE_BORDER)
     };
 
     // Focused widgets get a double-line border so it's unmistakable which
@@ -145,21 +156,24 @@ pub fn render_widget(
     let border_type = if focused {
         BorderType::Double
     } else {
-        BorderType::Plain
+        BorderType::Rounded
     };
 
     let block = Block::default()
         .title(format!(" {} ", metadata.name))
+        .title_style(Style::default().fg(SLATE_TEXT).add_modifier(Modifier::BOLD))
         .borders(Borders::ALL)
         .border_type(border_type)
-        .border_style(border_style);
+        .border_style(border_style)
+        .style(Style::default().bg(SLATE_SURFACE).fg(SLATE_TEXT));
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
     match content {
         WidgetContent::Text { content, wrap, .. } => {
-            let paragraph = Paragraph::new(content.as_str());
+            let paragraph =
+                Paragraph::new(content.as_str()).style(Style::default().bg(SLATE_SURFACE).fg(SLATE_TEXT));
             let paragraph = if *wrap {
                 paragraph.wrap(Wrap { trim: true })
             } else {
@@ -170,9 +184,14 @@ pub fn render_widget(
         WidgetContent::Table { headers, rows, .. } => {
             let header_cells: Vec<Span> = headers
                 .iter()
-                .map(|h| Span::styled(h.as_str(), Style::default().add_modifier(Modifier::BOLD)))
+                .map(|h| {
+                    Span::styled(
+                        h.as_str(),
+                        Style::default().fg(SLATE_TEXT).add_modifier(Modifier::BOLD),
+                    )
+                })
                 .collect();
-            let header = Row::new(header_cells).style(Style::default().fg(RatColor::Yellow));
+            let header = Row::new(header_cells).style(Style::default().fg(SLATE_TEXT));
 
             let table_rows: Vec<Row> = rows
                 .iter()
@@ -190,7 +209,10 @@ pub fn render_widget(
                 .map(|_| ratatui::layout::Constraint::Percentage(100 / headers.len() as u16))
                 .collect();
 
-            let table = Table::new(table_rows, widths).header(header);
+            let table = Table::new(table_rows, widths)
+                .header(header)
+                .column_spacing(2)
+                .style(Style::default().bg(SLATE_SURFACE).fg(SLATE_TEXT));
             frame.render_widget(table, inner);
         }
         WidgetContent::KeyValue { pairs } => {
@@ -206,7 +228,7 @@ pub fn render_widget(
                     ])
                 })
                 .collect();
-            let paragraph = Paragraph::new(lines);
+            let paragraph = Paragraph::new(lines).style(Style::default().bg(SLATE_SURFACE).fg(SLATE_TEXT));
             frame.render_widget(paragraph, inner);
         }
         WidgetContent::List {
@@ -219,22 +241,23 @@ pub fn render_widget(
                         Line::from(vec![
                             Span::styled(
                                 item.title.as_str(),
-                                Style::default().add_modifier(Modifier::BOLD),
+                                Style::default().fg(SLATE_TEXT).add_modifier(Modifier::BOLD),
                             ),
                             Span::raw(" "),
-                            Span::styled(subtitle.as_str(), Style::default().fg(RatColor::Gray)),
+                            Span::styled(subtitle.as_str(), Style::default().fg(SLATE_MUTED)),
                         ])
                     } else {
-                        Line::from(Span::raw(item.title.as_str()))
+                        Line::from(Span::styled(item.title.as_str(), Style::default().fg(SLATE_TEXT)))
                     };
                     ListItem::new(content)
                 })
                 .collect();
             let list = List::new(list_items)
+                .style(Style::default().bg(SLATE_SURFACE).fg(SLATE_TEXT))
                 .highlight_style(
                     Style::default()
-                        .fg(RatColor::Black)
-                        .bg(RatColor::Cyan)
+                        .fg(SLATE_TEXT)
+                        .bg(SLATE_SELECTION_BG)
                         .add_modifier(Modifier::BOLD),
                 )
                 .highlight_symbol("▶ ");
@@ -261,18 +284,18 @@ pub fn render_widget(
                     Line::from(vec![
                         Span::styled(
                             format!("{:>8} ", dp.label),
-                            Style::default().fg(RatColor::Gray),
+                            Style::default().fg(SLATE_MUTED),
                         ),
-                        Span::styled(bar, Style::default().fg(RatColor::Green)),
+                        Span::styled(bar, Style::default().fg(SLATE_CHART)),
                     ])
                 })
                 .collect();
-            let paragraph = Paragraph::new(lines);
+            let paragraph = Paragraph::new(lines).style(Style::default().bg(SLATE_SURFACE).fg(SLATE_TEXT));
             frame.render_widget(paragraph, inner);
         }
         WidgetContent::Empty { message } => {
-            let paragraph =
-                Paragraph::new(message.as_str()).style(Style::default().fg(RatColor::DarkGray));
+            let paragraph = Paragraph::new(message.as_str())
+                .style(Style::default().bg(SLATE_SURFACE).fg(SLATE_MUTED));
             frame.render_widget(paragraph, inner);
         }
     }
@@ -292,7 +315,7 @@ pub fn render_status_bar(
         widget_count, focus.row, focus.col, update_part
     );
     let paragraph =
-        Paragraph::new(status).style(Style::default().bg(RatColor::DarkGray).fg(RatColor::White));
+        Paragraph::new(status).style(Style::default().bg(SLATE_STATUS_BG).fg(SLATE_TEXT));
     frame.render_widget(paragraph, area);
 }
 
