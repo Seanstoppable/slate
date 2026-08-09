@@ -172,8 +172,8 @@ pub fn render_widget(
 
     match content {
         WidgetContent::Text { content, wrap, .. } => {
-            let paragraph =
-                Paragraph::new(content.as_str()).style(Style::default().bg(SLATE_SURFACE).fg(SLATE_TEXT));
+            let paragraph = Paragraph::new(content.as_str())
+                .style(Style::default().bg(SLATE_SURFACE).fg(SLATE_TEXT));
             let paragraph = if *wrap {
                 paragraph.wrap(Wrap { trim: true })
             } else {
@@ -228,7 +228,8 @@ pub fn render_widget(
                     ])
                 })
                 .collect();
-            let paragraph = Paragraph::new(lines).style(Style::default().bg(SLATE_SURFACE).fg(SLATE_TEXT));
+            let paragraph =
+                Paragraph::new(lines).style(Style::default().bg(SLATE_SURFACE).fg(SLATE_TEXT));
             frame.render_widget(paragraph, inner);
         }
         WidgetContent::List {
@@ -247,7 +248,10 @@ pub fn render_widget(
                             Span::styled(subtitle.as_str(), Style::default().fg(SLATE_MUTED)),
                         ])
                     } else {
-                        Line::from(Span::styled(item.title.as_str(), Style::default().fg(SLATE_TEXT)))
+                        Line::from(Span::styled(
+                            item.title.as_str(),
+                            Style::default().fg(SLATE_TEXT),
+                        ))
                     };
                     ListItem::new(content)
                 })
@@ -290,7 +294,8 @@ pub fn render_widget(
                     ])
                 })
                 .collect();
-            let paragraph = Paragraph::new(lines).style(Style::default().bg(SLATE_SURFACE).fg(SLATE_TEXT));
+            let paragraph =
+                Paragraph::new(lines).style(Style::default().bg(SLATE_SURFACE).fg(SLATE_TEXT));
             frame.render_widget(paragraph, inner);
         }
         WidgetContent::Empty { message } => {
