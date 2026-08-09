@@ -47,6 +47,18 @@ enum Commands {
         #[arg(short, long)]
         config: Option<String>,
     },
+    /// Serve a read-only dashboard over HTTP
+    Serve {
+        /// Path to config file
+        #[arg(short, long)]
+        config: Option<String>,
+        /// Host interface to bind
+        #[arg(long, default_value = "127.0.0.1")]
+        host: String,
+        /// TCP port to bind
+        #[arg(long, default_value_t = 8787)]
+        port: u16,
+    },
     /// Install all declared plugins
     Install,
     /// Update plugins to latest compatible versions
@@ -156,6 +168,9 @@ async fn main() -> Result<()> {
             };
             commands::run(config_path).await
         }
+        Some(Commands::Serve { config, host, port }) => {
+            commands::serve(config.as_deref(), &host, port).await
+        }
         Some(Commands::Install) => commands::install().await,
         Some(Commands::Update) => commands::update().await,
         Some(Commands::Outdated) => commands::outdated().await,
@@ -198,6 +213,12 @@ mod tests {
         assert!(matches!(
             cli.command,
             Some(Commands::Docs { output: Some(path) }) if path == "site"
+        ));
+
+        let cli = Cli::parse_from(["slate", "serve", "--host", "0.0.0.0", "--port", "9000"]);
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Serve { host, port, .. }) if host == "0.0.0.0" && port == 9000
         ));
     }
 
