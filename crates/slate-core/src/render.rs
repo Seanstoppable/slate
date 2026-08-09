@@ -191,7 +191,11 @@ pub fn render_widget(
                     )
                 })
                 .collect();
-            let header = Row::new(header_cells).style(Style::default().fg(SLATE_TEXT));
+            let header = Row::new(header_cells).style(
+                Style::default()
+                    .fg(SLATE_TEXT)
+                    .add_modifier(Modifier::UNDERLINED),
+            );
 
             let table_rows: Vec<Row> = rows
                 .iter()
