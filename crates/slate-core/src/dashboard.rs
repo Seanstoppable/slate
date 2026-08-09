@@ -25,7 +25,15 @@ pub struct WidgetInstance {
 }
 
 impl WidgetInstance {
-    pub fn should_refresh(&self, now: Instant, focus: Option<&FocusPosition>) -> bool {
+    pub fn should_refresh(&self, now: Instant, focus: &FocusPosition) -> bool {
+        self.should_refresh_with_optional_focus(now, Some(focus))
+    }
+
+    fn should_refresh_with_optional_focus(
+        &self,
+        now: Instant,
+        focus: Option<&FocusPosition>,
+    ) -> bool {
         if now.duration_since(self.last_refresh) < self.refresh_interval {
             return false;
         }
@@ -92,7 +100,7 @@ impl Dashboard {
     pub fn refresh_due(&mut self, focus: Option<&FocusPosition>) {
         let now = Instant::now();
         for instance in &mut self.widgets {
-            if instance.should_refresh(now, focus) {
+            if instance.should_refresh_with_optional_focus(now, focus) {
                 instance.content = instance.widget.refresh();
                 instance.last_refresh = now;
                 if instance.content.is_selectable_list() && instance.selected.is_none() {
@@ -209,7 +217,18 @@ mod tests {
     #[test]
     fn refresh_due_updates_non_focused_widgets() {
         let mut dashboard = Dashboard::new(config());
-        dashboard.add_widget(Box::new(CountingWidget { count: 0, list: false }), 0, 0, 1, 1, Some(1), None);
+        dashboard.add_widget(
+            Box::new(CountingWidget {
+                count: 0,
+                list: false,
+            }),
+            0,
+            0,
+            1,
+            1,
+            Some(1),
+            None,
+        );
         dashboard.widgets[0].last_refresh = Instant::now() - Duration::from_secs(2);
 
         dashboard.refresh_due(None);
@@ -223,7 +242,18 @@ mod tests {
     #[test]
     fn refresh_due_skips_focused_selectable_lists() {
         let mut dashboard = Dashboard::new(config());
-        dashboard.add_widget(Box::new(CountingWidget { count: 0, list: true }), 0, 0, 1, 1, Some(1), None);
+        dashboard.add_widget(
+            Box::new(CountingWidget {
+                count: 0,
+                list: true,
+            }),
+            0,
+            0,
+            1,
+            1,
+            Some(1),
+            None,
+        );
         dashboard.widgets[0].last_refresh = Instant::now() - Duration::from_secs(2);
         let previous_refresh = dashboard.widgets[0].last_refresh;
 
@@ -237,7 +267,18 @@ mod tests {
         let mut dashboard = Dashboard::new(config());
         dashboard.config.layout.rows = 3;
         dashboard.config.layout.cols = 4;
-        dashboard.add_widget(Box::new(CountingWidget { count: 0, list: false }), 1, 2, 2, 1, Some(15), Some(Color::Blue));
+        dashboard.add_widget(
+            Box::new(CountingWidget {
+                count: 0,
+                list: false,
+            }),
+            1,
+            2,
+            2,
+            1,
+            Some(15),
+            Some(Color::Blue),
+        );
 
         let snapshot = dashboard.snapshot();
 
@@ -248,6 +289,9 @@ mod tests {
         assert_eq!(snapshot.widgets[0].position.col, 2);
         assert_eq!(snapshot.widgets[0].position.row_span, 2);
         assert_eq!(snapshot.widgets[0].refresh_interval_seconds, 15);
-        assert!(matches!(snapshot.widgets[0].border_color, Some(Color::Blue)));
+        assert!(matches!(
+            snapshot.widgets[0].border_color,
+            Some(Color::Blue)
+        ));
     }
 }

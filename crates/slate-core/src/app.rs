@@ -1,4 +1,5 @@
 use std::io;
+use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use crossterm::{
@@ -43,7 +44,7 @@ impl App {
     /// Register a widget into the application.
     pub fn add_widget(
         &mut self,
-        mut widget: BoxedWidget,
+        widget: BoxedWidget,
         row: u16,
         col: u16,
         row_span: u16,
@@ -120,8 +121,7 @@ impl App {
                         Some(a) => a,
                         None => continue,
                     };
-                    let focused =
-                        self.focus.row == instance.row && self.focus.col == instance.col;
+                    let focused = self.focus.row == instance.row && self.focus.col == instance.col;
 
                     // Show detail view if set, otherwise normal content
                     if let Some(detail) = &instance.detail_content {
@@ -207,13 +207,17 @@ impl App {
             }
             KeyCode::Tab => {
                 // Move focus to next widget in reading order
-                self.focus
-                    .move_next(self.dashboard.config.layout.rows, self.dashboard.config.layout.cols);
+                self.focus.move_next(
+                    self.dashboard.config.layout.rows,
+                    self.dashboard.config.layout.cols,
+                );
             }
             KeyCode::BackTab => {
                 // Move focus to previous widget
-                self.focus
-                    .move_prev(self.dashboard.config.layout.rows, self.dashboard.config.layout.cols);
+                self.focus.move_prev(
+                    self.dashboard.config.layout.rows,
+                    self.dashboard.config.layout.cols,
+                );
             }
             KeyCode::Left | KeyCode::Char('h') => {
                 self.focus.move_left(self.dashboard.config.layout.cols);
@@ -342,29 +346,15 @@ impl App {
     }
 }
 
-impl std::ops::Deref for App {
-    type Target = Dashboard;
-
-    fn deref(&self) -> &Self::Target {
-        &self.dashboard
-    }
-}
-
-impl std::ops::DerefMut for App {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.dashboard
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use slate_plugin_sdk::{Widget, WidgetConfig, WidgetContent, WidgetMetadata};
-    use std::time::{Duration, Instant};
     use std::sync::{
         atomic::{AtomicUsize, Ordering},
         Arc, Mutex,
     };
+    use std::time::{Duration, Instant};
 
     /// A mock widget that returns a selectable list and responds to on_action.
     struct MockListWidget {
@@ -543,11 +533,11 @@ mod tests {
             None,
         );
 
-        assert_eq!(app.widgets.len(), 1);
+        assert_eq!(app.dashboard.widgets.len(), 1);
         assert_eq!(refresh_count.load(Ordering::SeqCst), 1);
-        assert_eq!(app.widgets[0].row, 1);
-        assert_eq!(app.widgets[0].col, 1);
-        match &app.widgets[0].content {
+        assert_eq!(app.dashboard.widgets[0].row, 1);
+        assert_eq!(app.dashboard.widgets[0].col, 1);
+        match &app.dashboard.widgets[0].content {
             WidgetContent::Text { content, .. } => assert_eq!(content, "Refresh #1"),
             other => panic!("expected text content, got {other:?}"),
         }
@@ -561,8 +551,11 @@ mod tests {
 
         app.add_widget(Box::new(MockListWidget::new(None)), 0, 0, 1, 1, None, None);
 
-        assert_eq!(app.widgets[0].refresh_interval, Duration::from_secs(42));
-        assert_eq!(app.widgets[0].selected, Some(0));
+        assert_eq!(
+            app.dashboard.widgets[0].refresh_interval,
+            Duration::from_secs(42)
+        );
+        assert_eq!(app.dashboard.widgets[0].selected, Some(0));
     }
 
     #[test]
@@ -572,7 +565,15 @@ mod tests {
         config.layout.cols = 2;
         let mut app = App::new(config);
         app.add_widget(Box::new(MockTextWidget), 0, 0, 1, 1, Some(60), None);
-        app.add_widget(Box::new(MockListWidget::new(None)), 0, 1, 1, 1, Some(60), None);
+        app.add_widget(
+            Box::new(MockListWidget::new(None)),
+            0,
+            1,
+            1,
+            1,
+            Some(60),
+            None,
+        );
 
         assert_eq!(
             app.focused_widget()
@@ -596,15 +597,16 @@ mod tests {
             Box::new(CounterTextWidget::new(refresh_count)),
             0,
             0,
-             1,
-             1,
-            Some(1), None
+            1,
+            1,
+            Some(1),
+            None,
         );
 
         let now = Instant::now();
-        app.widgets[0].last_refresh = now - Duration::from_secs(2);
+        app.dashboard.widgets[0].last_refresh = now - Duration::from_secs(2);
 
-        assert!(app.widgets[0].should_refresh(now, &app.focus));
+        assert!(app.dashboard.widgets[0].should_refresh(now, &app.focus));
     }
 
     #[test]
@@ -615,38 +617,39 @@ mod tests {
             Box::new(CounterTextWidget::new(refresh_count)),
             0,
             0,
-             1,
-             1,
-            Some(60), None
+            1,
+            1,
+            Some(60),
+            None,
         );
 
         let now = Instant::now();
-        app.widgets[0].last_refresh = now - Duration::from_secs(10);
+        app.dashboard.widgets[0].last_refresh = now - Duration::from_secs(10);
 
-        assert!(!app.widgets[0].should_refresh(now, &app.focus));
+        assert!(!app.dashboard.widgets[0].should_refresh(now, &app.focus));
     }
 
     #[test]
     fn should_refresh_returns_false_during_detail_view() {
         let mut app =
             test_app_with_list_widget(Some(WidgetAction::ShowDetail("Details".to_string())));
-        app.widgets[0].detail_content = Some("Details".to_string());
+        app.dashboard.widgets[0].detail_content = Some("Details".to_string());
         let now = Instant::now();
-        app.widgets[0].last_refresh = now - Duration::from_secs(600);
+        app.dashboard.widgets[0].last_refresh = now - Duration::from_secs(600);
 
-        assert!(!app.widgets[0].should_refresh(now, &app.focus));
+        assert!(!app.dashboard.widgets[0].should_refresh(now, &app.focus));
     }
 
     #[test]
     fn selectable_list_refresh_is_suppressed_only_while_focused() {
         let mut app = test_app_with_list_widget(None);
         let now = Instant::now();
-        app.widgets[0].last_refresh = now - Duration::from_secs(600);
+        app.dashboard.widgets[0].last_refresh = now - Duration::from_secs(600);
 
-        assert!(!app.widgets[0].should_refresh(now, &app.focus));
+        assert!(!app.dashboard.widgets[0].should_refresh(now, &app.focus));
 
         app.focus = FocusPosition::new(1, 1);
-        assert!(app.widgets[0].should_refresh(now, &app.focus));
+        assert!(app.dashboard.widgets[0].should_refresh(now, &app.focus));
     }
 
     #[test]
@@ -656,14 +659,14 @@ mod tests {
         )));
 
         // Widget starts with no detail
-        assert!(app.widgets[0].detail_content.is_none());
+        assert!(app.dashboard.widgets[0].detail_content.is_none());
 
         // Press Enter to select
         app.handle_key(make_key(KeyCode::Enter));
 
         // Detail should now be set
         assert_eq!(
-            app.widgets[0].detail_content,
+            app.dashboard.widgets[0].detail_content,
             Some("Detailed info here".to_string())
         );
     }
@@ -675,11 +678,11 @@ mod tests {
 
         // Enter detail view
         app.handle_key(make_key(KeyCode::Enter));
-        assert!(app.widgets[0].detail_content.is_some());
+        assert!(app.dashboard.widgets[0].detail_content.is_some());
 
         // Escape should dismiss
         app.handle_key(make_key(KeyCode::Esc));
-        assert!(app.widgets[0].detail_content.is_none());
+        assert!(app.dashboard.widgets[0].detail_content.is_none());
     }
 
     #[test]
@@ -689,11 +692,11 @@ mod tests {
 
         // Enter detail view
         app.handle_key(make_key(KeyCode::Enter));
-        assert!(app.widgets[0].detail_content.is_some());
+        assert!(app.dashboard.widgets[0].detail_content.is_some());
 
         // 'q' should dismiss detail, NOT quit the app
         app.handle_key(make_key(KeyCode::Char('q')));
-        assert!(app.widgets[0].detail_content.is_none());
+        assert!(app.dashboard.widgets[0].detail_content.is_none());
         assert!(app.running); // still running
     }
 
@@ -721,11 +724,11 @@ mod tests {
         app.handle_key(make_key(KeyCode::Enter));
 
         // j/k/Tab should be ignored — selection should not change
-        let selected_before = app.widgets[0].selected;
+        let selected_before = app.dashboard.widgets[0].selected;
         app.handle_key(make_key(KeyCode::Char('j')));
         app.handle_key(make_key(KeyCode::Char('k')));
         app.handle_key(make_key(KeyCode::Tab));
-        assert_eq!(app.widgets[0].selected, selected_before);
+        assert_eq!(app.dashboard.widgets[0].selected, selected_before);
     }
 
     #[test]
@@ -733,7 +736,7 @@ mod tests {
         let mut app = test_app_with_list_widget(None);
 
         app.handle_key(make_key(KeyCode::Enter));
-        assert!(app.widgets[0].detail_content.is_none());
+        assert!(app.dashboard.widgets[0].detail_content.is_none());
     }
 
     #[test]
@@ -744,7 +747,7 @@ mod tests {
 
         app.handle_key(make_key(KeyCode::Enter));
         // OpenUrl should NOT set detail_content
-        assert!(app.widgets[0].detail_content.is_none());
+        assert!(app.dashboard.widgets[0].detail_content.is_none());
     }
 
     #[test]
@@ -752,23 +755,23 @@ mod tests {
         let mut app = test_app_with_list_widget(None);
 
         // Starts at 0
-        assert_eq!(app.widgets[0].selected, Some(0));
+        assert_eq!(app.dashboard.widgets[0].selected, Some(0));
 
         // j moves down
         app.handle_key(make_key(KeyCode::Char('j')));
-        assert_eq!(app.widgets[0].selected, Some(1));
+        assert_eq!(app.dashboard.widgets[0].selected, Some(1));
 
         // Can't go past end
         app.handle_key(make_key(KeyCode::Char('j')));
-        assert_eq!(app.widgets[0].selected, Some(1));
+        assert_eq!(app.dashboard.widgets[0].selected, Some(1));
 
         // k moves up
         app.handle_key(make_key(KeyCode::Char('k')));
-        assert_eq!(app.widgets[0].selected, Some(0));
+        assert_eq!(app.dashboard.widgets[0].selected, Some(0));
 
         // Can't go before 0
         app.handle_key(make_key(KeyCode::Char('k')));
-        assert_eq!(app.widgets[0].selected, Some(0));
+        assert_eq!(app.dashboard.widgets[0].selected, Some(0));
     }
 
     #[test]
@@ -786,17 +789,18 @@ mod tests {
         let mut app = App::new(SlateConfig::default());
         app.add_widget(
             Box::new(RecordingWidget::new(last_key.clone())),
-             0,
-             0,
-             1,
-             1,
-            Some(60), None
+            0,
+            0,
+            1,
+            1,
+            Some(60),
+            None,
         );
 
         app.handle_key(make_key(KeyCode::Enter));
 
         assert_eq!(last_key.lock().unwrap().as_deref(), None);
-        assert!(app.widgets[0].detail_content.is_none());
+        assert!(app.dashboard.widgets[0].detail_content.is_none());
         assert!(app.running);
     }
 
@@ -841,15 +845,16 @@ mod tests {
 
         // Enter detail
         app.handle_key(make_key(KeyCode::Enter));
-        assert!(app.widgets[0].detail_content.is_some());
+        assert!(app.dashboard.widgets[0].detail_content.is_some());
 
         // Manually set last_refresh to the past to trigger refresh
-        app.widgets[0].last_refresh = Instant::now() - Duration::from_secs(600);
+        app.dashboard.widgets[0].last_refresh = Instant::now() - Duration::from_secs(600);
 
         // The main loop refresh logic checks detail_content — simulate it here
-        let instance = &mut app.widgets[0];
+        let focus = app.focus;
+        let instance = &mut app.dashboard.widgets[0];
         let now = Instant::now();
-        assert!(!instance.should_refresh(now, &app.focus));
+        assert!(!instance.should_refresh(now, &focus));
     }
 
     #[test]
@@ -859,26 +864,26 @@ mod tests {
 
         // Enter detail
         app.handle_key(make_key(KeyCode::Enter));
-        assert!(app.widgets[0].detail_content.is_some());
+        assert!(app.dashboard.widgets[0].detail_content.is_some());
 
         // Escape to dismiss, then 'r' to refresh
         app.handle_key(make_key(KeyCode::Esc));
-        assert!(app.widgets[0].detail_content.is_none());
+        assert!(app.dashboard.widgets[0].detail_content.is_none());
 
         // 'r' forces refresh
         app.handle_key(make_key(KeyCode::Char('r')));
         // Widget content should be refreshed (still a list)
-        assert!(app.widgets[0].content.is_selectable_list());
+        assert!(app.dashboard.widgets[0].content.is_selectable_list());
     }
 
     #[test]
     fn forced_refresh_resets_list_selection_to_first_item() {
         let mut app = test_app_with_list_widget(None);
-        app.widgets[0].selected = Some(1);
+        app.dashboard.widgets[0].selected = Some(1);
 
         app.handle_key(make_key(KeyCode::Char('r')));
 
-        assert_eq!(app.widgets[0].selected, Some(0));
+        assert_eq!(app.dashboard.widgets[0].selected, Some(0));
     }
 
     #[test]
@@ -887,21 +892,22 @@ mod tests {
         let mut app = App::new(SlateConfig::default());
         app.add_widget(
             Box::new(CounterTextWidget::new(refresh_count.clone())),
-             0,
-             0,
-             1,
-             1,
-            Some(60), None
+            0,
+            0,
+            1,
+            1,
+            Some(60),
+            None,
         );
 
         let previous_refresh = Instant::now() - Duration::from_secs(600);
-        app.widgets[0].last_refresh = previous_refresh;
+        app.dashboard.widgets[0].last_refresh = previous_refresh;
 
         app.handle_key(make_key(KeyCode::Char('r')));
 
         assert_eq!(refresh_count.load(Ordering::SeqCst), 2);
-        assert!(app.widgets[0].last_refresh > previous_refresh);
-        match &app.widgets[0].content {
+        assert!(app.dashboard.widgets[0].last_refresh > previous_refresh);
+        match &app.dashboard.widgets[0].content {
             WidgetContent::Text { content, .. } => assert_eq!(content, "Refresh #2"),
             other => panic!("expected text content, got {other:?}"),
         }
@@ -964,11 +970,11 @@ mod tests {
         let mut app = test_app_with_list_widget(None);
 
         app.handle_key(make_key(KeyCode::Down));
-        assert_eq!(app.widgets[0].selected, Some(1));
+        assert_eq!(app.dashboard.widgets[0].selected, Some(1));
         assert_eq!((app.focus.row, app.focus.col), (0, 0));
 
         app.handle_key(make_key(KeyCode::Up));
-        assert_eq!(app.widgets[0].selected, Some(0));
+        assert_eq!(app.dashboard.widgets[0].selected, Some(0));
         assert_eq!((app.focus.row, app.focus.col), (0, 0));
     }
 
@@ -1023,11 +1029,12 @@ mod tests {
         let mut app = App::new(SlateConfig::default());
         app.add_widget(
             Box::new(RecordingWidget::new(last_key.clone())),
-             0,
-             0,
-             1,
-             1,
-            Some(60), None
+            0,
+            0,
+            1,
+            1,
+            Some(60),
+            None,
         );
 
         app.handle_key(make_key(KeyCode::Esc));
@@ -1042,7 +1049,7 @@ mod tests {
         app.handle_key(make_key(KeyCode::Enter));
 
         assert!(app.running);
-        assert!(app.widgets[0].detail_content.is_none());
+        assert!(app.dashboard.widgets[0].detail_content.is_none());
     }
 
     #[test]

@@ -1,10 +1,5 @@
 use anyhow::Result;
-use axum::{
-    extract::State,
-    response::Html,
-    routing::get,
-    Json, Router,
-};
+use axum::{extract::State, response::Html, routing::get, Json, Router};
 use slate_core::{App, Dashboard, DashboardSnapshot, SlateConfig};
 use slate_plugin_host::{LuaPlugin, WasmPlugin};
 use slate_plugin_manager::{Lockfile, PluginInstaller, Registry};
@@ -259,7 +254,10 @@ async fn web_health() -> &'static str {
 }
 
 async fn web_dashboard(State(state): State<WebState>) -> Json<DashboardSnapshot> {
-    let dashboard = state.dashboard.lock().unwrap();
+    let dashboard = state
+        .dashboard
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     Json(dashboard.snapshot())
 }
 
@@ -282,9 +280,10 @@ pub async fn serve(config_path: Option<&str>, host: &str, port: u16) -> Result<(
         let mut interval = tokio::time::interval(Duration::from_secs(1));
         loop {
             interval.tick().await;
-            if let Ok(mut dashboard) = refresh_dashboard.lock() {
-                dashboard.refresh_due(None);
-            }
+            let mut dashboard = refresh_dashboard
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            dashboard.refresh_due(None);
         }
     });
 
@@ -678,7 +677,13 @@ pub async fn check(config_path: Option<&str>) -> Result<()> {
 
         if entry.widget_type.starts_with("builtin:") {
             let name = entry.widget_type.trim_start_matches("builtin:");
-            let known = ["resource_usage", "power", "firewall", "ipaddresses", "logfile"];
+            let known = [
+                "resource_usage",
+                "power",
+                "firewall",
+                "ipaddresses",
+                "logfile",
+            ];
             if known.contains(&name) {
                 println!("  {:2}. {} ✓ builtin", i + 1, label);
                 ok += 1;
@@ -856,8 +861,7 @@ fn extract_config_keys_from_source(plugin_dir: &Path) -> Vec<(String, &'static s
     };
 
     let settings_re =
-        regex::Regex::new(r#"settings\["([a-zA-Z_][a-zA-Z0-9_]*)"\](\.[a-z_0-9]+\(\))?"#)
-            .unwrap();
+        regex::Regex::new(r#"settings\["([a-zA-Z_][a-zA-Z0-9_]*)"\](\.[a-z_0-9]+\(\))?"#).unwrap();
     let config_get_re = regex::Regex::new(r#"config::get\("([a-zA-Z_][a-zA-Z0-9_]*)"\)"#).unwrap();
 
     for file in files {
@@ -922,7 +926,12 @@ pub async fn lint(path: Option<&str>) -> Result<()> {
     if let Some(meta) = meta {
         // Check required fields
         for field in ["name", "description", "version"] {
-            if meta.get(field).and_then(|v| v.as_str()).unwrap_or("").is_empty() {
+            if meta
+                .get(field)
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .is_empty()
+            {
                 println!("  ✗ Missing required field: {}", field);
                 errors += 1;
             }
@@ -1023,10 +1032,7 @@ pub async fn lint(path: Option<&str>) -> Result<()> {
     if errors == 0 && warnings == 0 {
         println!("✓ Plugin passes baseline");
     } else {
-        println!(
-            "Results: {} errors, {} warnings",
-            errors, warnings
-        );
+        println!("Results: {} errors, {} warnings", errors, warnings);
         if errors > 0 {
             println!("Run `slate lint --fix` to auto-generate [config] from source.");
         }
@@ -1556,7 +1562,11 @@ mod tests {
     #[tokio::test]
     async fn create_scaffolds_nested_plugin_project_paths() {
         let dir = tempdir().unwrap();
-        let name = dir.path().join("nested").join("plugins").join("sample-plugin");
+        let name = dir
+            .path()
+            .join("nested")
+            .join("plugins")
+            .join("sample-plugin");
 
         create(name.to_str().unwrap()).await.unwrap();
 
@@ -2088,10 +2098,14 @@ position = {{ row = 0, col = 1 }}
         write_default_config("[[widget]]\ntype = ");
 
         let install_error = install().await.unwrap_err();
-        assert!(install_error.to_string().contains("Failed to parse slate.toml"));
+        assert!(install_error
+            .to_string()
+            .contains("Failed to parse slate.toml"));
 
         let update_error = update().await.unwrap_err();
-        assert!(update_error.to_string().contains("Failed to parse slate.toml"));
+        assert!(update_error
+            .to_string()
+            .contains("Failed to parse slate.toml"));
     }
 
     #[tokio::test]
@@ -2106,10 +2120,14 @@ position = {{ row = 0, col = 1 }}
         assert!(list_error.to_string().contains("Failed to parse lockfile"));
 
         let remove_error = remove("clock").await.unwrap_err();
-        assert!(remove_error.to_string().contains("Failed to parse lockfile"));
+        assert!(remove_error
+            .to_string()
+            .contains("Failed to parse lockfile"));
 
         let outdated_error = outdated().await.unwrap_err();
-        assert!(outdated_error.to_string().contains("Failed to parse lockfile"));
+        assert!(outdated_error
+            .to_string()
+            .contains("Failed to parse lockfile"));
     }
 
     #[tokio::test]
@@ -2123,7 +2141,9 @@ position = {{ row = 0, col = 1 }}
         let plugin_name = "slate-cli-test-plugin";
         std::fs::create_dir_all(plugins_dir.join(plugin_name)).unwrap();
         std::fs::write(
-            plugins_dir.join(plugin_name).join(format!("{plugin_name}.wasm")),
+            plugins_dir
+                .join(plugin_name)
+                .join(format!("{plugin_name}.wasm")),
             b"wasm",
         )
         .unwrap();
