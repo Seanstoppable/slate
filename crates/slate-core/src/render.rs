@@ -127,7 +127,7 @@ fn rat_color_to_css(color: RatColor, default: &str) -> Option<String> {
 const SLATE_SURFACE: RatColor = RatColor::Rgb(15, 23, 42);
 const SLATE_STATUS_BG: RatColor = RatColor::Rgb(2, 6, 23);
 const SLATE_BORDER: RatColor = RatColor::Rgb(71, 85, 105);
-const SLATE_BORDER_FOCUSED: RatColor = RatColor::Rgb(148, 163, 184);
+const SLATE_BORDER_FOCUSED: RatColor = RatColor::Rgb(203, 213, 225);
 const SLATE_TEXT: RatColor = RatColor::Rgb(226, 232, 240);
 const SLATE_MUTED: RatColor = RatColor::Rgb(148, 163, 184);
 const SLATE_SELECTION_BG: RatColor = RatColor::Rgb(51, 65, 85);
