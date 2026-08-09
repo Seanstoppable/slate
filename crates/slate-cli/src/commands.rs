@@ -1092,6 +1092,7 @@ mod tests {
     use slate_core::config::WidgetEntry;
     use slate_plugin_sdk::Position;
     use slate_plugin_sdk::Widget;
+    use std::collections::HashMap;
     use std::sync::{Mutex, OnceLock};
     use tempfile::tempdir;
 
@@ -2292,6 +2293,89 @@ position = {{ row = 0, col = 1 }}
 
         assert_eq!(dashboard.widgets.len(), 1);
         assert_eq!(dashboard.widgets[0].metadata.name, "Welcome");
+    }
+
+    #[test]
+    fn build_dashboard_loads_configured_builtin_with_settings() {
+        let dir = tempdir().unwrap();
+        let log_path = dir.path().join("app.log");
+        std::fs::write(&log_path, "first line\nsecond line").unwrap();
+
+        let mut config = SlateConfig::default();
+        config.layout.rows = 3;
+        config.layout.cols = 4;
+        config.widget = vec![WidgetEntry {
+            widget_type: "builtin:logfile".to_string(),
+            position: Position {
+                row: 1,
+                col: 2,
+                row_span: 2,
+                col_span: 1,
+            },
+            refresh_interval: Some(12),
+            settings: HashMap::from([
+                (
+                    "border_color".to_string(),
+                    toml::Value::String("purple".to_string()),
+                ),
+                (
+                    "filePath".to_string(),
+                    toml::Value::String(log_path.display().to_string()),
+                ),
+            ]),
+        }];
+
+        let dashboard = build_dashboard(config);
+        let snapshot = dashboard.snapshot();
+
+        assert_eq!(snapshot.layout.rows, 3);
+        assert_eq!(snapshot.layout.cols, 4);
+        assert_eq!(snapshot.widgets.len(), 1);
+        assert_eq!(snapshot.widgets[0].metadata.name, "Log File");
+        assert_eq!(snapshot.widgets[0].position.row, 1);
+        assert_eq!(snapshot.widgets[0].position.col, 2);
+        assert_eq!(snapshot.widgets[0].position.row_span, 2);
+        assert_eq!(snapshot.widgets[0].refresh_interval_seconds, 12);
+        assert!(matches!(
+            snapshot.widgets[0].border_color,
+            Some(slate_plugin_sdk::Color::Magenta)
+        ));
+        match &snapshot.widgets[0].content {
+            WidgetContent::Text { content, .. } => {
+                assert!(content.contains("first line"));
+                assert!(content.contains("second line"));
+            }
+            other => panic!("expected text content, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_color_accepts_supported_names_case_insensitively() {
+        use slate_plugin_sdk::Color;
+
+        assert!(matches!(parse_color("RED"), Some(Color::Red)));
+        assert!(matches!(parse_color("green"), Some(Color::Green)));
+        assert!(matches!(parse_color("Yellow"), Some(Color::Yellow)));
+        assert!(matches!(parse_color("blue"), Some(Color::Blue)));
+        assert!(matches!(parse_color("purple"), Some(Color::Magenta)));
+        assert!(matches!(parse_color("magenta"), Some(Color::Magenta)));
+        assert!(matches!(parse_color("cyan"), Some(Color::Cyan)));
+        assert!(matches!(parse_color("white"), Some(Color::White)));
+        assert!(matches!(parse_color("grey"), Some(Color::Gray)));
+        assert!(matches!(parse_color("gray"), Some(Color::Gray)));
+        assert!(parse_color("chartreuse").is_none());
+    }
+
+    #[tokio::test]
+    async fn serve_returns_error_for_missing_explicit_config_file() {
+        let dir = tempdir().unwrap();
+        let missing = dir.path().join("missing.toml");
+
+        let error = serve(Some(missing.to_str().unwrap()), "127.0.0.1", 0)
+            .await
+            .unwrap_err();
+
+        assert!(error.to_string().contains("Failed to read config"));
     }
 
     #[tokio::test]
