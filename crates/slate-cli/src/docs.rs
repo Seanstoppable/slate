@@ -272,7 +272,11 @@ fn generate_config_example(name: &str, _kind: &str, manifest: &DocsManifest) -> 
     if !manifest.config.is_empty() {
         lines.push(String::new());
         lines.push("# Configuration".to_string());
-        for (key, field) in &manifest.config {
+        let mut config_entries: Vec<_> = manifest.config.iter().collect();
+        config_entries.sort_by(|(left, _), (right, _)| {
+            left.to_ascii_lowercase().cmp(&right.to_ascii_lowercase())
+        });
+        for (key, field) in config_entries {
             let required = field.required.unwrap_or(false);
             let example_value = match field.field_type.as_str() {
                 "array" => "[\"example1\", \"example2\"]".to_string(),
@@ -776,6 +780,10 @@ mod tests {
         assert!(example.contains("# Configuration"));
         assert!(example.contains("(required)"));
         assert!(example.contains("The API URL"));
+        assert!(
+            example.find("count = 1  # Number of items").unwrap()
+                < example.find("url = \"...\"  # The API URL (required)").unwrap()
+        );
     }
 
     #[test]
