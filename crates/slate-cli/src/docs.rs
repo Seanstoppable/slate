@@ -436,6 +436,21 @@ fn extract_lua_field(source: &str, field: &str) -> Option<String> {
     None
 }
 
+/// Builtins report a non-numeric version (`built-in`), so only prefix `v` for real
+/// semver-style versions. Also drops the separator when no author is known.
+fn format_version_line(version: &str, author: &str) -> String {
+    let version = if version.starts_with(|c: char| c.is_ascii_digit()) {
+        format!("v{}", version)
+    } else {
+        version.to_string()
+    };
+    if author.is_empty() {
+        version
+    } else {
+        format!("{} \u{b7} {}", version, author)
+    }
+}
+
 fn generate_docs_html(plugins: &[PluginInfo]) -> Result<String> {
     let mut cards = String::new();
     for (idx, p) in plugins.iter().enumerate() {
@@ -515,7 +530,7 @@ fn generate_docs_html(plugins: &[PluginInfo]) -> Result<String> {
   <div class="card-meta">
     <div class="os-row">{os_badges}</div>
     <div class="perms-row"><strong>Permissions:</strong> {perms_html}</div>
-    <div class="version-row">v{version} &middot; {author}</div>
+    <div class="version-row">{version_line}</div>
   </div>
 </div>
 "#,
@@ -532,8 +547,7 @@ fn generate_docs_html(plugins: &[PluginInfo]) -> Result<String> {
             tags_html = tags_html,
             os_badges = os_badges,
             perms_html = perms_html,
-            version = html_escape(&p.version),
-            author = html_escape(&p.author),
+            version_line = html_escape(&format_version_line(&p.version, &p.author)),
         ));
     }
 
@@ -909,6 +923,24 @@ mod tests {
         assert!(html.contains("Shows weather"));
         assert!(html.contains("network: api.example.com"));
         assert!(html.contains("onclick=\"showDetail(0)\""));
+    }
+
+    #[test]
+    fn format_version_line_handles_builtins_and_missing_authors() {
+        assert_eq!(
+            format_version_line("0.1.0", "Slate Community"),
+            "v0.1.0 · Slate Community"
+        );
+        assert_eq!(format_version_line("built-in", "Slate"), "built-in · Slate");
+        assert_eq!(format_version_line("0.1.0", ""), "v0.1.0");
+        assert_eq!(format_version_line("built-in", ""), "built-in");
+    }
+
+    #[test]
+    fn generate_docs_html_does_not_prefix_builtin_versions_with_v() {
+        let html = generate_docs_html(&[sample_builtin()]).unwrap();
+        assert!(html.contains("built-in · Slate"));
+        assert!(!html.contains("vbuilt-in"));
     }
 
     #[test]

@@ -546,7 +546,8 @@ function applyFilters() {
 function showDetail(idx) {
   const p = pluginData[idx];
   document.getElementById('modal-name').textContent = p.name;
-  document.getElementById('modal-meta').textContent = 'v' + p.version + ' · ' + p.author + ' · ' + p.lang;
+  const versionLabel = /^\d/.test(p.version) ? 'v' + p.version : p.version;
+  document.getElementById('modal-meta').textContent = [versionLabel, p.author, p.lang].filter(Boolean).join(' · ');
   document.getElementById('modal-desc').textContent = p.desc;
   document.getElementById('modal-config').textContent = p.config;
 
