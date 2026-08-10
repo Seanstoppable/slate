@@ -168,6 +168,31 @@ fn make_safe_http_function() -> Function {
     )
 }
 
+/// Handle a `store_get` request against the plugin host state.
+/// Input JSON: {"key": "..."}; returns JSON {"found": bool, "value": string|null}
+fn run_store_get_request(state: &HostState, input: &str) -> Result<String, extism::Error> {
+    let request: serde_json::Value = serde_json::from_str(input)
+        .map_err(|e| extism::Error::msg(format!("Invalid store_get request JSON: {}", e)))?;
+    let key = request["key"].as_str().unwrap_or("");
+
+    state
+        .permissions
+        .check_storage()
+        .map_err(|e| extism::Error::msg(e.to_string()))?;
+
+    let response = if key.is_empty() {
+        serde_json::json!({ "found": false, "value": null })
+    } else {
+        let value = state
+            .store
+            .get(key)
+            .map(|bytes| String::from_utf8_lossy(bytes).to_string());
+        serde_json::json!({ "found": value.is_some(), "value": value })
+    };
+
+    Ok(response.to_string())
+}
+
 fn make_store_get_function(host_state: UserData<HostState>) -> Function {
     Function::new(
         "store_get",
@@ -176,37 +201,43 @@ fn make_store_get_function(host_state: UserData<HostState>) -> Function {
         host_state,
         |plugin: &mut extism::CurrentPlugin, inputs: &[Val], outputs: &mut [Val], user_data| {
             let input: String = plugin.memory_get_val(&inputs[0])?;
-            let request: serde_json::Value = serde_json::from_str(&input).map_err(|e| {
-                extism::Error::msg(format!("Invalid store_get request JSON: {}", e))
-            })?;
-            let key = request["key"].as_str().unwrap_or("");
-
             let state = user_data
                 .get()
                 .map_err(|e| extism::Error::msg(e.to_string()))?;
             let state = state
                 .lock()
                 .map_err(|_| extism::Error::msg("Failed to lock plugin host state"))?;
-            state
-                .permissions
-                .check_storage()
-                .map_err(|e| extism::Error::msg(e.to_string()))?;
-
-            let response = if key.is_empty() {
-                serde_json::json!({ "found": false, "value": null })
-            } else {
-                let value = state
-                    .store
-                    .get(key)
-                    .map(|bytes| String::from_utf8_lossy(bytes).to_string());
-                serde_json::json!({ "found": value.is_some(), "value": value })
-            };
-
-            let handle = plugin.memory_new(response.to_string())?;
+            let response = run_store_get_request(&state, &input)?;
+            let handle = plugin.memory_new(response)?;
             outputs[0] = plugin.memory_to_val(handle);
             Ok(())
         },
     )
+}
+
+/// Handle a `store_set` request against the plugin host state.
+/// Input JSON: {"key": "...", "value": "..."}; returns JSON {"ok": true}
+fn run_store_set_request(state: &mut HostState, input: &str) -> Result<String, extism::Error> {
+    let request: serde_json::Value = serde_json::from_str(input)
+        .map_err(|e| extism::Error::msg(format!("Invalid store_set request JSON: {}", e)))?;
+    let key = request["key"].as_str().unwrap_or("");
+    let value = request["value"].as_str().unwrap_or("");
+
+    state
+        .permissions
+        .check_storage()
+        .map_err(|e| extism::Error::msg(e.to_string()))?;
+
+    if key.is_empty() {
+        return Err(extism::Error::msg("store_set: 'key' field is required"));
+    }
+
+    state
+        .store
+        .set(key, value.as_bytes().to_vec())
+        .map_err(|e| extism::Error::msg(e.to_string()))?;
+
+    Ok(serde_json::json!({ "ok": true }).to_string())
 }
 
 fn make_store_set_function(host_state: UserData<HostState>) -> Function {
@@ -217,37 +248,31 @@ fn make_store_set_function(host_state: UserData<HostState>) -> Function {
         host_state,
         |plugin: &mut extism::CurrentPlugin, inputs: &[Val], outputs: &mut [Val], user_data| {
             let input: String = plugin.memory_get_val(&inputs[0])?;
-            let request: serde_json::Value = serde_json::from_str(&input).map_err(|e| {
-                extism::Error::msg(format!("Invalid store_set request JSON: {}", e))
-            })?;
-            let key = request["key"].as_str().unwrap_or("");
-            let value = request["value"].as_str().unwrap_or("");
-
             let state = user_data
                 .get()
                 .map_err(|e| extism::Error::msg(e.to_string()))?;
             let mut state = state
                 .lock()
                 .map_err(|_| extism::Error::msg("Failed to lock plugin host state"))?;
-            state
-                .permissions
-                .check_storage()
-                .map_err(|e| extism::Error::msg(e.to_string()))?;
-
-            if key.is_empty() {
-                return Err(extism::Error::msg("store_set: 'key' field is required"));
-            }
-
-            state
-                .store
-                .set(key, value.as_bytes().to_vec())
-                .map_err(|e| extism::Error::msg(e.to_string()))?;
-
-            let handle = plugin.memory_new(serde_json::json!({ "ok": true }).to_string())?;
+            let response = run_store_set_request(&mut state, &input)?;
+            let handle = plugin.memory_new(response)?;
             outputs[0] = plugin.memory_to_val(handle);
             Ok(())
         },
     )
+}
+
+/// Serialize the plugin's configured settings for the `get_config` host function.
+fn run_get_config_request(state: &HostState) -> Result<String, extism::Error> {
+    serde_json::to_string(
+        &state
+            .config
+            .as_ref()
+            .map(|config| &config.settings)
+            .cloned()
+            .unwrap_or_default(),
+    )
+    .map_err(|e| extism::Error::msg(e.to_string()))
 }
 
 fn make_get_config_function(host_state: UserData<HostState>) -> Function {
@@ -263,15 +288,7 @@ fn make_get_config_function(host_state: UserData<HostState>) -> Function {
             let state = state
                 .lock()
                 .map_err(|_| extism::Error::msg("Failed to lock plugin host state"))?;
-            let config_json = serde_json::to_string(
-                &state
-                    .config
-                    .as_ref()
-                    .map(|config| &config.settings)
-                    .cloned()
-                    .unwrap_or_default(),
-            )
-            .map_err(|e| extism::Error::msg(e.to_string()))?;
+            let config_json = run_get_config_request(&state)?;
             let handle = plugin.memory_new(config_json)?;
             outputs[0] = plugin.memory_to_val(handle);
             Ok(())
@@ -1269,6 +1286,91 @@ mod tests {
                 other => panic!("expected text content, got {other:?}"),
             }
         }
+    }
+
+    fn host_state_with_storage(storage: bool) -> HostState {
+        HostState {
+            config: None,
+            permissions: PermissionGuard::new(Permissions {
+                storage,
+                ..Default::default()
+            }),
+            store: PluginStore::new(),
+        }
+    }
+
+    #[test]
+    fn run_store_set_and_get_round_trip_value() {
+        let mut state = host_state_with_storage(true);
+
+        let set = run_store_set_request(&mut state, r#"{"key":"count","value":"7"}"#).unwrap();
+        assert_eq!(set, r#"{"ok":true}"#);
+
+        let got = run_store_get_request(&state, r#"{"key":"count"}"#).unwrap();
+        let got: serde_json::Value = serde_json::from_str(&got).unwrap();
+        assert_eq!(got["found"], serde_json::json!(true));
+        assert_eq!(got["value"], serde_json::json!("7"));
+    }
+
+    #[test]
+    fn run_store_get_reports_missing_and_empty_keys() {
+        let state = host_state_with_storage(true);
+
+        let missing: serde_json::Value =
+            serde_json::from_str(&run_store_get_request(&state, r#"{"key":"nope"}"#).unwrap())
+                .unwrap();
+        assert_eq!(missing["found"], serde_json::json!(false));
+        assert_eq!(missing["value"], serde_json::Value::Null);
+
+        let empty: serde_json::Value =
+            serde_json::from_str(&run_store_get_request(&state, r#"{"key":""}"#).unwrap()).unwrap();
+        assert_eq!(empty["found"], serde_json::json!(false));
+    }
+
+    #[test]
+    fn run_store_requests_reject_invalid_json_and_missing_key() {
+        let mut state = host_state_with_storage(true);
+
+        let err = run_store_get_request(&state, "not json").unwrap_err();
+        assert!(err.to_string().contains("Invalid store_get request JSON"));
+
+        let err = run_store_set_request(&mut state, "not json").unwrap_err();
+        assert!(err.to_string().contains("Invalid store_set request JSON"));
+
+        let err = run_store_set_request(&mut state, r#"{"value":"x"}"#).unwrap_err();
+        assert!(err.to_string().contains("'key' field is required"));
+    }
+
+    #[test]
+    fn run_store_requests_are_denied_without_storage_permission() {
+        let mut state = host_state_with_storage(false);
+
+        assert!(run_store_get_request(&state, r#"{"key":"count"}"#).is_err());
+        assert!(run_store_set_request(&mut state, r#"{"key":"count","value":"7"}"#).is_err());
+    }
+
+    #[test]
+    fn run_get_config_request_returns_settings_or_empty_object() {
+        let mut state = host_state_with_storage(true);
+        assert_eq!(run_get_config_request(&state).unwrap(), "{}");
+
+        state.config = Some(WidgetConfig {
+            position: slate_plugin_sdk::Position {
+                row: 0,
+                col: 0,
+                row_span: 1,
+                col_span: 1,
+            },
+            settings: std::collections::HashMap::from([(
+                "work_minutes".to_string(),
+                serde_json::json!(25),
+            )]),
+            refresh_interval: None,
+        });
+
+        let config: serde_json::Value =
+            serde_json::from_str(&run_get_config_request(&state).unwrap()).unwrap();
+        assert_eq!(config["work_minutes"], serde_json::json!(25));
     }
 
     #[test]
