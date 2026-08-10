@@ -63,6 +63,7 @@ impl Dashboard {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn add_widget(
         &mut self,
         mut widget: BoxedWidget,
