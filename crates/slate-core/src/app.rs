@@ -479,13 +479,7 @@ impl App {
         let Some(instance) = self.focused_widget() else {
             return false;
         };
-        let Some(selected) = instance.selected else {
-            return false;
-        };
         let WidgetContent::List { items, actions, .. } = &instance.content else {
-            return false;
-        };
-        let Some(item) = items.get(selected) else {
             return false;
         };
 
@@ -503,7 +497,12 @@ impl App {
             return false;
         };
 
-        let item_id = item.id.clone();
+        // Use the selected item's id, or empty string when the list has no items.
+        let item_id = instance
+            .selected
+            .and_then(|sel| items.get(sel))
+            .map(|item| item.id.clone())
+            .unwrap_or_default();
         let mut pending_action: Option<WidgetAction> = None;
         if let Some(instance) = self.focused_widget_mut() {
             if let Some(action) = instance.widget.on_action(&action_id, &item_id) {
