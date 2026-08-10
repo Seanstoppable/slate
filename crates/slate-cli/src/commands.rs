@@ -202,26 +202,43 @@ fn check_os_support(wasm_path: &std::path::Path) -> Result<()> {
     Ok(())
 }
 
+/// Build the widget configuration passed to a plugin from its config entry.
+fn build_widget_config(entry: &slate_core::config::WidgetEntry) -> WidgetConfig {
+    WidgetConfig {
+        position: entry.position.clone(),
+        settings: entry
+            .settings
+            .iter()
+            .map(|(k, v)| (k.clone(), toml_to_json(v)))
+            .collect(),
+        refresh_interval: entry.refresh_interval,
+    }
+}
+
+/// Resolve the optional border color declared in a widget entry's settings.
+fn border_color_for(entry: &slate_core::config::WidgetEntry) -> Option<slate_plugin_sdk::Color> {
+    entry
+        .settings
+        .get("border_color")
+        .and_then(|v| v.as_str())
+        .and_then(parse_color)
+}
+
+/// Whether a widget type refers to an installable (non-builtin, non-Lua) plugin.
+fn is_installable(widget_type: &str) -> bool {
+    !widget_type.starts_with("builtin:") && !widget_type.starts_with("lua:")
+}
+
+/// Short display name for a plugin source such as `github.com/owner/repo`.
+fn plugin_display_name(widget_type: &str) -> &str {
+    widget_type.split('/').next_back().unwrap_or(widget_type)
+}
+
 fn build_dashboard(config: SlateConfig) -> Dashboard {
     let mut dashboard = Dashboard::new(config.clone());
 
     for entry in &config.widget {
-        let widget_config = WidgetConfig {
-            position: entry.position.clone(),
-            settings: entry
-                .settings
-                .iter()
-                .map(|(k, v)| (k.clone(), toml_to_json(v)))
-                .collect(),
-            refresh_interval: entry.refresh_interval,
-        };
-
-        let widget = load_widget_or_error(entry, widget_config);
-        let border_color = entry
-            .settings
-            .get("border_color")
-            .and_then(|v| v.as_str())
-            .and_then(parse_color);
+        let widget = load_widget_or_error(entry, build_widget_config(entry));
         dashboard.add_widget(
             widget,
             entry.position.row,
@@ -229,7 +246,7 @@ fn build_dashboard(config: SlateConfig) -> Dashboard {
             entry.position.row_span,
             entry.position.col_span,
             entry.refresh_interval,
-            border_color,
+            border_color_for(entry),
         );
     }
 
@@ -318,7 +335,7 @@ pub async fn install() -> Result<()> {
     let mut lockfile = Lockfile::load_default()?;
 
     for entry in &config.widget {
-        if !entry.widget_type.starts_with("builtin:") && !entry.widget_type.starts_with("lua:") {
+        if is_installable(&entry.widget_type) {
             println!("Installing {}...", entry.widget_type);
             match installer.install(&entry.widget_type, None).await {
                 Ok(installed) => {
@@ -352,12 +369,8 @@ pub async fn update() -> Result<()> {
     let mut lockfile = Lockfile::load_default()?;
 
     for entry in &config.widget {
-        if !entry.widget_type.starts_with("builtin:") && !entry.widget_type.starts_with("lua:") {
-            let plugin_name = entry
-                .widget_type
-                .split('/')
-                .next_back()
-                .unwrap_or(&entry.widget_type);
+        if is_installable(&entry.widget_type) {
+            let plugin_name = plugin_display_name(&entry.widget_type);
             print!("Updating {}...", plugin_name);
             match installer.install(&entry.widget_type, None).await {
                 Ok(installed) => {
@@ -1133,6 +1146,88 @@ mod tests {
     use std::collections::HashMap;
     use std::sync::{Mutex, OnceLock};
     use tempfile::tempdir;
+
+    #[test]
+    fn build_widget_config_converts_settings_and_carries_position() {
+        let entry = WidgetEntry {
+            widget_type: "builtin:clock".to_string(),
+            position: Position {
+                row: 1,
+                col: 2,
+                row_span: 2,
+                col_span: 3,
+            },
+            refresh_interval: Some(45),
+            settings: std::collections::HashMap::from([
+                ("title".to_string(), toml::Value::String("Now".to_string())),
+                ("limit".to_string(), toml::Value::Integer(5)),
+            ]),
+        };
+
+        let config = build_widget_config(&entry);
+
+        assert_eq!(config.position.row, 1);
+        assert_eq!(config.position.col, 2);
+        assert_eq!(config.position.row_span, 2);
+        assert_eq!(config.position.col_span, 3);
+        assert_eq!(config.refresh_interval, Some(45));
+        assert_eq!(
+            config.settings.get("title"),
+            Some(&serde_json::json!("Now"))
+        );
+        assert_eq!(config.settings.get("limit"), Some(&serde_json::json!(5)));
+    }
+
+    #[test]
+    fn border_color_for_reads_valid_colors_and_ignores_others() {
+        let mut entry = WidgetEntry {
+            widget_type: "builtin:clock".to_string(),
+            position: Position {
+                row: 0,
+                col: 0,
+                row_span: 1,
+                col_span: 1,
+            },
+            refresh_interval: None,
+            settings: std::collections::HashMap::new(),
+        };
+        assert!(border_color_for(&entry).is_none());
+
+        entry.settings.insert(
+            "border_color".to_string(),
+            toml::Value::String("red".to_string()),
+        );
+        assert!(matches!(
+            border_color_for(&entry),
+            Some(slate_plugin_sdk::Color::Red)
+        ));
+
+        entry.settings.insert(
+            "border_color".to_string(),
+            toml::Value::String("definitely-not-a-color".to_string()),
+        );
+        assert!(border_color_for(&entry).is_none());
+
+        entry
+            .settings
+            .insert("border_color".to_string(), toml::Value::Integer(3));
+        assert!(border_color_for(&entry).is_none());
+    }
+
+    #[test]
+    fn is_installable_excludes_builtin_and_lua_sources() {
+        assert!(is_installable("github.com/owner/repo"));
+        assert!(is_installable("wasm:plugins/clock.wasm"));
+        assert!(!is_installable("builtin:resource_usage"));
+        assert!(!is_installable("lua:~/.config/slate/script.lua"));
+    }
+
+    #[test]
+    fn plugin_display_name_uses_last_path_segment() {
+        assert_eq!(plugin_display_name("github.com/owner/repo"), "repo");
+        assert_eq!(plugin_display_name("clock"), "clock");
+        assert_eq!(plugin_display_name("a/b/c"), "c");
+    }
 
     fn widget_config() -> WidgetConfig {
         WidgetConfig {
