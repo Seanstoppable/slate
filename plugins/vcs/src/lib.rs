@@ -15,20 +15,16 @@ struct ExecResult {
 }
 
 #[cfg(target_arch = "wasm32")]
-fn exec_command(cmd: &str, args: &[&str]) -> Result<ExecResult, Error> {
-    let request = json!({ "cmd": cmd, "args": args });
-    let request_str = request.to_string();
-    let mem = Memory::from_bytes(request_str.as_bytes())?;
-    let offset = unsafe { extism_pdk::extism_call("exec_command", mem.offset()) };
-    if offset != 0 {
-        return Err(Error::msg("exec_command host function call failed"));
-    }
-    let output = extism_pdk::output_bytes()?;
-    let output_str = std::str::from_utf8(&output)
-        .map_err(|e| Error::msg(format!("Invalid UTF-8: {}", e)))?;
-    let result: ExecResult = serde_json::from_str(output_str)
-        .map_err(|e| Error::msg(format!("Failed to parse exec result: {}", e)))?;
-    Ok(result)
+#[host_fn]
+extern "ExtismHost" {
+    fn exec_command(input: String) -> String;
+}
+
+#[cfg(target_arch = "wasm32")]
+fn run_exec(cmd: &str, args: &[&str]) -> Result<ExecResult, Error> {
+    let request = json!({ "cmd": cmd, "args": args }).to_string();
+    let output = unsafe { exec_command(request)? };
+    serde_json::from_str(&output).map_err(|e| Error::msg(e.to_string()))
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -203,15 +199,15 @@ fn parse_hg_status_output(text: &str) -> Vec<(String, String)> {
 
 #[cfg(target_arch = "wasm32")]
 fn get_git_info(repo_path: &str) -> (String, Vec<(String, String)>, Vec<(String, String, String, String)>) {
-    let branch = exec_command("git", &["-C", repo_path, "rev-parse", "--abbrev-ref", "HEAD"])
+    let branch = run_exec("git", &["-C", repo_path, "rev-parse", "--abbrev-ref", "HEAD"])
         .map(|r| r.stdout.trim().to_string())
         .unwrap_or_else(|_| "unknown".to_string());
 
-    let status = exec_command("git", &["-C", repo_path, "status", "--porcelain"])
+    let status = run_exec("git", &["-C", repo_path, "status", "--porcelain"])
         .map(|r| parse_git_status_output(&r.stdout))
         .unwrap_or_default();
 
-    let log = exec_command("git", &["-C", repo_path, "log", "--oneline", "-10", "--format=%h|%s|%an|%ar"])
+    let log = run_exec("git", &["-C", repo_path, "log", "--oneline", "-10", "--format=%h|%s|%an|%ar"])
         .map(|r| parse_commit_log_output(&r.stdout))
         .unwrap_or_default();
 
@@ -220,15 +216,15 @@ fn get_git_info(repo_path: &str) -> (String, Vec<(String, String)>, Vec<(String,
 
 #[cfg(target_arch = "wasm32")]
 fn get_hg_info(repo_path: &str) -> (String, Vec<(String, String)>, Vec<(String, String, String, String)>) {
-    let branch = exec_command("hg", &["branch", "-R", repo_path])
+    let branch = run_exec("hg", &["branch", "-R", repo_path])
         .map(|r| r.stdout.trim().to_string())
         .unwrap_or_else(|_| "default".to_string());
 
-    let status = exec_command("hg", &["status", "-R", repo_path])
+    let status = run_exec("hg", &["status", "-R", repo_path])
         .map(|r| parse_hg_status_output(&r.stdout))
         .unwrap_or_default();
 
-    let log = exec_command("hg", &["log", "-R", repo_path, "-l", "10", "--template", "{short(node)}|{desc|firstline}|{author|user}|{date|age}\n"])
+    let log = run_exec("hg", &["log", "-R", repo_path, "-l", "10", "--template", "{short(node)}|{desc|firstline}|{author|user}|{date|age}\n"])
         .map(|r| parse_commit_log_output(&r.stdout))
         .unwrap_or_default();
 

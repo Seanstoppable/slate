@@ -181,20 +181,16 @@ fn detail_text(settings: &Settings, state: &TimerState) -> String {
 }
 
 #[cfg(target_arch = "wasm32")]
-fn call_host(function: &str, request: serde_json::Value) -> Result<String, Error> {
-    let request_str = request.to_string();
-    let mem = Memory::from_bytes(request_str.as_bytes())?;
-    let offset = unsafe { extism_pdk::extism_call(function, mem.offset()) };
-    if offset == 0 {
-        return Err(Error::msg(format!("{function} host function call failed")));
-    }
-    let output = extism_pdk::output_bytes()?;
-    String::from_utf8(output).map_err(|e| Error::msg(format!("Invalid UTF-8 from {function}: {e}")))
+#[host_fn]
+extern "ExtismHost" {
+    fn get_config(input: String) -> String;
+    fn store_get(input: String) -> String;
+    fn store_set(input: String) -> String;
 }
 
 #[cfg(target_arch = "wasm32")]
 fn load_settings() -> Settings {
-    call_host("get_config", json!({}))
+    unsafe { get_config(String::new()) }
         .ok()
         .and_then(|raw| serde_json::from_str(&raw).ok())
         .unwrap_or(Settings {
@@ -205,7 +201,7 @@ fn load_settings() -> Settings {
 
 #[cfg(target_arch = "wasm32")]
 fn load_state(settings: &Settings) -> TimerState {
-    let response = call_host("store_get", json!({ "key": STATE_KEY }))
+    let response = unsafe { store_get(json!({ "key": STATE_KEY }).to_string()) }
         .ok()
         .and_then(|raw| serde_json::from_str::<StoreGetResponse>(&raw).ok());
 
@@ -224,13 +220,15 @@ fn load_state(settings: &Settings) -> TimerState {
 
 #[cfg(target_arch = "wasm32")]
 fn save_state(state: &TimerState) -> Result<(), Error> {
-    call_host(
-        "store_set",
-        json!({
-            "key": STATE_KEY,
-            "value": serde_json::to_string(state).unwrap_or_default()
-        }),
-    )?;
+    unsafe {
+        store_set(
+            json!({
+                "key": STATE_KEY,
+                "value": serde_json::to_string(state).unwrap_or_default()
+            })
+            .to_string(),
+        )?;
+    }
     Ok(())
 }
 

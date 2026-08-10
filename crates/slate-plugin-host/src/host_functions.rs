@@ -359,4 +359,17 @@ mod tests {
         assert_eq!(result.body, "hello");
         assert_eq!(result.headers.get("x-test").map(String::as_str), Some("ok"));
     }
+
+    #[test]
+    fn plugin_data_dir_creates_and_returns_directory() {
+        let result = plugin_data_dir("test-coverage-plugin");
+        assert!(
+            result.is_ok(),
+            "plugin_data_dir should succeed: {:?}",
+            result
+        );
+        let dir = result.unwrap();
+        assert!(dir.exists(), "directory should exist after plugin_data_dir");
+        assert!(dir.ends_with("test-coverage-plugin"));
+    }
 }
