@@ -64,10 +64,10 @@ numberOfStories = 10
 # type = "lua:~/.config/slate/scripts/greeting.lua"
 # position = { row = 2, col = 2 }
 
-# Interactive Lua widget -- press s/p/x while focused to control it.
-# No compilation needed, unlike wtfutil's Go widgets.
+# WASM pomodoro plugin -- press s/p/x while focused to control it.
+# State is persisted via the storage permission, so it survives restarts.
 # [[widget]]
-# type = "lua:scripts/pomodoro.lua"
+# type = "wasm:plugins/pomodoro/pomodoro.wasm"
 # position = { row = 2, col = 2 }
 # work_minutes = 25
 # break_minutes = 5
