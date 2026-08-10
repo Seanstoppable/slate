@@ -343,9 +343,17 @@ impl WasmPlugin {
             .to_string();
 
         let wasm = Wasm::data(wasm_bytes);
-        let manifest = Manifest::new([wasm])
+        let mut manifest = Manifest::new([wasm])
             .with_allowed_hosts(permissions.network.clone().into_iter())
             .with_timeout(std::time::Duration::from_secs(10));
+
+        // Preopen the plugin's data directory so WASI filesystem calls work.
+        if permissions.storage {
+            if let Ok(data_dir) = crate::host_functions::plugin_data_dir(&name) {
+                let path_str = data_dir.to_string_lossy().into_owned();
+                manifest = manifest.with_allowed_path(path_str, data_dir);
+            }
+        }
 
         let host_state = UserData::new(HostState {
             config: None,
@@ -384,9 +392,16 @@ impl WasmPlugin {
         permissions: Permissions,
     ) -> Result<Self> {
         let wasm = Wasm::data(bytes);
-        let manifest = Manifest::new([wasm])
+        let mut manifest = Manifest::new([wasm])
             .with_allowed_hosts(permissions.network.clone().into_iter())
             .with_timeout(std::time::Duration::from_secs(10));
+
+        if permissions.storage {
+            if let Ok(data_dir) = crate::host_functions::plugin_data_dir(&metadata.name) {
+                let path_str = data_dir.to_string_lossy().into_owned();
+                manifest = manifest.with_allowed_path(path_str, data_dir);
+            }
+        }
         let host_state = UserData::new(HostState {
             config: None,
             permissions: PermissionGuard::new(permissions),
