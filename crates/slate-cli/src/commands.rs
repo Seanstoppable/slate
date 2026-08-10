@@ -150,14 +150,10 @@ struct PluginManifestPlugin {
 
 /// Find and parse plugin.toml next to a WASM file (in same dir or parent dir).
 fn read_plugin_manifest(wasm_path: &std::path::Path) -> Option<PluginManifest> {
-    let dir = wasm_path.parent()?;
-    // Check same directory first, then parent (for plugins with target/ subdirs)
-    for candidate in [
-        dir.join("plugin.toml"),
-        dir.parent()
-            .map(|p| p.join("plugin.toml"))
-            .unwrap_or_default(),
-    ] {
+    // Walk up from the wasm file's directory until we find plugin.toml or hit the root.
+    let mut dir = wasm_path.parent()?;
+    loop {
+        let candidate = dir.join("plugin.toml");
         if candidate.exists() {
             if let Ok(content) = std::fs::read_to_string(&candidate) {
                 if let Ok(manifest) = toml::from_str::<PluginManifest>(&content) {
@@ -165,8 +161,8 @@ fn read_plugin_manifest(wasm_path: &std::path::Path) -> Option<PluginManifest> {
                 }
             }
         }
+        dir = dir.parent()?;
     }
-    None
 }
 
 /// Get the current OS as a normalized string matching plugin.toml conventions.

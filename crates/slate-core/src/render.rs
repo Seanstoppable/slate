@@ -326,6 +326,13 @@ pub fn render_status_bar(
     frame.render_widget(paragraph, area);
 }
 
+pub fn render_input_bar(frame: &mut Frame, area: Rect, prompt: &str, buffer: &str) {
+    let text = format!("{}: {}_", prompt, buffer);
+    let paragraph =
+        Paragraph::new(text).style(Style::default().fg(RatColor::Yellow).bg(RatColor::DarkGray));
+    frame.render_widget(paragraph, area);
+}
+
 fn convert_style(style: &slate_plugin_sdk::CellStyle) -> Style {
     let mut s = Style::default();
     if let Some(ref color) = style.fg {

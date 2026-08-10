@@ -76,6 +76,36 @@ pub fn parse_wmic_line(line: &str) -> Option<DiskEntry> {
     })
 }
 
+/// Parse a single line of `powershell Get-PSDrive` output for fixed drives.
+/// Line format (after header): Name  Used(GB)  Free(GB)  Provider  Root  ...
+/// We use the -csv formatted output instead: Name,Used,Free
+pub fn parse_psdrive_line(line: &str) -> Option<DiskEntry> {
+    let parts: Vec<&str> = line.splitn(3, ',').collect();
+    if parts.len() < 3 {
+        return None;
+    }
+    let name = parts[0].trim().trim_matches('"');
+    let used: f64 = parts[1].trim().trim_matches('"').parse().ok()?;
+    let free: f64 = parts[2].trim().trim_matches('"').parse().ok()?;
+    let total = used + free;
+    if total == 0.0 || name.is_empty() {
+        return None;
+    }
+    let pct = ((used / total) * 100.0) as u8;
+    let bar = make_bar(pct);
+    let color = bar_color(pct);
+    Some(DiskEntry {
+        label: format!("{name}:\\"),
+        display: format!(
+            "{}  {:.1}GB / {:.1}GB",
+            bar,
+            used,
+            total
+        ),
+        color,
+    })
+}
+
 pub fn entries_to_key_value_json(entries: &[DiskEntry]) -> serde_json::Value {
     let pairs: Vec<serde_json::Value> = entries
         .iter()
@@ -112,7 +142,7 @@ pub fn metadata(_input: String) -> FnResult<String> {
 pub fn refresh(_input: String) -> FnResult<String> {
     let mut entries: Vec<DiskEntry> = Vec::new();
 
-    let df_result = exec_command("df", &["-h"]);
+    let df_result = run_exec("df", &["-h"]);
     if let Ok(result) = df_result {
         if result.exit_code == 0 && !result.stdout.is_empty() {
             entries = result
@@ -125,16 +155,20 @@ pub fn refresh(_input: String) -> FnResult<String> {
     }
 
     if entries.is_empty() {
-        if let Ok(result) = exec_command(
-            "wmic",
-            &["logicaldisk", "get", "name,size,freespace", "/format:csv"],
+        // Windows: use PowerShell Get-PSDrive (wmic was removed in Windows 11)
+        if let Ok(result) = run_exec(
+            "powershell",
+            &[
+                "-NoProfile",
+                "-Command",
+                "Get-PSDrive -PSProvider FileSystem | Select-Object -Property Name,@{N='Used';E={[math]::Round($_.Used/1GB,2)}},@{N='Free';E={[math]::Round($_.Free/1GB,2)}} | ConvertTo-Csv -NoTypeInformation | Select-Object -Skip 1",
+            ],
         ) {
             if result.exit_code == 0 {
                 entries = result
                     .stdout
                     .lines()
-                    .skip(1)
-                    .filter_map(parse_wmic_line)
+                    .filter_map(parse_psdrive_line)
                     .collect();
             }
         }
@@ -166,24 +200,16 @@ pub fn on_action(_input: String) -> FnResult<String> {
 }
 
 #[cfg(target_arch = "wasm32")]
-fn exec_command(cmd: &str, args: &[&str]) -> Result<ExecResult, Error> {
-    let request = json!({
-        "cmd": cmd,
-        "args": args
-    });
-    let request_str = request.to_string();
+#[host_fn]
+extern "ExtismHost" {
+    fn exec_command(input: String) -> String;
+}
 
-    let mem = Memory::from_bytes(request_str.as_bytes())?;
-    let offset = unsafe { extism_pdk::extism_call("exec_command", mem.offset()) };
-    if offset != 0 {
-        return Err(Error::msg("exec_command host function call failed"));
-    }
-    let output = extism_pdk::output_bytes()?;
-    let output_str = std::str::from_utf8(&output)
-        .map_err(|e| Error::msg(format!("Invalid UTF-8 from exec_command: {}", e)))?;
-    let result: ExecResult = serde_json::from_str(output_str)
-        .map_err(|e| Error::msg(format!("Failed to parse exec_command result: {}", e)))?;
-    Ok(result)
+#[cfg(target_arch = "wasm32")]
+fn run_exec(cmd: &str, args: &[&str]) -> Result<ExecResult, Error> {
+    let request = json!({"cmd": cmd, "args": args}).to_string();
+    let output = unsafe { exec_command(request)? };
+    serde_json::from_str(&output).map_err(|e| Error::msg(e.to_string()))
 }
 
 #[cfg(test)]

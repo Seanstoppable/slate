@@ -16,7 +16,14 @@ use crate::config::SlateConfig;
 use crate::dashboard::{Dashboard, WidgetInstance};
 use crate::layout::{compute_grid, compute_widget_area, FocusPosition};
 use crate::notifications::UpdateNotifications;
-use crate::render::{render_status_bar, render_widget};
+use crate::render::{render_input_bar, render_status_bar, render_widget};
+
+/// Active text-input prompt state.
+struct InputMode {
+    prompt: String,
+    action_id: String,
+    buffer: String,
+}
 
 /// The main Slate application.
 pub struct App {
@@ -25,6 +32,8 @@ pub struct App {
     focus_initialized: bool,
     running: bool,
     notifications: UpdateNotifications,
+    /// Active text-input prompt, if any.
+    input_mode: Option<InputMode>,
 }
 
 impl App {
@@ -40,6 +49,7 @@ impl App {
             focus_initialized: false,
             running: true,
             notifications,
+            input_mode: None,
         }
     }
 
@@ -157,13 +167,17 @@ impl App {
                     }
                 }
 
-                render_status_bar(
-                    frame,
-                    status_area,
-                    &self.focus,
-                    self.dashboard.widget_count(),
-                    self.notifications.status_message().as_deref(),
-                );
+                if let Some(ref mode) = self.input_mode {
+                    render_input_bar(frame, status_area, &mode.prompt, &mode.buffer);
+                } else {
+                    render_status_bar(
+                        frame,
+                        status_area,
+                        &self.focus,
+                        self.dashboard.widget_count(),
+                        self.notifications.status_message().as_deref(),
+                    );
+                }
             })?;
 
             // Handle input (poll with timeout for refresh)
@@ -181,6 +195,53 @@ impl App {
     }
 
     fn handle_key(&mut self, key: KeyEvent) {
+        // If a text-input prompt is active, intercept all keys
+        if self.input_mode.is_some() {
+            match key.code {
+                KeyCode::Esc => {
+                    self.input_mode = None;
+                    return;
+                }
+                KeyCode::Enter => {
+                    let (text, action_id) = {
+                        let mode = self.input_mode.as_ref().unwrap();
+                        (mode.buffer.clone(), mode.action_id.clone())
+                    };
+                    self.input_mode = None;
+                    let mut pending_action: Option<WidgetAction> = None;
+                    if let Some(instance) = self.focused_widget_mut() {
+                        if let Some(action) = instance.widget.on_action(&action_id, &text) {
+                            match action {
+                                WidgetAction::ShowDetail(d) => {
+                                    instance.detail_content = Some(d);
+                                }
+                                other => pending_action = Some(other),
+                            }
+                        }
+                        instance.content = instance.widget.refresh();
+                        instance.last_refresh = Instant::now();
+                    }
+                    if let Some(action) = pending_action {
+                        self.handle_widget_action(action);
+                    }
+                    return;
+                }
+                KeyCode::Backspace => {
+                    if let Some(ref mut mode) = self.input_mode {
+                        mode.buffer.pop();
+                    }
+                    return;
+                }
+                KeyCode::Char(ch) => {
+                    if let Some(ref mut mode) = self.input_mode {
+                        mode.buffer.push(ch);
+                    }
+                    return;
+                }
+                _ => return,
+            }
+        }
+
         // If showing detail view, Escape dismisses it
         let focused_showing_detail = self
             .focused_widget()
@@ -275,6 +336,7 @@ impl App {
             }
             KeyCode::Enter => {
                 // Forward to focused widget with selected item
+                let mut pending_action: Option<WidgetAction> = None;
                 if let Some(instance) = self.focused_widget_mut() {
                     if let (Some(sel), WidgetContent::List { items, .. }) =
                         (instance.selected, &instance.content)
@@ -286,11 +348,14 @@ impl App {
                                     WidgetAction::ShowDetail(detail) => {
                                         instance.detail_content = Some(detail);
                                     }
-                                    other => Self::handle_widget_action(other),
+                                    other => pending_action = Some(other),
                                 }
                             }
                         }
                     }
+                }
+                if let Some(action) = pending_action {
+                    self.handle_widget_action(action);
                 }
             }
             KeyCode::Char('r') => {
@@ -322,8 +387,15 @@ impl App {
         }
     }
 
-    fn handle_widget_action(action: WidgetAction) {
+    fn handle_widget_action(&mut self, action: WidgetAction) {
         match action {
+            WidgetAction::PromptInput { prompt, action_id } => {
+                self.input_mode = Some(InputMode {
+                    prompt,
+                    action_id,
+                    buffer: String::new(),
+                });
+            }
             WidgetAction::OpenUrl(url) => {
                 // Open URL in system browser (skip during tests)
                 #[cfg(not(test))]
@@ -432,13 +504,17 @@ impl App {
         };
 
         let item_id = item.id.clone();
+        let mut pending_action: Option<WidgetAction> = None;
         if let Some(instance) = self.focused_widget_mut() {
             if let Some(action) = instance.widget.on_action(&action_id, &item_id) {
                 match action {
                     WidgetAction::ShowDetail(detail) => instance.detail_content = Some(detail),
-                    other => Self::handle_widget_action(other),
+                    other => pending_action = Some(other),
                 }
             }
+        }
+        if let Some(action) = pending_action {
+            self.handle_widget_action(action);
         }
         true
     }
@@ -1438,12 +1514,95 @@ mod tests {
 
     #[test]
     fn handle_widget_action_covers_notify_and_show_detail_branches() {
-        App::handle_widget_action(WidgetAction::Notify("hello".to_string()));
+        let mut app = App::new(SlateConfig::default());
+        app.handle_widget_action(WidgetAction::Notify("hello".to_string()));
 
         let result = std::panic::catch_unwind(|| {
-            App::handle_widget_action(WidgetAction::ShowDetail("detail".to_string()));
+            let mut app2 = App::new(SlateConfig::default());
+            app2.handle_widget_action(WidgetAction::ShowDetail("detail".to_string()));
         });
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn handle_widget_action_prompt_input_sets_input_mode() {
+        let mut app = App::new(SlateConfig::default());
+        app.add_widget(Box::new(MockTextWidget), 0, 0, 1, 1, Some(60), None);
+
+        app.handle_widget_action(WidgetAction::PromptInput {
+            prompt: "New todo".to_string(),
+            action_id: "add".to_string(),
+        });
+
+        assert!(app.input_mode.is_some());
+        let mode = app.input_mode.as_ref().unwrap();
+        assert_eq!(mode.prompt, "New todo");
+        assert_eq!(mode.action_id, "add");
+        assert!(mode.buffer.is_empty());
+    }
+
+    #[test]
+    fn input_mode_esc_clears_input_mode() {
+        let mut app = App::new(SlateConfig::default());
+        app.add_widget(Box::new(MockTextWidget), 0, 0, 1, 1, Some(60), None);
+        app.input_mode = Some(InputMode {
+            prompt: "Enter:".to_string(),
+            action_id: "add".to_string(),
+            buffer: "partial".to_string(),
+        });
+
+        app.handle_key(make_key(KeyCode::Esc));
+
+        assert!(app.input_mode.is_none());
+    }
+
+    #[test]
+    fn input_mode_char_appends_to_buffer() {
+        let mut app = App::new(SlateConfig::default());
+        app.add_widget(Box::new(MockTextWidget), 0, 0, 1, 1, Some(60), None);
+        app.input_mode = Some(InputMode {
+            prompt: "Enter:".to_string(),
+            action_id: "add".to_string(),
+            buffer: String::new(),
+        });
+
+        app.handle_key(make_key(KeyCode::Char('h')));
+        app.handle_key(make_key(KeyCode::Char('i')));
+
+        let buffer = app.input_mode.as_ref().map(|m| m.buffer.as_str());
+        assert_eq!(buffer, Some("hi"));
+    }
+
+    #[test]
+    fn input_mode_backspace_removes_last_char() {
+        let mut app = App::new(SlateConfig::default());
+        app.add_widget(Box::new(MockTextWidget), 0, 0, 1, 1, Some(60), None);
+        app.input_mode = Some(InputMode {
+            prompt: "Enter:".to_string(),
+            action_id: "add".to_string(),
+            buffer: "hello".to_string(),
+        });
+
+        app.handle_key(make_key(KeyCode::Backspace));
+
+        let buffer = app.input_mode.as_ref().map(|m| m.buffer.as_str());
+        assert_eq!(buffer, Some("hell"));
+    }
+
+    #[test]
+    fn input_mode_enter_calls_on_action_and_clears_mode() {
+        // MockListWidget returns Some(Notify) from on_action
+        let mut app = test_app_with_list_widget(Some(WidgetAction::Notify("done".to_string())));
+        app.input_mode = Some(InputMode {
+            prompt: "Enter:".to_string(),
+            action_id: "add".to_string(),
+            buffer: "new task".to_string(),
+        });
+
+        app.handle_key(make_key(KeyCode::Enter));
+
+        // input_mode should be cleared after Enter
+        assert!(app.input_mode.is_none());
     }
 
     #[test]

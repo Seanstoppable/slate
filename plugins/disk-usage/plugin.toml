@@ -4,4 +4,4 @@ version = "0.1.0"
 tags = ["disk", "filesystem", "storage", "system"]
 
 [permissions]
-exec = ["df", "wmic"]
+exec = ["df", "powershell", "wmic"]

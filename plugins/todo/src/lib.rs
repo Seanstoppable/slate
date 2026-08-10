@@ -1,9 +1,6 @@
 #[cfg(target_arch = "wasm32")]
 use extism_pdk::*;
 
-#[cfg(target_arch = "wasm32")]
-host_fn!(get_data_dir() -> String);
-
 /// A parsed todo.txt item.
 pub struct TodoItem {
     pub id: usize,
@@ -75,7 +72,68 @@ pub fn render_items(items: &[TodoItem]) -> serde_json::Value {
         "type": "list",
         "selectable": true,
         "items": list,
+        "actions": [
+            {"id": "add", "label": "Add item", "key": "a", "confirm": false},
+            {"id": "delete", "label": "Delete", "key": "x", "confirm": true},
+            {"id": "toggle", "label": "Toggle done", "key": "d", "confirm": false},
+        ]
     })
+}
+
+/// Toggle a line between done (prefixed "x ") and pending. line_num is 1-based.
+pub fn toggle_line(content: &str, line_num: usize) -> String {
+    content
+        .lines()
+        .enumerate()
+        .map(|(i, line)| {
+            let mut result = if i + 1 == line_num {
+                if line.starts_with("x ") {
+                    line[2..].to_string()
+                } else {
+                    format!("x {line}")
+                }
+            } else {
+                line.to_string()
+            };
+            result.push('\n');
+            result
+        })
+        .collect()
+}
+
+/// Delete a line by 1-based line number.
+pub fn delete_line(content: &str, line_num: usize) -> String {
+    content
+        .lines()
+        .enumerate()
+        .filter(|(i, _)| i + 1 != line_num)
+        .map(|(_, line)| format!("{line}\n"))
+        .collect()
+}
+
+#[cfg(target_arch = "wasm32")]
+#[host_fn]
+extern "ExtismHost" {
+    fn get_data_dir(input: String) -> String;
+    fn store_get(input: String) -> String;
+    fn store_set(input: String) -> String;
+}
+
+#[cfg(target_arch = "wasm32")]
+fn call_get_data_dir() -> Result<String, Error> {
+    let json = unsafe { get_data_dir(String::new())? };
+    let v: serde_json::Value = serde_json::from_str(&json).unwrap_or_default();
+    Ok(v["path"].as_str().unwrap_or("").to_string())
+}
+
+#[cfg(target_arch = "wasm32")]
+fn read_todo_file(dir: &str) -> String {
+    std::fs::read_to_string(format!("{dir}/todo.txt")).unwrap_or_default()
+}
+
+#[cfg(target_arch = "wasm32")]
+fn write_todo_file(dir: &str, content: &str) {
+    let _ = std::fs::write(format!("{dir}/todo.txt"), content);
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -93,25 +151,14 @@ pub fn metadata(_input: String) -> FnResult<String> {
 #[cfg(target_arch = "wasm32")]
 #[plugin_fn]
 pub fn refresh(_input: String) -> FnResult<String> {
-    let data_dir_json = unsafe { get_data_dir()? };
-    let parsed: serde_json::Value = serde_json::from_str(&data_dir_json).unwrap_or_default();
-    let dir = parsed["path"].as_str().unwrap_or("").to_string();
+    let dir = call_get_data_dir()?;
 
     let todo_path = format!("{dir}/todo.txt");
-    let content = match std::fs::read_to_string(&todo_path) {
-        Ok(text) => text,
-        Err(_) => {
-            return Ok(serde_json::json!({
-                "type": "text",
-                "content": format!(
-                    "No todo.txt found.\nCreate one at:\n  {todo_path}"
-                ),
-                "scrollable": false,
-                "wrap": true,
-            })
-            .to_string());
-        }
-    };
+    // Create an empty todo.txt if it doesn't exist yet
+    if !std::path::Path::new(&todo_path).exists() {
+        let _ = std::fs::write(&todo_path, "");
+    }
+    let content = std::fs::read_to_string(&todo_path).unwrap_or_default();
 
     let items: Vec<TodoItem> = content
         .lines()
@@ -122,6 +169,16 @@ pub fn refresh(_input: String) -> FnResult<String> {
             item
         })
         .collect();
+
+    if items.is_empty() {
+        return Ok(serde_json::json!({
+            "type": "text",
+            "content": format!("🎉 All done! No tasks.\n\nAdd tasks to:\n  {todo_path}"),
+            "scrollable": false,
+            "wrap": true,
+        })
+        .to_string());
+    }
 
     Ok(render_items(&items).to_string())
 }
@@ -134,7 +191,59 @@ pub fn on_key(_input: String) -> FnResult<String> {
 
 #[cfg(target_arch = "wasm32")]
 #[plugin_fn]
-pub fn on_action(_input: String) -> FnResult<String> {
+pub fn on_action(input: String) -> FnResult<String> {
+    #[derive(serde::Deserialize)]
+    struct ActionInput {
+        action_id: String,
+        item_id: String,
+    }
+
+    let Ok(action) = serde_json::from_str::<ActionInput>(&input) else {
+        return Ok(String::new());
+    };
+
+    // "add" key on a list action: item_id is the selected item's numeric id.
+    // Return a PromptInput to ask the user for the new todo text.
+    // When called back with the typed text, item_id will be non-numeric.
+    if action.action_id == "add" && action.item_id.parse::<usize>().is_ok() {
+        return Ok(serde_json::json!({
+            "action": "prompt_input",
+            "prompt": "New todo",
+            "action_id": "add",
+        })
+        .to_string());
+    }
+
+    let dir = call_get_data_dir()?;
+
+    match action.action_id.as_str() {
+        "toggle" => {
+            let line_num: usize = action.item_id.parse().unwrap_or(0);
+            let content = read_todo_file(&dir);
+            let new_content = toggle_line(&content, line_num);
+            write_todo_file(&dir, &new_content);
+        }
+        "delete" => {
+            let line_num: usize = action.item_id.parse().unwrap_or(0);
+            let content = read_todo_file(&dir);
+            let new_content = delete_line(&content, line_num);
+            write_todo_file(&dir, &new_content);
+        }
+        "add" => {
+            // item_id is the new text typed by user (via PromptInput)
+            if !action.item_id.trim().is_empty() {
+                let mut content = read_todo_file(&dir);
+                if !content.is_empty() && !content.ends_with('\n') {
+                    content.push('\n');
+                }
+                content.push_str(action.item_id.trim());
+                content.push('\n');
+                write_todo_file(&dir, &content);
+            }
+        }
+        _ => {}
+    }
+
     Ok(String::new())
 }
 
@@ -179,6 +288,59 @@ mod tests {
         assert!(item.done);
         // When done, priority is not shown in subtitle
         assert!(item.subtitle.is_empty());
+    }
+
+    #[test]
+    fn render_items_includes_actions() {
+        let val = render_items(&[]);
+        let actions = val["actions"].as_array().unwrap();
+        let ids: Vec<&str> = actions
+            .iter()
+            .map(|a| a["id"].as_str().unwrap())
+            .collect();
+        assert!(ids.contains(&"toggle"));
+        assert!(ids.contains(&"delete"));
+        assert!(ids.contains(&"add"));
+    }
+
+    #[test]
+    fn toggle_line_marks_pending_item_as_done() {
+        let content = "buy milk\ndo laundry\n";
+        let result = toggle_line(content, 1);
+        assert!(result.starts_with("x buy milk\n"));
+        assert!(result.contains("do laundry\n"));
+    }
+
+    #[test]
+    fn toggle_line_marks_done_item_as_pending() {
+        let content = "x buy milk\ndo laundry\n";
+        let result = toggle_line(content, 1);
+        assert!(result.starts_with("buy milk\n"));
+    }
+
+    #[test]
+    fn toggle_line_out_of_range_leaves_content_unchanged() {
+        let content = "buy milk\ndo laundry\n";
+        let result = toggle_line(content, 99);
+        assert!(result.contains("buy milk\n"));
+        assert!(result.contains("do laundry\n"));
+    }
+
+    #[test]
+    fn delete_line_removes_correct_line() {
+        let content = "buy milk\ndo laundry\nread book\n";
+        let result = delete_line(content, 2);
+        assert!(result.contains("buy milk\n"));
+        assert!(!result.contains("do laundry"));
+        assert!(result.contains("read book\n"));
+    }
+
+    #[test]
+    fn delete_line_out_of_range_leaves_content_unchanged() {
+        let content = "buy milk\ndo laundry\n";
+        let result = delete_line(content, 99);
+        assert!(result.contains("buy milk\n"));
+        assert!(result.contains("do laundry\n"));
     }
 
     #[test]

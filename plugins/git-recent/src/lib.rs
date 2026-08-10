@@ -90,12 +90,7 @@ pub fn refresh(input: String) -> FnResult<String> {
         .to_string();
 
     let count_str = count.to_string();
-    let result = exec_command(
-        "git",
-        &[
-            "-C",
-            &path,
-            "log",
+    let result = run_exec(
             "--oneline",
             "--no-decorate",
             "-n",
@@ -158,7 +153,7 @@ pub fn on_action(input: String) -> FnResult<String> {
     if let Ok(action) = serde_json::from_str::<ActionInput>(&input) {
         if action.action_id == "detail" {
             let hash = &action.item_id;
-            if let Ok(result) = exec_command(
+            if let Ok(result) = run_exec(
                 "git",
                 &[
                     "-C",
@@ -183,24 +178,16 @@ pub fn on_action(input: String) -> FnResult<String> {
 }
 
 #[cfg(target_arch = "wasm32")]
-fn exec_command(cmd: &str, args: &[&str]) -> Result<ExecResult, Error> {
-    let request = json!({
-        "cmd": cmd,
-        "args": args
-    });
-    let request_str = request.to_string();
+#[host_fn]
+extern "ExtismHost" {
+    fn exec_command(input: String) -> String;
+}
 
-    let mem = Memory::from_bytes(request_str.as_bytes())?;
-    let offset = unsafe { extism_pdk::extism_call("exec_command", mem.offset()) };
-    if offset != 0 {
-        return Err(Error::msg("exec_command host function call failed"));
-    }
-    let output = extism_pdk::output_bytes()?;
-    let output_str = std::str::from_utf8(&output)
-        .map_err(|e| Error::msg(format!("Invalid UTF-8 from exec_command: {}", e)))?;
-    let result: ExecResult = serde_json::from_str(output_str)
-        .map_err(|e| Error::msg(format!("Failed to parse exec_command result: {}", e)))?;
-    Ok(result)
+#[cfg(target_arch = "wasm32")]
+fn run_exec(cmd: &str, args: &[&str]) -> Result<ExecResult, Error> {
+    let request = json!({"cmd": cmd, "args": args}).to_string();
+    let output = unsafe { exec_command(request)? };
+    serde_json::from_str(&output).map_err(|e| Error::msg(e.to_string()))
 }
 
 #[cfg(test)]

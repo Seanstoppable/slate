@@ -640,6 +640,11 @@ fn parse_widget_action(response: &str) -> Option<WidgetAction> {
         return None;
     };
 
+    if val["action"] == "prompt_input" {
+        let prompt = val["prompt"].as_str().unwrap_or("Input:").to_string();
+        let action_id = val["action_id"].as_str().unwrap_or("").to_string();
+        return Some(WidgetAction::PromptInput { prompt, action_id });
+    }
     if let Some(url) = val["open_url"].as_str() {
         return Some(WidgetAction::OpenUrl(url.to_string()));
     }
@@ -1126,6 +1131,27 @@ mod tests {
         );
         assert_eq!(parse_widget_action(r#"{"noop":true}"#), None);
         assert_eq!(parse_widget_action("not json"), None);
+    }
+
+    #[test]
+    fn parse_widget_action_handles_prompt_input() {
+        assert_eq!(
+            parse_widget_action(
+                r#"{"action":"prompt_input","prompt":"New todo","action_id":"add"}"#
+            ),
+            Some(WidgetAction::PromptInput {
+                prompt: "New todo".to_string(),
+                action_id: "add".to_string(),
+            })
+        );
+        // Missing prompt defaults to "Input:"
+        assert_eq!(
+            parse_widget_action(r#"{"action":"prompt_input","action_id":"save"}"#),
+            Some(WidgetAction::PromptInput {
+                prompt: "Input:".to_string(),
+                action_id: "save".to_string(),
+            })
+        );
     }
 
     #[test]
