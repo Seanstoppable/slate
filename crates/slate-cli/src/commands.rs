@@ -86,7 +86,9 @@ fn try_load_widget(
             check_os_support(&wasm_path)?;
             let mut widget = WasmPlugin::from_file(
                 &wasm_path,
-                manifest.map(|manifest| manifest.permissions).unwrap_or_default(),
+                manifest
+                    .map(|manifest| manifest.permissions)
+                    .unwrap_or_default(),
             )?;
             slate_plugin_sdk::Widget::init(&mut widget, widget_config);
             Ok(Box::new(widget))
@@ -114,7 +116,9 @@ fn try_load_widget(
             check_os_support(&wasm_path)?;
             let mut widget = WasmPlugin::from_file(
                 &wasm_path,
-                manifest.map(|manifest| manifest.permissions).unwrap_or_default(),
+                manifest
+                    .map(|manifest| manifest.permissions)
+                    .unwrap_or_default(),
             )?;
             slate_plugin_sdk::Widget::init(&mut widget, widget_config);
             Ok(Box::new(widget))
@@ -1154,6 +1158,38 @@ mod tests {
     fn env_lock() -> &'static Mutex<()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
         LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    #[test]
+    fn load_widget_or_error_returns_builtin_on_success() {
+        let entry = WidgetEntry {
+            widget_type: "builtin:resource_usage".to_string(),
+            position: Position {
+                row: 0,
+                col: 0,
+                row_span: 1,
+                col_span: 1,
+            },
+            settings: Default::default(),
+            refresh_interval: None,
+        };
+
+        let mut widget = load_widget_or_error(&entry, widget_config());
+
+        assert_ne!(widget.metadata().description, "Failed to load");
+        widget.init(widget_config());
+    }
+
+    #[test]
+    fn error_widget_init_is_a_noop() {
+        let mut widget = ErrorWidget {
+            name: "broken".to_string(),
+            error: "boom".to_string(),
+        };
+
+        widget.init(widget_config());
+
+        assert_eq!(widget.metadata().name, "broken");
     }
 
     struct EnvGuard {

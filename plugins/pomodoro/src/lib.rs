@@ -403,4 +403,95 @@ mod tests {
         assert_eq!(actions[1]["key"], "n");
         assert_eq!(actions[2]["label"], "Reset");
     }
+
+    #[test]
+    fn default_state_uses_work_duration_and_focus_defaults() {
+        let settings = Settings {
+            work_minutes: 0,
+            break_minutes: 5,
+        };
+
+        let state = default_state(&settings);
+
+        assert_eq!(STATE_KEY, "timer_state");
+        assert_eq!(state.phase, "work");
+        assert!(!state.running);
+        assert_eq!(state.remaining_secs, 60);
+        assert_eq!(state.last_started_at, None);
+        assert!(!state.focused);
+        assert!(now_secs() > 0);
+    }
+
+    #[test]
+    fn toggle_running_starts_and_pauses_preserving_remaining_time() {
+        let mut state = TimerState {
+            phase: "work".to_string(),
+            running: false,
+            remaining_secs: 120,
+            last_started_at: None,
+            focused: false,
+        };
+
+        toggle_running(&mut state, 10);
+        assert!(state.running);
+        assert_eq!(state.last_started_at, Some(10));
+
+        toggle_running(&mut state, 40);
+        assert!(!state.running);
+        assert_eq!(state.remaining_secs, 90);
+        assert_eq!(state.last_started_at, None);
+    }
+
+    #[test]
+    fn reset_and_skip_update_phase_and_remaining_duration() {
+        let settings = Settings {
+            work_minutes: 25,
+            break_minutes: 5,
+        };
+        let mut state = TimerState {
+            phase: "work".to_string(),
+            running: true,
+            remaining_secs: 120,
+            last_started_at: Some(10),
+            focused: true,
+        };
+
+        skip_phase(&settings, &mut state, 20);
+        assert_eq!(state.phase, "break");
+        assert_eq!(state.remaining_secs, 300);
+        assert_eq!(state.last_started_at, Some(20));
+
+        reset_state(&settings, &mut state);
+        assert_eq!(state.phase, "work");
+        assert_eq!(state.remaining_secs, 1500);
+        assert!(!state.running);
+    }
+
+    #[test]
+    fn detail_text_and_input_deserialization_cover_json_models() {
+        let settings = Settings {
+            work_minutes: 25,
+            break_minutes: 5,
+        };
+        let state = TimerState {
+            phase: "break".to_string(),
+            running: true,
+            remaining_secs: 61,
+            last_started_at: Some(10),
+            focused: true,
+        };
+
+        let detail = detail_text(&settings, &state);
+        assert!(detail.contains("Phase: Break"));
+        assert!(detail.contains("Remaining: 01:01"));
+
+        let action: ActionInput = serde_json::from_str(r#"{"action_id":"toggle"}"#).unwrap();
+        assert_eq!(action.action_id, "toggle");
+        let key: KeyInput = serde_json::from_str(r#"{"key":"Space"}"#).unwrap();
+        assert_eq!(key.key, "Space");
+        let response: StoreGetResponse =
+            serde_json::from_str(r#"{"found":true,"value":"{}"}"#).unwrap();
+        assert!(response.found);
+        assert_eq!(response.value.as_deref(), Some("{}"));
+    }
 }

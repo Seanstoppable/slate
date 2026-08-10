@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+﻿use anyhow::{Context, Result};
 use extism::{Function, Manifest, Plugin, UserData, Val, Wasm, PTR};
 use slate_plugin_sdk::{
     Action, Permissions, WidgetAction, WidgetConfig, WidgetContent, WidgetMetadata,
@@ -866,6 +866,24 @@ mod tests {
     }
 
     #[test]
+    fn parse_widget_content_handles_array_key_values_and_cells() {
+        let content = parse_widget_content(
+            r#"{"type":"key_value","pairs":[["CPU",{"text":"12%","style":{"fg":"green"}}],["Memory",42]]}"#,
+        );
+
+        match content {
+            WidgetContent::KeyValue { pairs } => {
+                assert_eq!(pairs.len(), 2);
+                assert_eq!(pairs[0].0, "CPU");
+                assert_eq!(pairs[0].1.text, "12%");
+                assert_eq!(pairs[1].0, "Memory");
+                assert_eq!(pairs[1].1.text, "");
+            }
+            other => panic!("expected key_value content, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn parse_widget_content_handles_list_content() {
         let content = parse_widget_content(
             r#"{"type":"list","selectable":true,"items":[{"id":"1","title":"Issue 1","subtitle":"open","icon":"!"},{"id":"2","text":"Fallback title","secondary":"secondary"}]}"#,
@@ -886,6 +904,23 @@ mod tests {
                 assert_eq!(items[0].icon.as_deref(), Some("!"));
                 assert_eq!(items[1].title, "Fallback title");
                 assert_eq!(items[1].subtitle.as_deref(), Some("secondary"));
+            }
+            other => panic!("expected list content, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_widget_content_handles_list_actions() {
+        let content = parse_widget_content(
+            r#"{"type":"list","items":[{"id":"1","title":"Issue 1"}],"actions":[{"id":"open","label":"Open","key":"o","confirm":false},{"id":42}]}"#,
+        );
+
+        match content {
+            WidgetContent::List { actions, .. } => {
+                assert_eq!(actions.len(), 1);
+                assert_eq!(actions[0].id, "open");
+                assert_eq!(actions[0].label, "Open");
+                assert_eq!(actions[0].key.as_deref(), Some("o"));
             }
             other => panic!("expected list content, got {other:?}"),
         }
@@ -1210,6 +1245,29 @@ mod tests {
                 );
             }
             other => panic!("expected list content with per-url results, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn refresh_result_errors_use_friendly_messages() {
+        let cases = [
+            ("Connection refused by host", "Connection refused"),
+            ("request timed out", "Request timed out"),
+            ("certificate verify failed", "TLS/SSL error"),
+            (
+                "wasm backtrace: http::request failed",
+                "Network request failed",
+            ),
+        ];
+
+        for (error, expected) in cases {
+            match widget_content_from_refresh_result(Err(extism::Error::msg(error)), "demo") {
+                WidgetContent::Text { content, .. } => {
+                    assert!(content.contains("[demo]"));
+                    assert!(content.contains(expected));
+                }
+                other => panic!("expected text content, got {other:?}"),
+            }
         }
     }
 

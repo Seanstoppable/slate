@@ -1,4 +1,4 @@
-use std::io;
+﻿use std::io;
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
@@ -932,6 +932,48 @@ mod tests {
     }
 
     #[test]
+    fn list_action_hotkey_returns_false_for_non_action_states() {
+        let mut empty_app = App::new(SlateConfig::default());
+        assert!(!empty_app.try_trigger_list_action(&make_key(KeyCode::Char('o'))));
+
+        let mut text_app = App::new(SlateConfig::default());
+        text_app.add_widget(Box::new(MockTextWidget), 0, 0, 1, 1, Some(60), None);
+        text_app.dashboard.widgets[0].selected = Some(0);
+        assert!(!text_app.try_trigger_list_action(&make_key(KeyCode::Char('o'))));
+
+        let mut list_app = test_app_with_list_widget(None);
+        list_app.dashboard.widgets[0].selected = None;
+        assert!(!list_app.try_trigger_list_action(&make_key(KeyCode::Char('o'))));
+
+        list_app.dashboard.widgets[0].selected = Some(99);
+        assert!(!list_app.try_trigger_list_action(&make_key(KeyCode::Char('o'))));
+
+        list_app.dashboard.widgets[0].selected = Some(0);
+        assert!(!list_app.try_trigger_list_action(&make_key(KeyCode::Char('z'))));
+    }
+
+    #[test]
+    fn list_action_hotkey_can_set_detail_content() {
+        let mut app =
+            test_app_with_list_widget(Some(WidgetAction::ShowDetail("Hotkey details".to_string())));
+        if let WidgetContent::List { actions, .. } = &mut app.dashboard.widgets[0].content {
+            actions.push(slate_plugin_sdk::Action {
+                id: "details".to_string(),
+                label: "Details".to_string(),
+                key: Some("d".to_string()),
+                confirm: false,
+            });
+        }
+
+        assert!(app.try_trigger_list_action(&make_key(KeyCode::Char('d'))));
+
+        assert_eq!(
+            app.dashboard.widgets[0].detail_content.as_deref(),
+            Some("Hotkey details")
+        );
+    }
+
+    #[test]
     fn should_refresh_returns_true_after_enough_time_has_passed() {
         let refresh_count = Arc::new(AtomicUsize::new(0));
         let mut app = App::new(SlateConfig::default());
@@ -1065,7 +1107,7 @@ mod tests {
         // Enter detail view
         app.handle_key(make_key(KeyCode::Enter));
 
-        // j/k/Tab should be ignored — selection should not change
+        // j/k/Tab should be ignored â€” selection should not change
         let selected_before = app.dashboard.widgets[0].selected;
         app.handle_key(make_key(KeyCode::Char('j')));
         app.handle_key(make_key(KeyCode::Char('k')));
@@ -1192,7 +1234,7 @@ mod tests {
         // Manually set last_refresh to the past to trigger refresh
         app.dashboard.widgets[0].last_refresh = Instant::now() - Duration::from_secs(600);
 
-        // The main loop refresh logic checks detail_content — simulate it here
+        // The main loop refresh logic checks detail_content â€” simulate it here
         let focus = app.focus;
         let instance = &mut app.dashboard.widgets[0];
         let now = Instant::now();
@@ -1402,5 +1444,25 @@ mod tests {
             App::handle_widget_action(WidgetAction::ShowDetail("detail".to_string()));
         });
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn key_to_action_name_handles_named_and_fallback_keys() {
+        let cases = [
+            (KeyCode::Char('x'), "x"),
+            (KeyCode::Enter, "enter"),
+            (KeyCode::Esc, "esc"),
+            (KeyCode::Tab, "tab"),
+            (KeyCode::BackTab, "shift+tab"),
+            (KeyCode::Up, "up"),
+            (KeyCode::Down, "down"),
+            (KeyCode::Left, "left"),
+            (KeyCode::Right, "right"),
+            (KeyCode::Home, "home"),
+        ];
+
+        for (code, expected) in cases {
+            assert_eq!(key_to_action_name(&make_key(code)), expected);
+        }
     }
 }
