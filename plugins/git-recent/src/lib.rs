@@ -91,11 +91,18 @@ pub fn refresh(input: String) -> FnResult<String> {
 
     let count_str = count.to_string();
     let result = run_exec(
+        "git",
+        &[
+            "log",
             "--oneline",
             "--no-decorate",
             "-n",
             &count_str,
             "--format=%h|%s|%ar|%an",
+            "--work-tree",
+            &path,
+            "--git-dir",
+            &format!("{path}/.git"),
         ],
     )?;
 

@@ -70,3 +70,21 @@ jobs:
 
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
+
+  plugin-wasm:
+    name: Plugin WASM builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip1
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build all Rust WASM plugins
+        run: |
+          for manifest in plugins/*/Cargo.toml; do
+            plugin=$(dirname "$manifest")
+            echo "=== Building $plugin ==="
+            cargo build --manifest-path "$manifest" --target wasm32-wasip1 --release
+          done

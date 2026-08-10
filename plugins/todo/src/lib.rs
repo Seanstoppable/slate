@@ -172,10 +172,13 @@ pub fn refresh(_input: String) -> FnResult<String> {
 
     if items.is_empty() {
         return Ok(serde_json::json!({
-            "type": "text",
-            "content": format!("🎉 All done! No tasks.\n\nAdd tasks to:\n  {todo_path}"),
-            "scrollable": false,
-            "wrap": true,
+            "type": "list",
+            "selectable": true,
+            "items": [],
+            "actions": [
+                {"id": "add", "label": "Add item", "key": "a", "confirm": false},
+            ],
+            "empty_message": "No tasks. Press 'a' to add one.",
         })
         .to_string());
     }
@@ -202,14 +205,14 @@ pub fn on_action(input: String) -> FnResult<String> {
         return Ok(String::new());
     };
 
-    // "add" key on a list action: item_id is the selected item's numeric id.
-    // Return a PromptInput to ask the user for the new todo text.
-    // When called back with the typed text, item_id will be non-numeric.
-    if action.action_id == "add" && action.item_id.parse::<usize>().is_ok() {
+    // "add" key on a list action: always show the prompt to get new text.
+    // We distinguish the "show prompt" call from the "write text" callback
+    // by using "add_confirm" as the action_id for the second call.
+    if action.action_id == "add" {
         return Ok(serde_json::json!({
             "action": "prompt_input",
             "prompt": "New todo",
-            "action_id": "add",
+            "action_id": "add_confirm",
         })
         .to_string());
     }
@@ -229,7 +232,7 @@ pub fn on_action(input: String) -> FnResult<String> {
             let new_content = delete_line(&content, line_num);
             write_todo_file(&dir, &new_content);
         }
-        "add" => {
+        "add_confirm" => {
             // item_id is the new text typed by user (via PromptInput)
             if !action.item_id.trim().is_empty() {
                 let mut content = read_todo_file(&dir);

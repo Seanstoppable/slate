@@ -189,13 +189,19 @@ cargo tarpaulin --workspace -o json --skip-clean --output-dir target
 
 ## Before Opening a PR
 
-Always run these locally before submitting a PR — CI's `lint` job runs the same checks and will fail the build otherwise:
+Always run these locally before submitting a PR — CI's `lint` and `plugin-wasm` jobs run the same checks and will fail the build otherwise:
 
 ```bash
 cargo fmt --all -- --check   # or `cargo fmt --all` to auto-fix
 cargo clippy --workspace --all-targets
 cargo test --workspace
+# If you created or modified any plugin in plugins/:
+for manifest in plugins/*/Cargo.toml; do
+  cargo build --manifest-path "$manifest" --target wasm32-wasip1 --release
+done
 ```
+
+**WASM plugins are NOT compiled by `cargo test --workspace`** — the workspace excludes them. Always build plugins explicitly for the `wasm32-wasip1` target after editing any `plugins/*/src/*.rs` file, or CI's `plugin-wasm` job will catch compile errors you missed.
 
 If `cargo fmt --all -- --check` reports diffs, run `cargo fmt --all` to fix them in place. If `cargo clippy` reports warnings, fix them or add a scoped `#[allow(...)]` with justification — do not suppress lints workspace-wide.
 
@@ -291,6 +297,7 @@ Include in the prompt:
 
 After receiving the implementation:
 - Run `cargo test --manifest-path plugins/<name>/Cargo.toml`
+- **Run `cargo build --manifest-path plugins/<name>/Cargo.toml --target wasm32-wasip1 --release`** — native tests pass even when WASM-target-gated code has syntax errors; always build for WASM explicitly
 - Verify the plugin is in workspace `exclude` list
 - Check that `plugin.toml` has name, description, version, tags, and permissions
 
