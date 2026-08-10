@@ -569,14 +569,14 @@ mod tests {
         );
 
         assert!(matches!(
-            &app.widgets[0].content,
+            &app.dashboard.widgets[0].content,
             WidgetContent::Text { content, .. } if content == "off"
         ));
 
         app.handle_key(make_key(KeyCode::Char('s')));
 
         assert!(matches!(
-            &app.widgets[0].content,
+            &app.dashboard.widgets[0].content,
             WidgetContent::Text { content, .. } if content == "on"
         ));
     }
