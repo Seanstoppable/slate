@@ -5,8 +5,11 @@
 Slate plugins can be authored in three ways:
 
 1. **WASM (Rust + Extism PDK)** — The recommended approach for community plugins
-2. **Lua scripts** — Quick personal widgets, no compilation needed
+2. **Lua scripts** — Quick trusted local widgets, no compilation needed
 3. **Native Rust** — For built-in system-level widgets
+
+Use **WASM** for anything you expect other users to install from a release or registry entry.
+Use **Lua** for personal automation on machines you already trust — Lua scripts are not sandboxed.
 
 ## Creating a WASM Plugin
 
@@ -88,21 +91,23 @@ The `refresh` function returns JSON matching one of these types:
 
 ### Host Functions
 
-Available via Extism's host function mechanism:
+Available to WASM plugins:
 
 | Function | Permission | Description |
 |----------|-----------|-------------|
-| `http_request` | `network` | HTTP requests to allowed hosts |
+| `http::request` | `network` | Extism HTTP client, limited to hosts declared in `plugin.toml` |
+| `exec_command` | `exec` | Run an allowed binary |
 | `store_get` / `store_set` | `storage` | Sandboxed key-value store |
-| `get_config` | always | Read widget config values |
+| `get_config` | always | Read widget config values from any lifecycle hook |
 
 ### Permissions (plugin.toml)
 
 ```toml
 [permissions]
 network = ["api.github.com"]
+exec = ["docker"]
 storage = true
-secrets = ["token"]
+secrets = ["token"] # documents expected secret-backed config values
 ```
 
 ## Creating a Lua Plugin
@@ -125,6 +130,9 @@ Reference it in your config:
 type = "lua:~/.config/slate/scripts/my_widget.lua"
 position = { row = 0, col = 0 }
 ```
+
+Lua scripts can call host helpers like `slate.exec()` and `slate.read_file()` without a permission manifest.
+Treat them as trusted local code, not distributable community plugins.
 
 ### Making a Lua plugin interactive
 
@@ -149,9 +157,9 @@ end
 
 The `Lua` interpreter backing a widget stays alive for the widget's whole lifetime, so local
 state set in `on_key` persists and shows up the next time `refresh()` runs — no extra
-plumbing required. See `scripts/pomodoro.lua` for a complete interactive example (a start /
-pause / reset focus timer), and its test in `crates/slate-plugin-host/src/lua_host.rs` for how
-to exercise `on_key`-driven state in isolation.
+plumbing required. Note that this state is in-memory only and is lost when Slate restarts; for
+state that must survive restarts, use a WASM plugin with the `storage` permission (see
+`plugins/pomodoro`).
 
 ## Publishing
 

@@ -17,6 +17,7 @@ reqwest = { workspace = true }
 chrono = "0.4"
 chrono-tz = "0.10"
 ureq = "3"
+dirs = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3"

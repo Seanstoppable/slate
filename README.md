@@ -14,9 +14,9 @@ We loved wtfutil but wanted to start from a **blank slate** (pun intended) to ad
 
 - **WASM-sandboxed plugins** — Community plugins run in an Extism sandbox with capability-gated permissions
 - **5 built-in widgets** — Resources, power, firewall, network interfaces, VCS (git/hg)
-- **6 WASM plugins (Rust)** — Clock, weather, HN, feeds, IP info, GitHub
+- **8 WASM plugins (Rust)** — Clock, weather, HN, feeds, GitHub, IP info, URL check, Pomodoro
 - **4 WASM plugins (polyglot)** — Status pages (JS), iStats (Zig), wego (AssemblyScript), cmdrunner (Go)
-- **Lua scripting** — Quick personal widgets with zero compilation (brew outdated, docker ps, disk usage, git log, todo.txt), including fully **interactive**, key-driven widgets (pomodoro timer) with no Rust code or recompilation involved
+- **Lua scripting** — Quick personal widgets with zero compilation (brew outdated, docker ps, disk usage, git log, todo.txt), including fully **interactive**, key-driven widgets with no Rust code or recompilation involved. Treat Lua scripts as trusted local code, not distributable community plugins.
 - **Plugin manager** — Install from GitHub repos, lockfile-based versioning, update notifications
 - **Interactive lists** — Navigate items with j/k, open links with Enter
 - **Vim-style navigation** — h/j/k/l, Tab cycling, focus management
@@ -111,12 +111,12 @@ Environment variables are interpolated with `${VAR_NAME}` syntax.
 | `hackernews` | WASM | Rust | Top stories (interactive list) |
 | `feedreader` | WASM | Rust | RSS/Atom feed reader |
 | `github` | WASM | Rust | GitHub PRs, issues, repo stats |
+| `pomodoro` | WASM | Rust | Persistent interactive pomodoro timer (survives restarts via plugin storage) |
 | `status-pages` | WASM | JavaScript | Service status page monitor (Statuspage APIs) |
 | `urlcheck` | WASM | Rust | URL health checks (HTTP HEAD, selectable list) |
 | `brew-outdated` | WASM | Go | Outdated Homebrew packages (polyglot demo; prefer `scripts/brew-outdated.lua`) |
 | `istats` | WASM | Zig | System stats via iStats (macOS) |
 | `wego` | WASM | AssemblyScript | Weather display via wego CLI |
-| `pomodoro` | Lua | Lua | Interactive focus timer (start/pause/reset with s / p / x), no compilation |
 
 ### Plugin Management
 
@@ -187,13 +187,15 @@ Plugins can be written in any language that compiles to WASM via [Extism PDK](ht
 | **Zig** | `zig build-exe src/main.zig -target wasm32-freestanding ...` | ~2 KB |
 | **AssemblyScript** | `npx asc assembly/index.ts --outFile plugin.wasm` | ~16 KB |
 
-All plugins export the same 4 functions: `metadata`, `refresh`, `on_key`, `on_action`.
+All plugins export the same core functions: `metadata`, `refresh`, `on_key`, `on_action`. Plugins can also optionally export `on_focus` and `on_blur`.
 
 #### Host Functions
 
 Plugins can call host-provided functions:
 - **HTTP** (built-in to Extism) — make network requests
 - **exec_command** — run a system command (requires `exec` permission)
+- **store_get / store_set** — persist plugin state (requires `storage`)
+- **get_config** — read widget config from any lifecycle hook
 
 ```json
 // exec_command input
@@ -228,10 +230,11 @@ exec = ["docker"]                 # Run specific binaries
 storage = true                    # Sandboxed key-value store
 filesystem_read = ["~/.config"]   # Read specific paths
 raw_network = true                # ICMP/ping
-secrets = ["token"]               # Masked in UI
+secrets = ["token"]               # Documents expected secret-backed config values
 ```
 
 WASM enforces sandboxing architecturally — plugins cannot bypass permissions.
+Lua scripts do not use this permission model and should be treated as trusted local code.
 
 ## Keyboard Navigation
 
@@ -339,29 +342,30 @@ file, with **no Rust code and no recompilation**. This is the key difference fro
 interactive behavior there means forking the Go binary and shipping a new build; here it's saving
 a text file.
 
-`scripts/pomodoro.lua` is a working example — a focus timer with its own state machine:
+A Lua widget can hold its own state machine — here's a counter:
 
 ```lua
--- scripts/pomodoro.lua (excerpt)
 local running = false
-local remaining = nil
+local ticks = 0
 
 function refresh()
-    -- ...tick the countdown, render a progress bar...
-    return slate.text(bar .. "  " .. time_left, {wrap = false})
+    if running then ticks = ticks + 1 end
+    return slate.text((running and "running" or "paused") .. "  ticks=" .. ticks)
 end
 
 -- Called for any keypress the host doesn't reserve for navigation.
 function on_key(key, _action)
-    if key == "Char('s')" then running = true
-    elseif key == "Char('p')" then running = false
-    elseif key == "Char('x')" then remaining = nil; running = false
+    if key == "s" then running = true
+    elseif key == "p" then running = false
+    elseif key == "x" then running = false; ticks = 0
     end
 end
 ```
 
 Focus the widget and press `s` to start, `p` to pause, `x` to reset — state changes made in
-`on_key` are picked up by the very next `refresh()`. See `docs/plugin-authoring.md` for the full
+`on_key` are picked up by the very next `refresh()`. Note that this state is in-memory only and
+resets when Slate restarts; if you need state that survives restarts, use a WASM plugin with the
+`storage` permission (see `plugins/pomodoro`). See `docs/plugin-authoring.md` for the full
 `on_key`/`on_action`/`on_focus`/`on_blur` hook reference shared by every widget tier.
 
 ## Requirements

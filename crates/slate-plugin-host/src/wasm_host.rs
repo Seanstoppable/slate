@@ -1,16 +1,25 @@
-use anyhow::{Context, Result};
+﻿use anyhow::{Context, Result};
 use extism::{Function, Manifest, Plugin, UserData, Val, Wasm, PTR};
-use slate_plugin_sdk::{Permissions, WidgetAction, WidgetConfig, WidgetContent, WidgetMetadata};
+use slate_plugin_sdk::{
+    Action, Permissions, WidgetAction, WidgetConfig, WidgetContent, WidgetMetadata,
+};
 use std::path::Path;
 use tracing::warn;
 
+use crate::host_functions::PluginStore;
 use crate::permissions::PermissionGuard;
+
+#[derive(Debug)]
+struct HostState {
+    config: Option<WidgetConfig>,
+    permissions: PermissionGuard,
+    store: PluginStore,
+}
 
 /// A WASM plugin loaded via Extism.
 pub struct WasmPlugin {
     metadata: WidgetMetadata,
-    #[allow(dead_code)]
-    permissions: PermissionGuard,
+    host_state: UserData<HostState>,
     plugin: Plugin,
     config: Option<WidgetConfig>,
 }
@@ -18,7 +27,7 @@ pub struct WasmPlugin {
 /// Create the exec_command host function for WASM plugins.
 /// Plugins call this with a JSON string: {"cmd": "...", "args": ["..."]}
 /// Returns JSON: {"stdout": "...", "stderr": "...", "exit_code": 0}
-fn run_exec_request(input: &str) -> Result<String, extism::Error> {
+fn run_exec_request(guard: &PermissionGuard, input: &str) -> Result<String, extism::Error> {
     let request: serde_json::Value = serde_json::from_str(input)
         .map_err(|e| extism::Error::msg(format!("Invalid exec request JSON: {}", e)))?;
 
@@ -35,6 +44,9 @@ fn run_exec_request(input: &str) -> Result<String, extism::Error> {
             "exit_code": 1
         })
     } else {
+        guard
+            .check_exec(cmd)
+            .map_err(|e| extism::Error::msg(e.to_string()))?;
         match std::process::Command::new(cmd).args(&args).output() {
             Ok(out) => serde_json::json!({
                 "stdout": String::from_utf8_lossy(&out.stdout).to_string(),
@@ -52,15 +64,21 @@ fn run_exec_request(input: &str) -> Result<String, extism::Error> {
     Ok(result.to_string())
 }
 
-fn make_exec_function() -> Function {
+fn make_exec_function(host_state: UserData<HostState>) -> Function {
     Function::new(
         "exec_command",
         [PTR],
         [PTR],
-        UserData::new(()),
-        |plugin: &mut extism::CurrentPlugin, inputs: &[Val], outputs: &mut [Val], _user_data| {
+        host_state,
+        |plugin: &mut extism::CurrentPlugin, inputs: &[Val], outputs: &mut [Val], user_data| {
             let input: String = plugin.memory_get_val(&inputs[0])?;
-            let result = run_exec_request(&input)?;
+            let state = user_data
+                .get()
+                .map_err(|e| extism::Error::msg(e.to_string()))?;
+            let state = state
+                .lock()
+                .map_err(|_| extism::Error::msg("Failed to lock plugin host state"))?;
+            let result = run_exec_request(&state.permissions, &input)?;
             let handle = plugin.memory_new(result)?;
             outputs[0] = plugin.memory_to_val(handle);
             Ok(())
@@ -150,6 +168,134 @@ fn make_safe_http_function() -> Function {
     )
 }
 
+/// Handle a `store_get` request against the plugin host state.
+/// Input JSON: {"key": "..."}; returns JSON {"found": bool, "value": string|null}
+fn run_store_get_request(state: &HostState, input: &str) -> Result<String, extism::Error> {
+    let request: serde_json::Value = serde_json::from_str(input)
+        .map_err(|e| extism::Error::msg(format!("Invalid store_get request JSON: {}", e)))?;
+    let key = request["key"].as_str().unwrap_or("");
+
+    state
+        .permissions
+        .check_storage()
+        .map_err(|e| extism::Error::msg(e.to_string()))?;
+
+    let response = if key.is_empty() {
+        serde_json::json!({ "found": false, "value": null })
+    } else {
+        let value = state
+            .store
+            .get(key)
+            .map(|bytes| String::from_utf8_lossy(bytes).to_string());
+        serde_json::json!({ "found": value.is_some(), "value": value })
+    };
+
+    Ok(response.to_string())
+}
+
+fn make_store_get_function(host_state: UserData<HostState>) -> Function {
+    Function::new(
+        "store_get",
+        [PTR],
+        [PTR],
+        host_state,
+        |plugin: &mut extism::CurrentPlugin, inputs: &[Val], outputs: &mut [Val], user_data| {
+            let input: String = plugin.memory_get_val(&inputs[0])?;
+            let state = user_data
+                .get()
+                .map_err(|e| extism::Error::msg(e.to_string()))?;
+            let state = state
+                .lock()
+                .map_err(|_| extism::Error::msg("Failed to lock plugin host state"))?;
+            let response = run_store_get_request(&state, &input)?;
+            let handle = plugin.memory_new(response)?;
+            outputs[0] = plugin.memory_to_val(handle);
+            Ok(())
+        },
+    )
+}
+
+/// Handle a `store_set` request against the plugin host state.
+/// Input JSON: {"key": "...", "value": "..."}; returns JSON {"ok": true}
+fn run_store_set_request(state: &mut HostState, input: &str) -> Result<String, extism::Error> {
+    let request: serde_json::Value = serde_json::from_str(input)
+        .map_err(|e| extism::Error::msg(format!("Invalid store_set request JSON: {}", e)))?;
+    let key = request["key"].as_str().unwrap_or("");
+    let value = request["value"].as_str().unwrap_or("");
+
+    state
+        .permissions
+        .check_storage()
+        .map_err(|e| extism::Error::msg(e.to_string()))?;
+
+    if key.is_empty() {
+        return Err(extism::Error::msg("store_set: 'key' field is required"));
+    }
+
+    state
+        .store
+        .set(key, value.as_bytes().to_vec())
+        .map_err(|e| extism::Error::msg(e.to_string()))?;
+
+    Ok(serde_json::json!({ "ok": true }).to_string())
+}
+
+fn make_store_set_function(host_state: UserData<HostState>) -> Function {
+    Function::new(
+        "store_set",
+        [PTR],
+        [PTR],
+        host_state,
+        |plugin: &mut extism::CurrentPlugin, inputs: &[Val], outputs: &mut [Val], user_data| {
+            let input: String = plugin.memory_get_val(&inputs[0])?;
+            let state = user_data
+                .get()
+                .map_err(|e| extism::Error::msg(e.to_string()))?;
+            let mut state = state
+                .lock()
+                .map_err(|_| extism::Error::msg("Failed to lock plugin host state"))?;
+            let response = run_store_set_request(&mut state, &input)?;
+            let handle = plugin.memory_new(response)?;
+            outputs[0] = plugin.memory_to_val(handle);
+            Ok(())
+        },
+    )
+}
+
+/// Serialize the plugin's configured settings for the `get_config` host function.
+fn run_get_config_request(state: &HostState) -> Result<String, extism::Error> {
+    serde_json::to_string(
+        &state
+            .config
+            .as_ref()
+            .map(|config| &config.settings)
+            .cloned()
+            .unwrap_or_default(),
+    )
+    .map_err(|e| extism::Error::msg(e.to_string()))
+}
+
+fn make_get_config_function(host_state: UserData<HostState>) -> Function {
+    Function::new(
+        "get_config",
+        [PTR],
+        [PTR],
+        host_state,
+        |plugin: &mut extism::CurrentPlugin, _inputs: &[Val], outputs: &mut [Val], user_data| {
+            let state = user_data
+                .get()
+                .map_err(|e| extism::Error::msg(e.to_string()))?;
+            let state = state
+                .lock()
+                .map_err(|_| extism::Error::msg("Failed to lock plugin host state"))?;
+            let config_json = run_get_config_request(&state)?;
+            let handle = plugin.memory_new(config_json)?;
+            outputs[0] = plugin.memory_to_val(handle);
+            Ok(())
+        },
+    )
+}
+
 impl WasmPlugin {
     /// Load a WASM plugin from a file path.
     pub fn from_file(path: &Path, permissions: Permissions) -> Result<Self> {
@@ -164,10 +310,21 @@ impl WasmPlugin {
 
         let wasm = Wasm::data(wasm_bytes);
         let manifest = Manifest::new([wasm])
-            .with_allowed_hosts(["*".to_string()].into_iter())
+            .with_allowed_hosts(permissions.network.clone().into_iter())
             .with_timeout(std::time::Duration::from_secs(10));
 
-        let host_functions = [make_exec_function(), make_safe_http_function()];
+        let host_state = UserData::new(HostState {
+            config: None,
+            permissions: PermissionGuard::new(permissions),
+            store: PluginStore::for_plugin(&name)?,
+        });
+        let host_functions = [
+            make_exec_function(host_state.clone()),
+            make_safe_http_function(),
+            make_store_get_function(host_state.clone()),
+            make_store_set_function(host_state.clone()),
+            make_get_config_function(host_state.clone()),
+        ];
         let mut plugin = Plugin::new(&manifest, host_functions, true)
             .with_context(|| format!("Failed to create WASM plugin: {}", path.display()))?;
 
@@ -179,7 +336,7 @@ impl WasmPlugin {
 
         Ok(Self {
             metadata,
-            permissions: PermissionGuard::new(permissions),
+            host_state,
             plugin,
             config: None,
         })
@@ -193,14 +350,25 @@ impl WasmPlugin {
     ) -> Result<Self> {
         let wasm = Wasm::data(bytes);
         let manifest = Manifest::new([wasm])
-            .with_allowed_hosts(["*".to_string()].into_iter())
+            .with_allowed_hosts(permissions.network.clone().into_iter())
             .with_timeout(std::time::Duration::from_secs(10));
-        let host_functions = [make_exec_function(), make_safe_http_function()];
+        let host_state = UserData::new(HostState {
+            config: None,
+            permissions: PermissionGuard::new(permissions),
+            store: PluginStore::for_plugin(&metadata.name)?,
+        });
+        let host_functions = [
+            make_exec_function(host_state.clone()),
+            make_safe_http_function(),
+            make_store_get_function(host_state.clone()),
+            make_store_set_function(host_state.clone()),
+            make_get_config_function(host_state.clone()),
+        ];
         let plugin = Plugin::new(&manifest, host_functions, true)?;
 
         Ok(Self {
             metadata,
-            permissions: PermissionGuard::new(permissions),
+            host_state,
             plugin,
             config: None,
         })
@@ -239,6 +407,10 @@ fn parse_widget_metadata(json_str: &str, fallback_name: &str) -> WidgetMetadata 
 /// otherwise require live credentials/network access, by parsing a static
 /// fixture file through the exact same code path used at runtime.
 pub fn parse_widget_content(json_str: &str) -> WidgetContent {
+    if let Ok(content) = serde_json::from_str::<WidgetContent>(json_str) {
+        return content;
+    }
+
     let Ok(val) = serde_json::from_str::<serde_json::Value>(json_str) else {
         return WidgetContent::Text {
             content: json_str.to_string(),
@@ -260,12 +432,33 @@ pub fn parse_widget_content(json_str: &str) -> WidgetContent {
                 .map(|arr| {
                     arr.iter()
                         .filter_map(|item| {
+                            if let Some(pair) = item.as_array() {
+                                let key = pair.first()?.as_str()?;
+                                let cell = pair
+                                    .get(1)
+                                    .cloned()
+                                    .and_then(|value| serde_json::from_value(value).ok())
+                                    .unwrap_or_else(|| {
+                                        slate_plugin_sdk::Cell::plain(
+                                            pair.get(1)
+                                                .and_then(|value| value.as_str())
+                                                .unwrap_or(""),
+                                        )
+                                    });
+                                return Some((key.to_string(), cell));
+                            }
+
                             let key = item["key"].as_str()?;
-                            let value = item["value"].as_str().unwrap_or("");
-                            Some((
-                                key.to_string(),
-                                slate_plugin_sdk::Cell::plain(value.to_string()),
-                            ))
+                            let cell = item
+                                .get("value")
+                                .cloned()
+                                .and_then(|value| serde_json::from_value(value).ok())
+                                .unwrap_or_else(|| {
+                                    slate_plugin_sdk::Cell::plain(
+                                        item["value"].as_str().unwrap_or(""),
+                                    )
+                                });
+                            Some((key.to_string(), cell))
                         })
                         .collect()
                 })
@@ -300,7 +493,7 @@ pub fn parse_widget_content(json_str: &str) -> WidgetContent {
             WidgetContent::List {
                 items,
                 selectable: val["selectable"].as_bool().unwrap_or(false),
-                actions: vec![],
+                actions: parse_list_actions(val.get("actions")),
             }
         }
         "table" => {
@@ -370,6 +563,17 @@ fn parse_color(name: &str) -> Option<slate_plugin_sdk::Color> {
         "gray" | "grey" => Some(Color::Gray),
         _ => None,
     }
+}
+
+fn parse_list_actions(actions: Option<&serde_json::Value>) -> Vec<Action> {
+    actions
+        .and_then(serde_json::Value::as_array)
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|item| serde_json::from_value::<Action>(item.clone()).ok())
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// Format local time from unix timestamp. Returns (time, date, timezone).
@@ -507,6 +711,11 @@ impl slate_plugin_sdk::Widget for WasmPlugin {
     }
 
     fn init(&mut self, config: WidgetConfig) {
+        if let Ok(state) = self.host_state.get() {
+            if let Ok(mut state) = state.lock() {
+                state.config = Some(config.clone());
+            }
+        }
         self.config = Some(config);
     }
 
@@ -531,9 +740,7 @@ impl slate_plugin_sdk::Widget for WasmPlugin {
 
     fn on_key(&mut self, key: &str, action: &str) {
         let input = serde_json::json!({ "key": key, "action": action }).to_string();
-        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            self.plugin.call::<&str, String>("on_key", &input)
-        }));
+        call_optional_export(&mut self.plugin, "on_key", &input);
     }
 
     fn on_action(
@@ -551,8 +758,19 @@ impl slate_plugin_sdk::Widget for WasmPlugin {
         }
     }
 
-    fn on_focus(&mut self) {}
-    fn on_blur(&mut self) {}
+    fn on_focus(&mut self) {
+        call_optional_export(&mut self.plugin, "on_focus", "");
+    }
+
+    fn on_blur(&mut self) {
+        call_optional_export(&mut self.plugin, "on_blur", "");
+    }
+}
+
+fn call_optional_export(plugin: &mut Plugin, export_name: &str, input: &str) {
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        plugin.call::<&str, String>(export_name, input)
+    }));
 }
 
 #[cfg(test)]
@@ -665,6 +883,24 @@ mod tests {
     }
 
     #[test]
+    fn parse_widget_content_handles_array_key_values_and_cells() {
+        let content = parse_widget_content(
+            r#"{"type":"key_value","pairs":[["CPU",{"text":"12%","style":{"fg":"green"}}],["Memory",42]]}"#,
+        );
+
+        match content {
+            WidgetContent::KeyValue { pairs } => {
+                assert_eq!(pairs.len(), 2);
+                assert_eq!(pairs[0].0, "CPU");
+                assert_eq!(pairs[0].1.text, "12%");
+                assert_eq!(pairs[1].0, "Memory");
+                assert_eq!(pairs[1].1.text, "");
+            }
+            other => panic!("expected key_value content, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn parse_widget_content_handles_list_content() {
         let content = parse_widget_content(
             r#"{"type":"list","selectable":true,"items":[{"id":"1","title":"Issue 1","subtitle":"open","icon":"!"},{"id":"2","text":"Fallback title","secondary":"secondary"}]}"#,
@@ -685,6 +921,23 @@ mod tests {
                 assert_eq!(items[0].icon.as_deref(), Some("!"));
                 assert_eq!(items[1].title, "Fallback title");
                 assert_eq!(items[1].subtitle.as_deref(), Some("secondary"));
+            }
+            other => panic!("expected list content, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_widget_content_handles_list_actions() {
+        let content = parse_widget_content(
+            r#"{"type":"list","items":[{"id":"1","title":"Issue 1"}],"actions":[{"id":"open","label":"Open","key":"o","confirm":false},{"id":42}]}"#,
+        );
+
+        match content {
+            WidgetContent::List { actions, .. } => {
+                assert_eq!(actions.len(), 1);
+                assert_eq!(actions[0].id, "open");
+                assert_eq!(actions[0].label, "Open");
+                assert_eq!(actions[0].key.as_deref(), Some("o"));
             }
             other => panic!("expected list content, got {other:?}"),
         }
@@ -841,20 +1094,30 @@ mod tests {
 
     #[test]
     fn helper_functions_cover_exec_refresh_and_action_paths() {
-        let missing_cmd = run_exec_request(r#"{}"#).unwrap();
+        let guard = PermissionGuard::new(Permissions {
+            exec: vec![
+                "cmd".to_string(),
+                "definitely_missing_slate_command".to_string(),
+                "echo".to_string(),
+            ],
+            ..Default::default()
+        });
+
+        let missing_cmd = run_exec_request(&guard, r#"{}"#).unwrap();
         assert!(missing_cmd.contains("\"exit_code\":1"));
         assert!(missing_cmd.contains("cmd"));
 
-        let bad_json = run_exec_request("not-json");
+        let bad_json = run_exec_request(&guard, "not-json");
         assert!(bad_json.is_err());
 
         #[cfg(windows)]
-        let ok = run_exec_request(r#"{"cmd":"cmd","args":["/c","echo hello"]}"#).unwrap();
+        let ok = run_exec_request(&guard, r#"{"cmd":"cmd","args":["/c","echo hello"]}"#).unwrap();
         #[cfg(not(windows))]
-        let ok = run_exec_request(r#"{"cmd":"echo","args":["hello"]}"#).unwrap();
+        let ok = run_exec_request(&guard, r#"{"cmd":"echo","args":["hello"]}"#).unwrap();
         assert!(ok.contains("hello"));
 
-        let missing = run_exec_request(r#"{"cmd":"definitely_missing_slate_command"}"#).unwrap();
+        let missing =
+            run_exec_request(&guard, r#"{"cmd":"definitely_missing_slate_command"}"#).unwrap();
         assert!(missing.contains("\"exit_code\":-1"));
 
         match widget_content_from_refresh_result(
@@ -1000,6 +1263,114 @@ mod tests {
             }
             other => panic!("expected list content with per-url results, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn refresh_result_errors_use_friendly_messages() {
+        let cases = [
+            ("Connection refused by host", "Connection refused"),
+            ("request timed out", "Request timed out"),
+            ("certificate verify failed", "TLS/SSL error"),
+            (
+                "wasm backtrace: http::request failed",
+                "Network request failed",
+            ),
+        ];
+
+        for (error, expected) in cases {
+            match widget_content_from_refresh_result(Err(extism::Error::msg(error)), "demo") {
+                WidgetContent::Text { content, .. } => {
+                    assert!(content.contains("[demo]"));
+                    assert!(content.contains(expected));
+                }
+                other => panic!("expected text content, got {other:?}"),
+            }
+        }
+    }
+
+    fn host_state_with_storage(storage: bool) -> HostState {
+        HostState {
+            config: None,
+            permissions: PermissionGuard::new(Permissions {
+                storage,
+                ..Default::default()
+            }),
+            store: PluginStore::new(),
+        }
+    }
+
+    #[test]
+    fn run_store_set_and_get_round_trip_value() {
+        let mut state = host_state_with_storage(true);
+
+        let set = run_store_set_request(&mut state, r#"{"key":"count","value":"7"}"#).unwrap();
+        assert_eq!(set, r#"{"ok":true}"#);
+
+        let got = run_store_get_request(&state, r#"{"key":"count"}"#).unwrap();
+        let got: serde_json::Value = serde_json::from_str(&got).unwrap();
+        assert_eq!(got["found"], serde_json::json!(true));
+        assert_eq!(got["value"], serde_json::json!("7"));
+    }
+
+    #[test]
+    fn run_store_get_reports_missing_and_empty_keys() {
+        let state = host_state_with_storage(true);
+
+        let missing: serde_json::Value =
+            serde_json::from_str(&run_store_get_request(&state, r#"{"key":"nope"}"#).unwrap())
+                .unwrap();
+        assert_eq!(missing["found"], serde_json::json!(false));
+        assert_eq!(missing["value"], serde_json::Value::Null);
+
+        let empty: serde_json::Value =
+            serde_json::from_str(&run_store_get_request(&state, r#"{"key":""}"#).unwrap()).unwrap();
+        assert_eq!(empty["found"], serde_json::json!(false));
+    }
+
+    #[test]
+    fn run_store_requests_reject_invalid_json_and_missing_key() {
+        let mut state = host_state_with_storage(true);
+
+        let err = run_store_get_request(&state, "not json").unwrap_err();
+        assert!(err.to_string().contains("Invalid store_get request JSON"));
+
+        let err = run_store_set_request(&mut state, "not json").unwrap_err();
+        assert!(err.to_string().contains("Invalid store_set request JSON"));
+
+        let err = run_store_set_request(&mut state, r#"{"value":"x"}"#).unwrap_err();
+        assert!(err.to_string().contains("'key' field is required"));
+    }
+
+    #[test]
+    fn run_store_requests_are_denied_without_storage_permission() {
+        let mut state = host_state_with_storage(false);
+
+        assert!(run_store_get_request(&state, r#"{"key":"count"}"#).is_err());
+        assert!(run_store_set_request(&mut state, r#"{"key":"count","value":"7"}"#).is_err());
+    }
+
+    #[test]
+    fn run_get_config_request_returns_settings_or_empty_object() {
+        let mut state = host_state_with_storage(true);
+        assert_eq!(run_get_config_request(&state).unwrap(), "{}");
+
+        state.config = Some(WidgetConfig {
+            position: slate_plugin_sdk::Position {
+                row: 0,
+                col: 0,
+                row_span: 1,
+                col_span: 1,
+            },
+            settings: std::collections::HashMap::from([(
+                "work_minutes".to_string(),
+                serde_json::json!(25),
+            )]),
+            refresh_interval: None,
+        });
+
+        let config: serde_json::Value =
+            serde_json::from_str(&run_get_config_request(&state).unwrap()).unwrap();
+        assert_eq!(config["work_minutes"], serde_json::json!(25));
     }
 
     #[test]

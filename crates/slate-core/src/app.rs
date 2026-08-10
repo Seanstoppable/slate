@@ -1,4 +1,4 @@
-use std::io;
+﻿use std::io;
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
@@ -22,6 +22,7 @@ use crate::render::{render_status_bar, render_widget};
 pub struct App {
     dashboard: Dashboard,
     focus: FocusPosition,
+    focus_initialized: bool,
     running: bool,
     notifications: UpdateNotifications,
 }
@@ -36,6 +37,7 @@ impl App {
         Self {
             dashboard,
             focus: FocusPosition::new(0, 0),
+            focus_initialized: false,
             running: true,
             notifications,
         }
@@ -92,6 +94,8 @@ impl App {
     }
 
     fn main_loop(&mut self, terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<()> {
+        self.ensure_focus_hook_fired();
+
         while self.running {
             self.dashboard.refresh_due(Some(&self.focus));
 
@@ -201,6 +205,10 @@ impl App {
             .map(|w| w.content.is_selectable_list())
             .unwrap_or(false);
 
+        if focused_is_list && self.try_trigger_list_action(&key) {
+            return;
+        }
+
         match key.code {
             KeyCode::Char('q') => self.running = false,
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -208,23 +216,31 @@ impl App {
             }
             KeyCode::Tab => {
                 // Move focus to next widget in reading order
-                self.focus.move_next(
+                let mut next = self.focus;
+                next.move_next(
                     self.dashboard.config.layout.rows,
                     self.dashboard.config.layout.cols,
                 );
+                self.set_focus(next);
             }
             KeyCode::BackTab => {
                 // Move focus to previous widget
-                self.focus.move_prev(
+                let mut next = self.focus;
+                next.move_prev(
                     self.dashboard.config.layout.rows,
                     self.dashboard.config.layout.cols,
                 );
+                self.set_focus(next);
             }
             KeyCode::Left | KeyCode::Char('h') => {
-                self.focus.move_left(self.dashboard.config.layout.cols);
+                let mut next = self.focus;
+                next.move_left(self.dashboard.config.layout.cols);
+                self.set_focus(next);
             }
             KeyCode::Right | KeyCode::Char('l') => {
-                self.focus.move_right(self.dashboard.config.layout.cols);
+                let mut next = self.focus;
+                next.move_right(self.dashboard.config.layout.cols);
+                self.set_focus(next);
             }
             KeyCode::Up | KeyCode::Char('k') => {
                 if focused_is_list {
@@ -236,7 +252,9 @@ impl App {
                         }
                     }
                 } else {
-                    self.focus.move_up(self.dashboard.config.layout.rows);
+                    let mut next = self.focus;
+                    next.move_up(self.dashboard.config.layout.rows);
+                    self.set_focus(next);
                 }
             }
             KeyCode::Down | KeyCode::Char('j') => {
@@ -250,7 +268,9 @@ impl App {
                         }
                     }
                 } else {
-                    self.focus.move_down(self.dashboard.config.layout.rows);
+                    let mut next = self.focus;
+                    next.move_down(self.dashboard.config.layout.rows);
+                    self.set_focus(next);
                 }
             }
             KeyCode::Enter => {
@@ -290,7 +310,7 @@ impl App {
                 // widget's interactive state machine) shows up right away
                 // instead of waiting for the next scheduled refresh.
                 if let Some(instance) = self.focused_widget_mut() {
-                    let key_str = format!("{:?}", key.code);
+                    let key_str = key_to_action_name(&key);
                     instance.widget.on_key(&key_str, "");
                     instance.content = instance.widget.refresh();
                     instance.last_refresh = Instant::now();
@@ -352,6 +372,90 @@ impl App {
             .widgets
             .iter_mut()
             .find(|w| w.row == self.focus.row && w.col == self.focus.col)
+    }
+
+    fn ensure_focus_hook_fired(&mut self) {
+        if self.focus_initialized {
+            return;
+        }
+
+        if let Some(widget) = self.focused_widget_mut() {
+            widget.widget.on_focus();
+            self.focus_initialized = true;
+        }
+    }
+
+    fn set_focus(&mut self, next: FocusPosition) {
+        if self.focus == next {
+            self.ensure_focus_hook_fired();
+            return;
+        }
+
+        if let Some(widget) = self.focused_widget_mut() {
+            widget.widget.on_blur();
+        }
+
+        self.focus = next;
+        self.focus_initialized = true;
+
+        if let Some(widget) = self.focused_widget_mut() {
+            widget.widget.on_focus();
+        }
+    }
+
+    fn try_trigger_list_action(&mut self, key: &KeyEvent) -> bool {
+        let Some(instance) = self.focused_widget() else {
+            return false;
+        };
+        let Some(selected) = instance.selected else {
+            return false;
+        };
+        let WidgetContent::List { items, actions, .. } = &instance.content else {
+            return false;
+        };
+        let Some(item) = items.get(selected) else {
+            return false;
+        };
+
+        let key_name = key_to_action_name(key);
+        let Some(action_id) = actions
+            .iter()
+            .find(|action| {
+                action
+                    .key
+                    .as_deref()
+                    .is_some_and(|candidate| candidate.eq_ignore_ascii_case(&key_name))
+            })
+            .map(|action| action.id.clone())
+        else {
+            return false;
+        };
+
+        let item_id = item.id.clone();
+        if let Some(instance) = self.focused_widget_mut() {
+            if let Some(action) = instance.widget.on_action(&action_id, &item_id) {
+                match action {
+                    WidgetAction::ShowDetail(detail) => instance.detail_content = Some(detail),
+                    other => Self::handle_widget_action(other),
+                }
+            }
+        }
+        true
+    }
+}
+
+fn key_to_action_name(key: &KeyEvent) -> String {
+    match key.code {
+        KeyCode::Char(ch) => ch.to_string(),
+        KeyCode::Enter => "enter".to_string(),
+        KeyCode::Esc => "esc".to_string(),
+        KeyCode::Tab => "tab".to_string(),
+        KeyCode::BackTab => "shift+tab".to_string(),
+        KeyCode::Up => "up".to_string(),
+        KeyCode::Down => "down".to_string(),
+        KeyCode::Left => "left".to_string(),
+        KeyCode::Right => "right".to_string(),
+        _ => format!("{:?}", key.code).to_lowercase(),
     }
 }
 
@@ -484,9 +588,29 @@ mod tests {
         last_key: Arc<Mutex<Option<String>>>,
     }
 
+    struct FocusTrackingWidget {
+        events: Arc<Mutex<Vec<&'static str>>>,
+    }
+
+    struct ActionKeyWidget {
+        last_action: Arc<Mutex<Option<(String, String)>>>,
+    }
+
     impl RecordingWidget {
         fn new(last_key: Arc<Mutex<Option<String>>>) -> Self {
             Self { last_key }
+        }
+    }
+
+    impl FocusTrackingWidget {
+        fn new(events: Arc<Mutex<Vec<&'static str>>>) -> Self {
+            Self { events }
+        }
+    }
+
+    impl ActionKeyWidget {
+        fn new(last_action: Arc<Mutex<Option<(String, String)>>>) -> Self {
+            Self { last_action }
         }
     }
 
@@ -546,9 +670,77 @@ mod tests {
         }
 
         fn on_key(&mut self, key: &str, _action: &str) {
-            if key == "Char('s')" {
+            if key == "s" {
                 self.toggled = true;
             }
+        }
+    }
+
+    impl Widget for FocusTrackingWidget {
+        fn metadata(&self) -> WidgetMetadata {
+            WidgetMetadata {
+                name: "Focus Tracker".to_string(),
+                description: "Records focus events".to_string(),
+                version: "0.1.0".to_string(),
+                author: None,
+                homepage: None,
+            }
+        }
+
+        fn init(&mut self, _config: WidgetConfig) {}
+
+        fn refresh(&mut self) -> WidgetContent {
+            WidgetContent::Text {
+                content: "Focus".to_string(),
+                scrollable: false,
+                wrap: true,
+            }
+        }
+
+        fn on_focus(&mut self) {
+            self.events.lock().unwrap().push("focus");
+        }
+
+        fn on_blur(&mut self) {
+            self.events.lock().unwrap().push("blur");
+        }
+    }
+
+    impl Widget for ActionKeyWidget {
+        fn metadata(&self) -> WidgetMetadata {
+            WidgetMetadata {
+                name: "Action Key".to_string(),
+                description: "Handles list action hotkeys".to_string(),
+                version: "0.1.0".to_string(),
+                author: None,
+                homepage: None,
+            }
+        }
+
+        fn init(&mut self, _config: WidgetConfig) {}
+
+        fn refresh(&mut self) -> WidgetContent {
+            WidgetContent::List {
+                items: vec![slate_plugin_sdk::ListItem {
+                    id: "item-1".to_string(),
+                    title: "Actionable".to_string(),
+                    subtitle: None,
+                    icon: None,
+                    style: Default::default(),
+                }],
+                selectable: true,
+                actions: vec![slate_plugin_sdk::Action {
+                    id: "open".to_string(),
+                    label: "Open".to_string(),
+                    key: Some("o".to_string()),
+                    confirm: false,
+                }],
+            }
+        }
+
+        fn on_action(&mut self, action_id: &str, item_id: &str) -> Option<WidgetAction> {
+            *self.last_action.lock().unwrap() = Some((action_id.to_string(), item_id.to_string()));
+            Some(WidgetAction::Notify("triggered".to_string()))
         }
     }
 
@@ -660,6 +852,124 @@ mod tests {
             app.focused_widget()
                 .map(|widget| widget.metadata.name.as_str()),
             Some("Mock List")
+        );
+    }
+
+    #[test]
+    fn ensure_focus_hook_fires_once_for_initial_widget() {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let mut app = App::new(SlateConfig::default());
+        app.add_widget(
+            Box::new(FocusTrackingWidget::new(events.clone())),
+            0,
+            0,
+            1,
+            1,
+            Some(60),
+            None,
+        );
+
+        app.ensure_focus_hook_fired();
+        app.ensure_focus_hook_fired();
+
+        assert_eq!(*events.lock().unwrap(), vec!["focus"]);
+    }
+
+    #[test]
+    fn moving_focus_triggers_blur_then_focus_hooks() {
+        let first_events = Arc::new(Mutex::new(Vec::new()));
+        let second_events = Arc::new(Mutex::new(Vec::new()));
+        let mut config = SlateConfig::default();
+        config.layout.rows = 1;
+        config.layout.cols = 2;
+        let mut app = App::new(config);
+        app.add_widget(
+            Box::new(FocusTrackingWidget::new(first_events.clone())),
+            0,
+            0,
+            1,
+            1,
+            Some(60),
+            None,
+        );
+        app.add_widget(
+            Box::new(FocusTrackingWidget::new(second_events.clone())),
+            0,
+            1,
+            1,
+            1,
+            Some(60),
+            None,
+        );
+
+        app.ensure_focus_hook_fired();
+        app.handle_key(make_key(KeyCode::Tab));
+
+        assert_eq!(*first_events.lock().unwrap(), vec!["focus", "blur"]);
+        assert_eq!(*second_events.lock().unwrap(), vec!["focus"]);
+    }
+
+    #[test]
+    fn list_action_hotkey_triggers_widget_action() {
+        let last_action = Arc::new(Mutex::new(None));
+        let mut app = App::new(SlateConfig::default());
+        app.add_widget(
+            Box::new(ActionKeyWidget::new(last_action.clone())),
+            0,
+            0,
+            1,
+            1,
+            Some(60),
+            None,
+        );
+
+        app.handle_key(make_key(KeyCode::Char('o')));
+
+        assert_eq!(
+            *last_action.lock().unwrap(),
+            Some(("open".to_string(), "item-1".to_string()))
+        );
+    }
+
+    #[test]
+    fn list_action_hotkey_returns_false_for_non_action_states() {
+        let mut empty_app = App::new(SlateConfig::default());
+        assert!(!empty_app.try_trigger_list_action(&make_key(KeyCode::Char('o'))));
+
+        let mut text_app = App::new(SlateConfig::default());
+        text_app.add_widget(Box::new(MockTextWidget), 0, 0, 1, 1, Some(60), None);
+        text_app.dashboard.widgets[0].selected = Some(0);
+        assert!(!text_app.try_trigger_list_action(&make_key(KeyCode::Char('o'))));
+
+        let mut list_app = test_app_with_list_widget(None);
+        list_app.dashboard.widgets[0].selected = None;
+        assert!(!list_app.try_trigger_list_action(&make_key(KeyCode::Char('o'))));
+
+        list_app.dashboard.widgets[0].selected = Some(99);
+        assert!(!list_app.try_trigger_list_action(&make_key(KeyCode::Char('o'))));
+
+        list_app.dashboard.widgets[0].selected = Some(0);
+        assert!(!list_app.try_trigger_list_action(&make_key(KeyCode::Char('z'))));
+    }
+
+    #[test]
+    fn list_action_hotkey_can_set_detail_content() {
+        let mut app =
+            test_app_with_list_widget(Some(WidgetAction::ShowDetail("Hotkey details".to_string())));
+        if let WidgetContent::List { actions, .. } = &mut app.dashboard.widgets[0].content {
+            actions.push(slate_plugin_sdk::Action {
+                id: "details".to_string(),
+                label: "Details".to_string(),
+                key: Some("d".to_string()),
+                confirm: false,
+            });
+        }
+
+        assert!(app.try_trigger_list_action(&make_key(KeyCode::Char('d'))));
+
+        assert_eq!(
+            app.dashboard.widgets[0].detail_content.as_deref(),
+            Some("Hotkey details")
         );
     }
 
@@ -797,7 +1107,7 @@ mod tests {
         // Enter detail view
         app.handle_key(make_key(KeyCode::Enter));
 
-        // j/k/Tab should be ignored — selection should not change
+        // j/k/Tab should be ignored â€” selection should not change
         let selected_before = app.dashboard.widgets[0].selected;
         app.handle_key(make_key(KeyCode::Char('j')));
         app.handle_key(make_key(KeyCode::Char('k')));
@@ -924,7 +1234,7 @@ mod tests {
         // Manually set last_refresh to the past to trigger refresh
         app.dashboard.widgets[0].last_refresh = Instant::now() - Duration::from_secs(600);
 
-        // The main loop refresh logic checks detail_content — simulate it here
+        // The main loop refresh logic checks detail_content â€” simulate it here
         let focus = app.focus;
         let instance = &mut app.dashboard.widgets[0];
         let now = Instant::now();
@@ -1094,7 +1404,7 @@ mod tests {
         let widget = RecordingWidget::new(last_key.clone());
         app.add_widget(Box::new(widget), 0, 0, 1, 1, Some(60), None);
         app.handle_key(make_key(KeyCode::Char('x')));
-        assert_eq!(last_key.lock().unwrap().as_deref(), Some("Char('x')"));
+        assert_eq!(last_key.lock().unwrap().as_deref(), Some("x"));
     }
 
     #[test]
@@ -1113,7 +1423,7 @@ mod tests {
 
         app.handle_key(make_key(KeyCode::Esc));
 
-        assert_eq!(last_key.lock().unwrap().as_deref(), Some("Esc"));
+        assert_eq!(last_key.lock().unwrap().as_deref(), Some("esc"));
     }
 
     #[test]
@@ -1134,5 +1444,25 @@ mod tests {
             App::handle_widget_action(WidgetAction::ShowDetail("detail".to_string()));
         });
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn key_to_action_name_handles_named_and_fallback_keys() {
+        let cases = [
+            (KeyCode::Char('x'), "x"),
+            (KeyCode::Enter, "enter"),
+            (KeyCode::Esc, "esc"),
+            (KeyCode::Tab, "tab"),
+            (KeyCode::BackTab, "shift+tab"),
+            (KeyCode::Up, "up"),
+            (KeyCode::Down, "down"),
+            (KeyCode::Left, "left"),
+            (KeyCode::Right, "right"),
+            (KeyCode::Home, "home"),
+        ];
+
+        for (code, expected) in cases {
+            assert_eq!(key_to_action_name(&make_key(code)), expected);
+        }
     }
 }

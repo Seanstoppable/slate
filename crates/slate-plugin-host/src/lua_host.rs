@@ -628,48 +628,59 @@ mod tests {
     }
 
     #[test]
-    fn pomodoro_script_is_stateful_and_key_driven() {
-        // scripts/pomodoro.lua demonstrates that a Lua widget can be fully
-        // interactive -- state machine, keybindings, rendering -- without
-        // touching any Rust code or recompiling the host binary.
-        let script_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scripts/pomodoro.lua");
+    fn lua_script_state_persists_across_on_key_and_refresh() {
+        // A Lua widget can be fully interactive -- state machine, keybindings,
+        // rendering -- without touching any Rust code or recompiling the host,
+        // because the interpreter lives as long as the widget does.
+        let dir = std::env::temp_dir().join("slate_test_lua_stateful");
+        std::fs::create_dir_all(&dir).unwrap();
+        let script_path = dir.join("stateful.lua");
+        std::fs::write(
+            &script_path,
+            r#"
+local running = false
+local ticks = 0
+
+function refresh()
+    if running then ticks = ticks + 1 end
+    return slate.text((running and "running" or "paused") .. " ticks=" .. ticks)
+end
+
+function on_key(key, _action)
+    if key == "s" then running = true
+    elseif key == "p" then running = false
+    elseif key == "x" then running = false; ticks = 0
+    end
+end
+"#,
+        )
+        .unwrap();
+
         let mut plugin = LuaPlugin::from_file(&script_path).unwrap();
 
-        // Starts paused, showing the full work session.
-        let content = plugin.refresh();
-        let text = match &content {
-            WidgetContent::Text { content, .. } => content.clone(),
+        let text = |content: WidgetContent| match content {
+            WidgetContent::Text { content, .. } => content,
             other => panic!("expected text content, got {:?}", other),
         };
-        assert!(text.contains("paused"));
-        assert!(text.contains("25:00"));
 
-        // 's' starts the countdown -- state mutated purely via on_key.
-        plugin.on_key("Char('s')", "");
-        let content = plugin.refresh();
-        match content {
-            WidgetContent::Text { content, .. } => assert!(content.contains("running")),
-            other => panic!("expected text content, got {:?}", other),
-        }
+        assert!(text(plugin.refresh()).contains("paused ticks=0"));
 
-        // 'p' pauses again.
-        plugin.on_key("Char('p')", "");
-        let content = plugin.refresh();
-        match content {
-            WidgetContent::Text { content, .. } => assert!(content.contains("paused")),
-            other => panic!("expected text content, got {:?}", other),
-        }
+        // 's' starts it -- state mutated purely via on_key.
+        plugin.on_key("s", "");
+        assert!(text(plugin.refresh()).contains("running ticks=1"));
 
-        // 'x' resets back to a fresh work session.
-        plugin.on_key("Char('x')", "");
-        let content = plugin.refresh();
-        match content {
-            WidgetContent::Text { content, .. } => {
-                assert!(content.contains("paused"));
-                assert!(content.contains("25:00"));
-            }
-            other => panic!("expected text content, got {:?}", other),
-        }
+        // State accumulates across refresh ticks.
+        assert!(text(plugin.refresh()).contains("running ticks=2"));
+
+        // 'p' pauses, so the counter stops advancing.
+        plugin.on_key("p", "");
+        assert!(text(plugin.refresh()).contains("paused ticks=2"));
+
+        // 'x' resets.
+        plugin.on_key("x", "");
+        assert!(text(plugin.refresh()).contains("paused ticks=0"));
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

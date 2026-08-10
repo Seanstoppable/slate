@@ -1,6 +1,7 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
 use crate::permissions::PermissionGuard;
 
@@ -78,6 +79,7 @@ fn extract_host(url: &str) -> Result<String> {
 /// Key-value store for plugins (sandboxed per-plugin).
 #[derive(Debug, Default)]
 pub struct PluginStore {
+    path: Option<PathBuf>,
     data: HashMap<String, Vec<u8>>,
 }
 
@@ -86,13 +88,57 @@ impl PluginStore {
         Self::default()
     }
 
+    pub fn with_path(path: PathBuf) -> Result<Self> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+
+        let data = load_store_file(&path).unwrap_or_default();
+        Ok(Self {
+            path: Some(path),
+            data,
+        })
+    }
+
+    pub fn for_plugin(plugin_name: &str) -> Result<Self> {
+        let data_dir = dirs::data_dir().context("Could not determine data directory")?;
+        let path = data_dir
+            .join("slate")
+            .join("plugin-state")
+            .join(format!("{plugin_name}.json"));
+        Self::with_path(path)
+    }
+
     pub fn get(&self, key: &str) -> Option<&[u8]> {
         self.data.get(key).map(|v| v.as_slice())
     }
 
-    pub fn set(&mut self, key: &str, value: Vec<u8>) {
+    pub fn set(&mut self, key: &str, value: Vec<u8>) -> Result<()> {
         self.data.insert(key.to_string(), value);
+        self.persist()
     }
+
+    fn persist(&self) -> Result<()> {
+        if let Some(path) = &self.path {
+            save_store_file(path, &self.data)?;
+        }
+        Ok(())
+    }
+}
+
+fn load_store_file(path: &Path) -> Result<HashMap<String, Vec<u8>>> {
+    if !path.exists() {
+        return Ok(HashMap::new());
+    }
+
+    let content = std::fs::read_to_string(path)?;
+    Ok(serde_json::from_str(&content)?)
+}
+
+fn save_store_file(path: &Path, data: &HashMap<String, Vec<u8>>) -> Result<()> {
+    let content = serde_json::to_string_pretty(data)?;
+    std::fs::write(path, content)?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -113,7 +159,7 @@ mod tests {
     #[test]
     fn plugin_store_gets_and_sets_values() {
         let mut store = PluginStore::new();
-        store.set("token", vec![1, 2, 3]);
+        store.set("token", vec![1, 2, 3]).unwrap();
 
         assert_eq!(store.get("token"), Some(&[1, 2, 3][..]));
     }
@@ -121,8 +167,8 @@ mod tests {
     #[test]
     fn plugin_store_overwrites_existing_values() {
         let mut store = PluginStore::new();
-        store.set("token", vec![1, 2, 3]);
-        store.set("token", vec![4, 5]);
+        store.set("token", vec![1, 2, 3]).unwrap();
+        store.set("token", vec![4, 5]).unwrap();
 
         assert_eq!(store.get("token"), Some(&[4, 5][..]));
     }
@@ -131,13 +177,29 @@ mod tests {
     fn plugin_store_keeps_keys_isolated_and_owns_values() {
         let mut store = PluginStore::new();
         let mut value = vec![9, 8, 7];
-        store.set("alpha", value.clone());
-        store.set("beta", vec![1, 2, 3]);
+        store.set("alpha", value.clone()).unwrap();
+        store.set("beta", vec![1, 2, 3]).unwrap();
         value[0] = 0;
 
         assert_eq!(store.get("alpha"), Some(&[9, 8, 7][..]));
         assert_eq!(store.get("beta"), Some(&[1, 2, 3][..]));
         assert_eq!(store.get("gamma"), None);
+    }
+
+    #[test]
+    fn plugin_store_persists_values_to_disk() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("plugin-state.json");
+
+        {
+            let mut store = PluginStore::with_path(path.clone()).unwrap();
+            store.set("phase", b"work".to_vec()).unwrap();
+            store.set("remaining", b"1500".to_vec()).unwrap();
+        }
+
+        let store = PluginStore::with_path(path).unwrap();
+        assert_eq!(store.get("phase"), Some(&b"work"[..]));
+        assert_eq!(store.get("remaining"), Some(&b"1500"[..]));
     }
 
     #[test]

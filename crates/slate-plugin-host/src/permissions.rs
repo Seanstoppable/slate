@@ -13,12 +13,13 @@ impl PermissionGuard {
 
     /// Check if HTTP access to a specific host is permitted.
     pub fn check_network(&self, host: &str) -> Result<(), PermissionError> {
-        if self
-            .permissions
-            .network
-            .iter()
-            .any(|allowed| host.contains(allowed))
-        {
+        if self.permissions.network.iter().any(|allowed| {
+            allowed == "*"
+                || host == allowed
+                || host
+                    .strip_suffix(allowed)
+                    .is_some_and(|prefix| prefix.ends_with('.'))
+        }) {
             Ok(())
         } else {
             Err(PermissionError::NetworkDenied(host.to_string()))
@@ -201,11 +202,36 @@ mod tests {
         });
 
         assert!(guard.check_network("github.com").is_ok());
-        assert!(guard.check_network("api.internal.example").is_ok());
+        assert!(guard.check_network("service.api.internal").is_ok());
         assert!(matches!(
             guard.check_network("gitlab.com"),
             Err(PermissionError::NetworkDenied(host)) if host == "gitlab.com"
         ));
+    }
+
+    #[test]
+    fn test_network_permission_rejects_partial_host_matches() {
+        let guard = PermissionGuard::new(Permissions {
+            network: vec!["github.com".to_string()],
+            ..Default::default()
+        });
+
+        assert!(guard.check_network("api.github.com").is_ok());
+        assert!(matches!(
+            guard.check_network("evilgithub.com"),
+            Err(PermissionError::NetworkDenied(host)) if host == "evilgithub.com"
+        ));
+    }
+
+    #[test]
+    fn test_network_permission_allows_wildcard_host() {
+        let guard = PermissionGuard::new(Permissions {
+            network: vec!["*".to_string()],
+            ..Default::default()
+        });
+
+        assert!(guard.check_network("example.com").is_ok());
+        assert!(guard.check_network("nested.example.com").is_ok());
     }
 
     #[test]
