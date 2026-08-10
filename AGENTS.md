@@ -18,7 +18,7 @@ slate/ (Rust workspace, edition 2021)
 ├── scripts/                    # Lua script examples
 ├── docs/                       # Plugin docs site (template.html)
 ├── examples/                   # Example slate.toml
-└── .github/workflows/ci.yml    # Tests (3 OS), lint, coverage (85% threshold)
+└── .github/workflows/ci.yml    # Tests (3 OS) + coverage on ubuntu-latest, lint
 ```
 
 ## Crate Dependency Graph

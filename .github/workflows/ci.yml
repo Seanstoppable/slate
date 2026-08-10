@@ -22,6 +22,39 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace
 
+      - name: Install cargo-tarpaulin
+        if: matrix.os == 'ubuntu-latest'
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-tarpaulin
+
+      - name: Run coverage
+        if: matrix.os == 'ubuntu-latest'
+        run: cargo tarpaulin --workspace --out xml --output-dir coverage/
+
+      - name: Upload coverage report
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/cobertura.xml
+
+      - name: Check coverage threshold
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          COVERAGE=$(python3 -c "
+          import xml.etree.ElementTree as ET
+          root = ET.parse('coverage/cobertura.xml').getroot()
+          print(round(float(root.attrib['line-rate']) * 100, 2))
+          ")
+          echo "Coverage: ${COVERAGE}%"
+          THRESHOLD=85
+          if [ "$(echo "$COVERAGE < $THRESHOLD" | bc -l)" -eq 1 ]; then
+            echo "::error::Coverage ${COVERAGE}% is below threshold ${THRESHOLD}%"
+            exit 1
+          fi
+          echo "✓ Coverage ${COVERAGE}% meets threshold ${THRESHOLD}%"
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
@@ -37,42 +70,3 @@ jobs:
 
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
-
-  coverage:
-    name: Code Coverage
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-
-      - name: Install cargo-tarpaulin
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-tarpaulin
-
-      - name: Run coverage
-        run: cargo tarpaulin --workspace --out xml --output-dir coverage/
-
-      - name: Upload coverage report
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-report
-          path: coverage/cobertura.xml
-
-      - name: Check coverage threshold
-        run: |
-          # Parse coverage from the cobertura.xml already produced above instead
-          # of re-running the (slow, instrumented) tarpaulin build a second time.
-          COVERAGE=$(python3 -c "
-          import xml.etree.ElementTree as ET
-          root = ET.parse('coverage/cobertura.xml').getroot()
-          print(round(float(root.attrib['line-rate']) * 100, 2))
-          ")
-          echo "Coverage: ${COVERAGE}%"
-          THRESHOLD=85
-          if [ "$(echo "$COVERAGE < $THRESHOLD" | bc -l)" -eq 1 ]; then
-            echo "::error::Coverage ${COVERAGE}% is below threshold ${THRESHOLD}%"
-            exit 1
-          fi
-          echo "✓ Coverage ${COVERAGE}% meets threshold ${THRESHOLD}%"
