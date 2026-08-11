@@ -90,19 +90,20 @@ pub fn refresh(input: String) -> FnResult<String> {
         .to_string();
 
     let count_str = count.to_string();
+    let git_dir = format!("{path}/.git");
     let result = run_exec(
         "git",
         &[
+            "--git-dir",
+            &git_dir,
+            "--work-tree",
+            &path,
             "log",
             "--oneline",
             "--no-decorate",
             "-n",
             &count_str,
             "--format=%h|%s|%ar|%an",
-            "--work-tree",
-            &path,
-            "--git-dir",
-            &format!("{path}/.git"),
         ],
     )?;
 
