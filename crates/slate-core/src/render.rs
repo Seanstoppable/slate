@@ -630,4 +630,24 @@ mod tests {
         assert_eq!(convert_color(&Color::White), RatColor::White);
         assert_eq!(convert_color(&Color::Gray), RatColor::Gray);
     }
+
+    #[test]
+    fn render_input_bar_shows_prompt_and_buffer_with_cursor() {
+        let backend = TestBackend::new(40, 1);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| {
+                render_input_bar(frame, Rect::new(0, 0, 40, 1), "Add todo", "my task");
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let mut rendered = String::new();
+        for x in 0..40 {
+            rendered.push_str(buffer[(x, 0)].symbol());
+        }
+        assert!(rendered.contains("Add todo"));
+        assert!(rendered.contains("my task"));
+        assert!(rendered.contains('_'));
+    }
 }

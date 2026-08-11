@@ -1605,6 +1605,58 @@ mod tests {
     }
 
     #[test]
+    fn input_mode_enter_with_show_detail_response_sets_detail_content() {
+        let mut app =
+            test_app_with_list_widget(Some(WidgetAction::ShowDetail("detail".to_string())));
+        app.input_mode = Some(InputMode {
+            prompt: "Enter:".to_string(),
+            action_id: "add".to_string(),
+            buffer: "task text".to_string(),
+        });
+
+        app.handle_key(make_key(KeyCode::Enter));
+
+        assert!(app.input_mode.is_none());
+        assert_eq!(
+            app.dashboard.widgets[0].detail_content.as_deref(),
+            Some("detail")
+        );
+    }
+
+    #[test]
+    fn input_mode_enter_with_no_focused_widget_is_noop() {
+        let mut app = App::new(SlateConfig::default());
+        // No widgets — focused_widget_mut returns None
+        app.input_mode = Some(InputMode {
+            prompt: "Enter:".to_string(),
+            action_id: "add".to_string(),
+            buffer: "text".to_string(),
+        });
+
+        app.handle_key(make_key(KeyCode::Enter));
+        assert!(app.input_mode.is_none());
+    }
+
+    #[test]
+    fn input_mode_ignores_unrecognized_keys() {
+        let mut app = App::new(SlateConfig::default());
+        app.add_widget(Box::new(MockTextWidget), 0, 0, 1, 1, Some(60), None);
+        app.input_mode = Some(InputMode {
+            prompt: "Enter:".to_string(),
+            action_id: "add".to_string(),
+            buffer: "hello".to_string(),
+        });
+
+        // Home key is unrecognized in input mode — should return early with no change
+        app.handle_key(make_key(KeyCode::Home));
+        assert!(app.input_mode.is_some());
+        assert_eq!(
+            app.input_mode.as_ref().map(|m| m.buffer.as_str()),
+            Some("hello")
+        );
+    }
+
+    #[test]
     fn key_to_action_name_handles_named_and_fallback_keys() {
         let cases = [
             (KeyCode::Char('x'), "x"),
