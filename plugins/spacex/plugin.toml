@@ -1,0 +1,7 @@
+name = "spacex"
+description = "Displays information about the next SpaceX launch"
+version = "0.1.0"
+tags = ["news", "space", "spacex"]
+
+[permissions]
+network = ["api.spacexdata.com"]

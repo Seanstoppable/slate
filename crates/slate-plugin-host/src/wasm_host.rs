@@ -1,4 +1,4 @@
-﻿use anyhow::{Context, Result};
+use anyhow::{Context, Result};
 use extism::{Function, Manifest, Plugin, UserData, Val, Wasm, PTR};
 use slate_plugin_sdk::{
     Action, Permissions, WidgetAction, WidgetConfig, WidgetContent, WidgetMetadata,
@@ -262,6 +262,40 @@ fn make_store_set_function(host_state: UserData<HostState>) -> Function {
     )
 }
 
+/// Return the plugin's dedicated data directory path.
+/// Requires `storage = true` in the plugin's permissions.
+/// Returns JSON: {"path": "/absolute/path/to/dir"}
+fn run_get_data_dir_request(state: &HostState, plugin_name: &str) -> Result<String, extism::Error> {
+    state
+        .permissions
+        .check_storage()
+        .map_err(|e| extism::Error::msg(e.to_string()))?;
+    let dir = crate::host_functions::plugin_data_dir(plugin_name)
+        .map_err(|e| extism::Error::msg(e.to_string()))?;
+    Ok(serde_json::json!({ "path": dir.to_string_lossy() }).to_string())
+}
+
+fn make_get_data_dir_function(host_state: UserData<HostState>, plugin_name: String) -> Function {
+    Function::new(
+        "get_data_dir",
+        [PTR],
+        [PTR],
+        host_state,
+        move |plugin, _inputs, outputs, user_data| {
+            let state = user_data
+                .get()
+                .map_err(|e| extism::Error::msg(e.to_string()))?;
+            let state = state
+                .lock()
+                .map_err(|_| extism::Error::msg("Failed to lock plugin host state"))?;
+            let response = run_get_data_dir_request(&state, &plugin_name)?;
+            let handle = plugin.memory_new(response)?;
+            outputs[0] = plugin.memory_to_val(handle);
+            Ok(())
+        },
+    )
+}
+
 /// Serialize the plugin's configured settings for the `get_config` host function.
 fn run_get_config_request(state: &HostState) -> Result<String, extism::Error> {
     serde_json::to_string(
@@ -309,9 +343,17 @@ impl WasmPlugin {
             .to_string();
 
         let wasm = Wasm::data(wasm_bytes);
-        let manifest = Manifest::new([wasm])
+        let mut manifest = Manifest::new([wasm])
             .with_allowed_hosts(permissions.network.clone().into_iter())
             .with_timeout(std::time::Duration::from_secs(10));
+
+        // Preopen the plugin's data directory so WASI filesystem calls work.
+        if permissions.storage {
+            if let Ok(data_dir) = crate::host_functions::plugin_data_dir(&name) {
+                let path_str = data_dir.to_string_lossy().into_owned();
+                manifest = manifest.with_allowed_path(path_str, data_dir);
+            }
+        }
 
         let host_state = UserData::new(HostState {
             config: None,
@@ -324,6 +366,7 @@ impl WasmPlugin {
             make_store_get_function(host_state.clone()),
             make_store_set_function(host_state.clone()),
             make_get_config_function(host_state.clone()),
+            make_get_data_dir_function(host_state.clone(), name.clone()),
         ];
         let mut plugin = Plugin::new(&manifest, host_functions, true)
             .with_context(|| format!("Failed to create WASM plugin: {}", path.display()))?;
@@ -349,9 +392,16 @@ impl WasmPlugin {
         permissions: Permissions,
     ) -> Result<Self> {
         let wasm = Wasm::data(bytes);
-        let manifest = Manifest::new([wasm])
+        let mut manifest = Manifest::new([wasm])
             .with_allowed_hosts(permissions.network.clone().into_iter())
             .with_timeout(std::time::Duration::from_secs(10));
+
+        if permissions.storage {
+            if let Ok(data_dir) = crate::host_functions::plugin_data_dir(&metadata.name) {
+                let path_str = data_dir.to_string_lossy().into_owned();
+                manifest = manifest.with_allowed_path(path_str, data_dir);
+            }
+        }
         let host_state = UserData::new(HostState {
             config: None,
             permissions: PermissionGuard::new(permissions),
@@ -363,6 +413,7 @@ impl WasmPlugin {
             make_store_get_function(host_state.clone()),
             make_store_set_function(host_state.clone()),
             make_get_config_function(host_state.clone()),
+            make_get_data_dir_function(host_state.clone(), metadata.name.clone()),
         ];
         let plugin = Plugin::new(&manifest, host_functions, true)?;
 
@@ -604,6 +655,11 @@ fn parse_widget_action(response: &str) -> Option<WidgetAction> {
         return None;
     };
 
+    if val["action"] == "prompt_input" {
+        let prompt = val["prompt"].as_str().unwrap_or("Input:").to_string();
+        let action_id = val["action_id"].as_str().unwrap_or("").to_string();
+        return Some(WidgetAction::PromptInput { prompt, action_id });
+    }
     if let Some(url) = val["open_url"].as_str() {
         return Some(WidgetAction::OpenUrl(url.to_string()));
     }
@@ -1093,6 +1149,27 @@ mod tests {
     }
 
     #[test]
+    fn parse_widget_action_handles_prompt_input() {
+        assert_eq!(
+            parse_widget_action(
+                r#"{"action":"prompt_input","prompt":"New todo","action_id":"add"}"#
+            ),
+            Some(WidgetAction::PromptInput {
+                prompt: "New todo".to_string(),
+                action_id: "add".to_string(),
+            })
+        );
+        // Missing prompt defaults to "Input:"
+        assert_eq!(
+            parse_widget_action(r#"{"action":"prompt_input","action_id":"save"}"#),
+            Some(WidgetAction::PromptInput {
+                prompt: "Input:".to_string(),
+                action_id: "save".to_string(),
+            })
+        );
+    }
+
+    #[test]
     fn helper_functions_cover_exec_refresh_and_action_paths() {
         let guard = PermissionGuard::new(Permissions {
             exec: vec![
@@ -1578,5 +1655,30 @@ mod tests {
             WidgetContent::Text { content, .. } => assert!(content.contains("[bytes] Error:")),
             other => panic!("expected text content, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn run_get_data_dir_request_denied_without_storage_permission() {
+        let state = host_state_with_storage(false);
+        let err = run_get_data_dir_request(&state, "my-plugin").unwrap_err();
+        assert!(
+            err.to_string().contains("storage"),
+            "expected storage error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn run_get_data_dir_request_creates_dir_and_returns_path() {
+        let state = host_state_with_storage(true);
+        let result = run_get_data_dir_request(&state, "test-todo-plugin").unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        let path_str = parsed["path"].as_str().expect("path key missing");
+        assert!(!path_str.is_empty(), "path should not be empty");
+        let path = std::path::Path::new(path_str);
+        assert!(
+            path.exists(),
+            "plugin data directory should have been created: {path_str}"
+        );
+        assert!(path.is_dir(), "path should be a directory: {path_str}");
     }
 }

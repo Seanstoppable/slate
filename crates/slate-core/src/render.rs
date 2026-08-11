@@ -326,6 +326,13 @@ pub fn render_status_bar(
     frame.render_widget(paragraph, area);
 }
 
+pub fn render_input_bar(frame: &mut Frame, area: Rect, prompt: &str, buffer: &str) {
+    let text = format!("{}: {}_", prompt, buffer);
+    let paragraph =
+        Paragraph::new(text).style(Style::default().fg(RatColor::Yellow).bg(RatColor::DarkGray));
+    frame.render_widget(paragraph, area);
+}
+
 fn convert_style(style: &slate_plugin_sdk::CellStyle) -> Style {
     let mut s = Style::default();
     if let Some(ref color) = style.fg {
@@ -622,5 +629,25 @@ mod tests {
         assert_eq!(convert_color(&Color::Cyan), RatColor::Cyan);
         assert_eq!(convert_color(&Color::White), RatColor::White);
         assert_eq!(convert_color(&Color::Gray), RatColor::Gray);
+    }
+
+    #[test]
+    fn render_input_bar_shows_prompt_and_buffer_with_cursor() {
+        let backend = TestBackend::new(40, 1);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| {
+                render_input_bar(frame, Rect::new(0, 0, 40, 1), "Add todo", "my task");
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let mut rendered = String::new();
+        for x in 0..40 {
+            rendered.push_str(buffer[(x, 0)].symbol());
+        }
+        assert!(rendered.contains("Add todo"));
+        assert!(rendered.contains("my task"));
+        assert!(rendered.contains('_'));
     }
 }

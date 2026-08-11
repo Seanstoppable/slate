@@ -141,6 +141,15 @@ fn save_store_file(path: &Path, data: &HashMap<String, Vec<u8>>) -> Result<()> {
     Ok(())
 }
 
+/// Create (if needed) and return the plugin-specific data directory at
+/// `{data_dir}/slate/plugin-data/{plugin_name}/`.
+pub fn plugin_data_dir(plugin_name: &str) -> Result<PathBuf> {
+    let data_dir = dirs::data_dir().context("Could not determine data directory")?;
+    let dir = data_dir.join("slate").join("plugin-data").join(plugin_name);
+    std::fs::create_dir_all(&dir)?;
+    Ok(dir)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -349,5 +358,18 @@ mod tests {
         assert_eq!(result.status, 200);
         assert_eq!(result.body, "hello");
         assert_eq!(result.headers.get("x-test").map(String::as_str), Some("ok"));
+    }
+
+    #[test]
+    fn plugin_data_dir_creates_and_returns_directory() {
+        let result = plugin_data_dir("test-coverage-plugin");
+        assert!(
+            result.is_ok(),
+            "plugin_data_dir should succeed: {:?}",
+            result
+        );
+        let dir = result.unwrap();
+        assert!(dir.exists(), "directory should exist after plugin_data_dir");
+        assert!(dir.ends_with("test-coverage-plugin"));
     }
 }

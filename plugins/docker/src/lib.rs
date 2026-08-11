@@ -124,7 +124,7 @@ pub fn metadata(_input: String) -> FnResult<String> {
 
 pub fn refresh(_input: String) -> FnResult<String> {
 
-    let result = exec_command("docker", &["ps", "-a", "--format", "json", "--no-trunc"])?;
+    let result = run_docker_exec("docker", &["ps", "-a", "--format", "json", "--no-trunc"])?;
 
 
 
@@ -290,25 +290,25 @@ pub fn on_action(input: String) -> FnResult<String> {
 
             "start" => {
 
-                let _ = exec_command("docker", &["start", container_id]);
+                let _ = run_docker_exec("docker", &["start", container_id]);
 
             }
 
             "stop" => {
 
-                let _ = exec_command("docker", &["stop", container_id]);
+                let _ = run_docker_exec("docker", &["stop", container_id]);
 
             }
 
             "restart" => {
 
-                let _ = exec_command("docker", &["restart", container_id]);
+                let _ = run_docker_exec("docker", &["restart", container_id]);
 
             }
 
             "logs" => {
 
-                if let Ok(result) = exec_command("docker", &["logs", "--tail", "50", container_id]) {
+                if let Ok(result) = run_docker_exec("docker", &["logs", "--tail", "50", container_id]) {
 
                     let logs = if result.stdout.is_empty() {
 
@@ -351,43 +351,16 @@ pub fn on_action(input: String) -> FnResult<String> {
 
 
 #[cfg(target_arch = "wasm32")]
+#[host_fn]
+extern "ExtismHost" {
+    fn exec_command(input: String) -> String;
+}
 
-fn exec_command(cmd: &str, args: &[&str]) -> Result<ExecResult, Error> {
-
-    let request = json!({
-
-        "cmd": cmd,
-
-        "args": args
-
-    });
-
-    let request_str = request.to_string();
-
-
-
-    let mem = Memory::from_bytes(request_str.as_bytes())?;
-
-    let offset = unsafe { extism_pdk::extism_call("exec_command", mem.offset()) };
-
-    if offset != 0 {
-
-        return Err(Error::msg("exec_command host function call failed"));
-
-    }
-
-    let output = extism_pdk::output_bytes()?;
-
-    let output_str = std::str::from_utf8(&output)
-
-        .map_err(|e| Error::msg(format!("Invalid UTF-8 from exec_command: {}", e)))?;
-
-    let result: ExecResult = serde_json::from_str(output_str)
-
-        .map_err(|e| Error::msg(format!("Failed to parse exec_command result: {}", e)))?;
-
-    Ok(result)
-
+#[cfg(target_arch = "wasm32")]
+fn run_docker_exec(cmd: &str, args: &[&str]) -> Result<ExecResult, Error> {
+    let request = json!({"cmd": cmd, "args": args}).to_string();
+    let output = unsafe { exec_command(request)? };
+    serde_json::from_str(&output).map_err(|e| Error::msg(e.to_string()))
 }
 
 

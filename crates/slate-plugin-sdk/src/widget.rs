@@ -36,6 +36,9 @@ pub enum WidgetAction {
     Notify(String),
     /// Show detail content in the widget cell (replaces list view until dismissed).
     ShowDetail(String),
+    /// Request a text prompt from the user. When the user submits, the host
+    /// calls `on_action(action_id, typed_text)` back into the plugin.
+    PromptInput { prompt: String, action_id: String },
 }
 
 /// A boxed widget for dynamic dispatch.
@@ -66,6 +69,31 @@ mod tests {
                 message: "empty".to_string(),
             }
         }
+    }
+
+    #[test]
+    fn prompt_input_action_compares_equal_to_itself() {
+        assert_eq!(
+            WidgetAction::PromptInput {
+                prompt: "New todo:".to_string(),
+                action_id: "add".to_string(),
+            },
+            WidgetAction::PromptInput {
+                prompt: "New todo:".to_string(),
+                action_id: "add".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn prompt_input_action_is_not_equal_to_notify() {
+        assert_ne!(
+            WidgetAction::PromptInput {
+                prompt: "Enter:".to_string(),
+                action_id: "add".to_string(),
+            },
+            WidgetAction::Notify("Enter:".to_string())
+        );
     }
 
     #[test]

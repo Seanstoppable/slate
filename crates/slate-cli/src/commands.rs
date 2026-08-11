@@ -150,14 +150,10 @@ struct PluginManifestPlugin {
 
 /// Find and parse plugin.toml next to a WASM file (in same dir or parent dir).
 fn read_plugin_manifest(wasm_path: &std::path::Path) -> Option<PluginManifest> {
-    let dir = wasm_path.parent()?;
-    // Check same directory first, then parent (for plugins with target/ subdirs)
-    for candidate in [
-        dir.join("plugin.toml"),
-        dir.parent()
-            .map(|p| p.join("plugin.toml"))
-            .unwrap_or_default(),
-    ] {
+    // Walk up from the wasm file's directory until we find plugin.toml or hit the root.
+    let mut dir = wasm_path.parent()?;
+    loop {
+        let candidate = dir.join("plugin.toml");
         if candidate.exists() {
             if let Ok(content) = std::fs::read_to_string(&candidate) {
                 if let Ok(manifest) = toml::from_str::<PluginManifest>(&content) {
@@ -165,8 +161,8 @@ fn read_plugin_manifest(wasm_path: &std::path::Path) -> Option<PluginManifest> {
                 }
             }
         }
+        dir = dir.parent()?;
     }
-    None
 }
 
 /// Get the current OS as a normalized string matching plugin.toml conventions.
@@ -2564,5 +2560,136 @@ position = {{ row = 0, col = 1 }}
         assert_eq!(web_health().await, "ok");
         assert!(web_index().await.0.contains("/api/dashboard"));
         assert!(web_index().await.0.contains("Slate Dashboard"));
+    }
+
+    #[tokio::test]
+    async fn lint_returns_ok_for_missing_plugin_toml() {
+        let dir = tempdir().unwrap();
+        // No plugin.toml — should return Ok without panicking
+        lint(Some(dir.path().to_str().unwrap())).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn lint_reports_missing_plugin_section() {
+        let dir = tempdir().unwrap();
+        std::fs::write(dir.path().join("plugin.toml"), "[permissions]\n").unwrap();
+        lint(Some(dir.path().to_str().unwrap())).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn lint_reports_empty_tags_and_config_keys_present_but_unused() {
+        let dir = tempdir().unwrap();
+        let src = dir.path().join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        // No settings["..."] usage → source_keys is empty
+        std::fs::write(src.join("lib.rs"), "fn main() {}").unwrap();
+        std::fs::write(
+            dir.path().join("plugin.toml"),
+            "[plugin]\nname = \"test\"\ndescription = \"t\"\nversion = \"0.1.0\"\ntags = []\n\n[config]\nfoo = {}\n",
+        )
+        .unwrap();
+        lint(Some(dir.path().to_str().unwrap())).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn lint_reports_unsorted_tags_and_missing_config_key() {
+        let dir = tempdir().unwrap();
+        let src = dir.path().join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(
+            src.join("lib.rs"),
+            r#"let x = settings["beta"].as_str().unwrap_or("");"#,
+        )
+        .unwrap();
+        // Tags are not sorted; [config] is missing the key used in source
+        std::fs::write(
+            dir.path().join("plugin.toml"),
+            "[plugin]\nname = \"t\"\ndescription = \"t\"\nversion = \"0.1.0\"\ntags = [\"z\", \"a\"]\n",
+        )
+        .unwrap();
+        lint(Some(dir.path().to_str().unwrap())).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn lint_reports_extra_config_key_and_unsorted_config_keys() {
+        let dir = tempdir().unwrap();
+        let src = dir.path().join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(
+            src.join("lib.rs"),
+            r#"let x = settings["alpha"].as_str().unwrap_or("");"#,
+        )
+        .unwrap();
+        // [config] has "alpha" (used) and "zzz_extra" (unused), and is not sorted
+        std::fs::write(
+            dir.path().join("plugin.toml"),
+            "[plugin]\nname = \"t\"\ndescription = \"t\"\nversion = \"0.1.0\"\ntags = [\"a\"]\n\n[config]\nzzz_extra = {}\nalpha = {}\n",
+        )
+        .unwrap();
+        lint(Some(dir.path().to_str().unwrap())).await.unwrap();
+    }
+
+    #[test]
+    fn lint_fix_returns_ok_when_no_source_keys() {
+        let dir = tempdir().unwrap();
+        let src = dir.path().join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(src.join("lib.rs"), "fn main() {}").unwrap();
+        std::fs::write(dir.path().join("plugin.toml"), "[plugin]\nname = \"t\"\n").unwrap();
+
+        lint_fix(dir.path()).unwrap();
+
+        // File should not gain a [config] section when there are no keys
+        let content = std::fs::read_to_string(dir.path().join("plugin.toml")).unwrap();
+        assert!(!content.contains("[config]"));
+    }
+
+    #[test]
+    fn lint_fix_replaces_existing_config_section() {
+        let dir = tempdir().unwrap();
+        let src = dir.path().join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(
+            src.join("lib.rs"),
+            r#"let x = settings["newkey"].as_bool().unwrap_or(false);"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("plugin.toml"),
+            "[plugin]\nname = \"t\"\n\n[config]\noldkey = { type = \"string\" }\n",
+        )
+        .unwrap();
+
+        lint_fix(dir.path()).unwrap();
+
+        let content = std::fs::read_to_string(dir.path().join("plugin.toml")).unwrap();
+        assert!(content.contains("[config]"));
+        assert!(content.contains("newkey"));
+        // oldkey should have been replaced
+        assert!(!content.contains("oldkey"));
+    }
+
+    #[test]
+    fn check_os_support_uses_plugin_name_from_manifest_when_available() {
+        let dir = tempdir().unwrap();
+        let wasm_path = dir.path().join("widget.wasm");
+        std::fs::write(&wasm_path, b"wasm").unwrap();
+
+        let unsupported = ["linux", "macos", "windows"]
+            .into_iter()
+            .find(|os| *os != current_os())
+            .unwrap();
+        // Write a manifest with an explicit name (exercises the non-empty-name branch)
+        std::fs::write(
+            dir.path().join("plugin.toml"),
+            format!(
+                "[plugin]\nname = \"my-named-plugin\"\nos = [\"{}\"]\n",
+                unsupported
+            ),
+        )
+        .unwrap();
+
+        let err = check_os_support(&wasm_path).unwrap_err();
+        assert!(err.to_string().contains("Not available on"));
     }
 }
