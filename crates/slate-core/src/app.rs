@@ -700,6 +700,7 @@ mod tests {
 
     struct ActionKeyWidget {
         last_action: Arc<Mutex<Option<(String, String)>>>,
+        key: String,
     }
 
     impl RecordingWidget {
@@ -716,7 +717,17 @@ mod tests {
 
     impl ActionKeyWidget {
         fn new(last_action: Arc<Mutex<Option<(String, String)>>>) -> Self {
-            Self { last_action }
+            Self {
+                last_action,
+                key: "o".to_string(),
+            }
+        }
+
+        fn with_key(last_action: Arc<Mutex<Option<(String, String)>>>, key: &str) -> Self {
+            Self {
+                last_action,
+                key: key.to_string(),
+            }
         }
     }
 
@@ -838,7 +849,7 @@ mod tests {
                 actions: vec![slate_plugin_sdk::Action {
                     id: "open".to_string(),
                     label: "Open".to_string(),
-                    key: Some("o".to_string()),
+                    key: Some(self.key.clone()),
                     confirm: false,
                 }],
             }
@@ -1038,11 +1049,11 @@ mod tests {
     }
 
     #[test]
-    fn refresh_key_is_reserved_from_list_actions() {
+    fn reserved_refresh_action_renders_error_and_does_not_run() {
         let last_action = Arc::new(Mutex::new(None));
         let mut app = App::new(SlateConfig::default());
         app.add_widget(
-            Box::new(ActionKeyWidget::new(last_action.clone())),
+            Box::new(ActionKeyWidget::with_key(last_action.clone(), "r")),
             0,
             0,
             1,
@@ -1050,16 +1061,14 @@ mod tests {
             Some(60),
             None,
         );
-        if let WidgetContent::List { actions, .. } = &mut app.dashboard.widgets[0].content {
-            actions.push(slate_plugin_sdk::Action {
-                id: "reset".to_string(),
-                label: "Reset".to_string(),
-                key: Some("r".to_string()),
-                confirm: false,
-            });
-        }
         let previous_refresh = Instant::now() - Duration::from_secs(60);
         app.dashboard.widgets[0].last_refresh = previous_refresh;
+
+        assert!(matches!(
+            &app.dashboard.widgets[0].content,
+            WidgetContent::Text { content, .. }
+                if content.contains("Open") && content.contains("reserved key 'r'")
+        ));
 
         app.handle_key(make_key(KeyCode::Char('r')));
 
