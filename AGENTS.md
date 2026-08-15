@@ -107,7 +107,6 @@ Environment variable interpolation: `token = "${GITHUB_TOKEN}"`
 | power | `builtin:power` | KeyValue (battery, charge state) |
 | firewall | `builtin:firewall` | KeyValue (status, rule count) |
 | ipaddresses | `builtin:ipaddresses` | KeyValue (interface IPs) |
-| vcs | `builtin:vcs` | KeyValue (git/hg repo info) |
 
 ## WASM Plugins (in `plugins/`)
 
@@ -121,6 +120,7 @@ Environment variable interpolation: `token = "${GITHUB_TOKEN}"`
 | feedreader | Rust | `network: ["*"]` |
 | docker | Rust | `exec: [docker]` |
 | lunarphase | Rust | None |
+| vcs | Rust | `exec: [git, hg]` |
 | status-pages | TypeScript | `network: [www.githubstatus.com, status.slack.com]` |
 | brew-outdated | Go (TinyGo) | `exec: [brew]` |
 | istats | Zig | `exec: [istats]` |

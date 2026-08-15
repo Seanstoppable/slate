@@ -13,8 +13,8 @@ We loved wtfutil but wanted to start from a **blank slate** (pun intended) to ad
 ## Features
 
 - **WASM-sandboxed plugins** — Community plugins run in an Extism sandbox with capability-gated permissions
-- **5 built-in widgets** — Resources, power, firewall, network interfaces, VCS (git/hg)
-- **8 WASM plugins (Rust)** — Clock, weather, HN, feeds, GitHub, IP info, URL check, Pomodoro
+- **5 built-in widgets** — Resources, power, firewall, network interfaces, log file
+- **9 WASM plugins (Rust)** — Clock, weather, HN, feeds, GitHub, IP info, URL check, Pomodoro, VCS
 - **4 WASM plugins (polyglot)** — Status pages (JS), iStats (Zig), wego (AssemblyScript), cmdrunner (Go)
 - **Lua scripting** — Quick personal widgets with zero compilation (brew outdated, docker ps, disk usage, git log, todo.txt), including fully **interactive**, key-driven widgets with no Rust code or recompilation involved. Treat Lua scripts as trusted local code, not distributable community plugins.
 - **Plugin manager** — Install from GitHub repos, lockfile-based versioning, update notifications
@@ -104,7 +104,7 @@ Environment variables are interpolated with `${VAR_NAME}` syntax.
 | `power` | Builtin | Rust | Battery status and charging state |
 | `ipaddresses` | Builtin | Rust | Local network interface addresses |
 | `firewall` | Builtin | Rust | Firewall status and rules |
-| `vcs` | Builtin | Rust | Git/Mercurial status (configurable engine) |
+| `vcs` | WASM | Rust | Git/Mercurial status (configurable engine) |
 | `clock` | WASM | Rust | Current time with timezone |
 | `weather` | WASM | Rust | Weather via OpenWeatherMap |
 | `ipinfo` | WASM | Rust | Public IP and geolocation (via ipinfo.io) |
@@ -284,7 +284,7 @@ slate/
 
 | Tier | Runtime | Use Case |
 |------|---------|----------|
-| **Built-in** | Native Rust | Needs direct OS/system access (power, firewall, network interfaces, VCS, CPU/memory) |
+| **Built-in** | Native Rust | Needs direct OS/system access (power, firewall, network interfaces, log files, CPU/memory) |
 | **WASM Plugin** | Extism sandbox | Fetches its own data via capability-gated host functions (HTTP APIs, storage) |
 | **Lua Script** | mlua (Luau) | Quick personal widgets, no compilation |
 
