@@ -1,14 +1,27 @@
 #[cfg(target_arch = "wasm32")]
 use extism_pdk::*;
 use serde::Deserialize;
+#[cfg(target_arch = "wasm32")]
 use serde_json::json;
 
 #[derive(Deserialize, Default)]
 struct Settings {
     #[serde(default)]
-    feed_url: String,
+    feeds: Vec<String>,
 }
 
+impl Settings {
+    fn feed_urls(&self) -> Vec<&str> {
+        self.feeds
+            .iter()
+            .map(String::as_str)
+            .map(str::trim)
+            .filter(|url| !url.is_empty())
+            .collect()
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
 #[derive(Deserialize)]
 struct ActionInput {
     #[serde(default)]
@@ -39,23 +52,29 @@ pub fn metadata(_input: String) -> FnResult<String> {
 #[plugin_fn]
 pub fn refresh(input: String) -> FnResult<String> {
     let settings: Settings = serde_json::from_str(&input).unwrap_or_default();
-    if settings.feed_url.trim().is_empty() {
+    let feed_urls = settings.feed_urls();
+    if feed_urls.is_empty() {
         return Ok(json!({
             "type": "text",
-            "content": "Configure `feed_url` to fetch an RSS or Atom feed.",
+            "content": "Configure `feeds` to fetch RSS or Atom feeds.",
             "scrollable": false,
             "wrap": true
         })
         .to_string());
     }
 
-    let req = HttpRequest::new(settings.feed_url.trim())
-        .with_header("Accept", "application/rss+xml, application/atom+xml, application/xml, text/xml");
-    let response = http::request::<String>(&req, None)?;
-    let body = response.body();
-    let xml = std::str::from_utf8(&body).unwrap_or("");
+    let mut items = Vec::new();
+    for feed in feed_urls {
+        let req = HttpRequest::new(feed).with_header(
+            "Accept",
+            "application/rss+xml, application/atom+xml, application/xml, text/xml",
+        );
+        let response = http::request::<String>(&req, None)?;
+        let body = response.body();
+        let xml = std::str::from_utf8(&body).unwrap_or("");
+        items.extend(parse_feed_items(xml));
+    }
 
-    let items = parse_feed_items(xml);
     if items.is_empty() {
         return Ok(json!({
             "type": "text",
@@ -227,6 +246,25 @@ mod tests {
         assert_eq!(decode_xml_entities("&quot;hi&quot;"), "\"hi\"");
         assert_eq!(decode_xml_entities("plain text"), "plain text");
         assert_eq!(decode_xml_entities("a &amp; b &lt; c"), "a & b < c");
+    }
+
+    #[test]
+    fn feed_urls_ignores_empty_entries() {
+        let settings = Settings {
+            feeds: vec![
+                " https://one.example.com/rss ".to_string(),
+                String::new(),
+                "https://two.example.com/atom".to_string(),
+            ],
+        };
+
+        assert_eq!(
+            settings.feed_urls(),
+            vec![
+                "https://one.example.com/rss",
+                "https://two.example.com/atom"
+            ]
+        );
     }
 
     #[test]
