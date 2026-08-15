@@ -6,6 +6,7 @@
 pub mod app;
 pub mod config;
 pub mod dashboard;
+mod keybindings;
 pub mod layout;
 pub mod notifications;
 pub mod render;

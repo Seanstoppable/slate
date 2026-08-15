@@ -10,6 +10,7 @@ use ratatui::{
 };
 use slate_plugin_sdk::{Action, Color, WidgetContent, WidgetMetadata};
 
+use crate::keybindings::{action_has_reserved_key, HOST_KEYBINDINGS};
 use crate::layout::FocusPosition;
 
 /// Render a widget's content to a self-contained HTML snippet, preserving the same
@@ -357,12 +358,16 @@ pub fn render_widget_help_modal(
             "Keybindings",
             Style::default().fg(SLATE_TEXT).add_modifier(Modifier::BOLD),
         ),
-        keybinding_line("r", "Refresh widget"),
     ];
+    lines.extend(
+        HOST_KEYBINDINGS
+            .iter()
+            .map(|(key, label)| keybinding_line(key, label)),
+    );
 
     let keybindings: Vec<&Action> = actions
         .iter()
-        .filter(|action| action.key.as_deref().is_some_and(|key| key != "r"))
+        .filter(|action| action.key.is_some() && !action_has_reserved_key(action))
         .collect();
     if keybindings.is_empty() {
         lines.push(Line::styled(

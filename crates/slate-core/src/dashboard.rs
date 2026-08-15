@@ -1,9 +1,24 @@
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
-use slate_plugin_sdk::{BoxedWidget, Color, Position, WidgetContent, WidgetMetadata};
+use slate_plugin_sdk::{BoxedWidget, Color, Position, Widget, WidgetContent, WidgetMetadata};
 
+use crate::keybindings::reserved_keybinding_error;
 use crate::{config::SlateConfig, layout::FocusPosition};
+
+pub(crate) fn refresh_widget_content(widget: &mut dyn Widget) -> WidgetContent {
+    let content = widget.refresh();
+    if let Some(error) = reserved_keybinding_error(&content) {
+        tracing::error!("Widget keybinding error: {}", error);
+        WidgetContent::Text {
+            content: format!("[Widget error] {error}"),
+            scrollable: false,
+            wrap: true,
+        }
+    } else {
+        content
+    }
+}
 
 /// A running widget instance with its state.
 pub struct WidgetInstance {
@@ -76,7 +91,7 @@ impl Dashboard {
     ) {
         let metadata = widget.metadata();
         let interval = refresh_interval.unwrap_or(self.config.global.refresh_interval);
-        let content = widget.refresh();
+        let content = refresh_widget_content(widget.as_mut());
         let selected = if content.is_selectable_list() {
             Some(0)
         } else {
@@ -102,7 +117,7 @@ impl Dashboard {
         let now = Instant::now();
         for instance in &mut self.widgets {
             if instance.should_refresh_with_optional_focus(now, focus) {
-                instance.content = instance.widget.refresh();
+                instance.content = refresh_widget_content(instance.widget.as_mut());
                 instance.last_refresh = now;
                 if instance.content.is_selectable_list() && instance.selected.is_none() {
                     instance.selected = Some(0);
@@ -180,6 +195,8 @@ mod tests {
         list: bool,
     }
 
+    struct ReservedKeyWidget;
+
     impl Widget for CountingWidget {
         fn metadata(&self) -> WidgetMetadata {
             WidgetMetadata {
@@ -207,6 +224,33 @@ mod tests {
                     scrollable: false,
                     wrap: true,
                 }
+            }
+        }
+    }
+
+    impl Widget for ReservedKeyWidget {
+        fn metadata(&self) -> WidgetMetadata {
+            WidgetMetadata {
+                name: "Reserved key".to_string(),
+                description: String::new(),
+                version: "1.0.0".to_string(),
+                author: None,
+                homepage: None,
+            }
+        }
+
+        fn init(&mut self, _config: WidgetConfig) {}
+
+        fn refresh(&mut self) -> WidgetContent {
+            WidgetContent::List {
+                items: vec![],
+                selectable: true,
+                actions: vec![slate_plugin_sdk::Action {
+                    id: "refresh".to_string(),
+                    label: "Custom refresh".to_string(),
+                    key: Some("r".to_string()),
+                    confirm: false,
+                }],
             }
         }
     }
@@ -293,6 +337,20 @@ mod tests {
         assert!(matches!(
             snapshot.widgets[0].border_color,
             Some(Color::Blue)
+        ));
+    }
+
+    #[test]
+    fn refresh_replaces_reserved_keybindings_with_visible_widget_error() {
+        let mut widget = ReservedKeyWidget;
+
+        let content = refresh_widget_content(&mut widget);
+
+        assert!(matches!(
+            content,
+            WidgetContent::Text { content, .. }
+                if content.contains("Custom refresh")
+                    && content.contains("reserved key 'r'")
         ));
     }
 }

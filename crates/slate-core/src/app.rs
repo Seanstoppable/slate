@@ -13,7 +13,8 @@ use ratatui::{
 use slate_plugin_sdk::{Action, BoxedWidget, Color, WidgetAction, WidgetContent};
 
 use crate::config::SlateConfig;
-use crate::dashboard::{Dashboard, WidgetInstance};
+use crate::dashboard::{refresh_widget_content, Dashboard, WidgetInstance};
+use crate::keybindings::reserved_keybinding;
 use crate::layout::{compute_grid, compute_widget_area, FocusPosition};
 use crate::notifications::UpdateNotifications;
 use crate::render::{render_input_bar, render_status_bar, render_widget, render_widget_help_modal};
@@ -231,7 +232,7 @@ impl App {
                                 other => pending_action = Some(other),
                             }
                         }
-                        instance.content = instance.widget.refresh();
+                        instance.content = refresh_widget_content(instance.widget.as_mut());
                         instance.last_refresh = Instant::now();
                     }
                     if let Some(action) = pending_action {
@@ -289,7 +290,11 @@ impl App {
             .map(|w| w.content.is_selectable_list())
             .unwrap_or(false);
 
-        if focused_is_list && key.code != KeyCode::Char('r') && self.try_trigger_list_action(&key) {
+        let key_name = key_to_action_name(&key);
+        if focused_is_list
+            && reserved_keybinding(&key_name).is_none()
+            && self.try_trigger_list_action(&key)
+        {
             return;
         }
 
@@ -387,7 +392,7 @@ impl App {
             KeyCode::Char('r') => {
                 // Force refresh focused widget
                 if let Some(instance) = self.focused_widget_mut() {
-                    instance.content = instance.widget.refresh();
+                    instance.content = refresh_widget_content(instance.widget.as_mut());
                     instance.last_refresh = Instant::now();
                     // Reset selection if list changed
                     if instance.content.is_selectable_list() {
@@ -403,7 +408,7 @@ impl App {
                 if let Some(instance) = self.focused_widget_mut() {
                     let key_str = key_to_action_name(&key);
                     instance.widget.on_key(&key_str, "");
-                    instance.content = instance.widget.refresh();
+                    instance.content = refresh_widget_content(instance.widget.as_mut());
                     instance.last_refresh = Instant::now();
                     if instance.content.is_selectable_list() && instance.selected.is_none() {
                         instance.selected = Some(0);
