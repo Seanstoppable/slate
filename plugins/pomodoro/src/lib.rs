@@ -163,7 +163,7 @@ fn build_content(state: &TimerState) -> serde_json::Value {
         "actions": [
             {"id": "toggle", "label": toggle_label, "key": "s", "confirm": false},
             {"id": "skip", "label": "Skip phase", "key": "n", "confirm": false},
-            {"id": "reset", "label": "Reset", "key": "r", "confirm": false}
+            {"id": "reset", "label": "Reset", "key": "x", "confirm": false}
         ]
     })
 }
@@ -281,7 +281,7 @@ pub fn on_key(input: String) -> FnResult<String> {
         " " | "Space" => {
             let _ = mutate_state(|_, state, now| toggle_running(state, now));
         }
-        "r" | "R" => {
+        "x" | "X" => {
             let _ = mutate_state(|settings, state, _| reset_state(settings, state));
         }
         "n" | "N" => {
@@ -400,6 +400,7 @@ mod tests {
         assert_eq!(actions[0]["id"], "toggle");
         assert_eq!(actions[1]["key"], "n");
         assert_eq!(actions[2]["label"], "Reset");
+        assert_eq!(actions[2]["key"], "x");
     }
 
     #[test]

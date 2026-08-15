@@ -3,11 +3,14 @@ use ratatui::{
     layout::Rect,
     style::{Color as RatColor, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, List, ListItem, ListState, Paragraph, Row, Table, Wrap},
+    widgets::{
+        Block, BorderType, Borders, Clear, List, ListItem, ListState, Paragraph, Row, Table, Wrap,
+    },
     Frame, Terminal,
 };
-use slate_plugin_sdk::{Color, WidgetContent, WidgetMetadata};
+use slate_plugin_sdk::{Action, Color, WidgetContent, WidgetMetadata};
 
+use crate::keybindings::{action_has_reserved_key, HOST_KEYBINDINGS};
 use crate::layout::FocusPosition;
 
 /// Render a widget's content to a self-contained HTML snippet, preserving the same
@@ -318,7 +321,7 @@ pub fn render_status_bar(
 ) {
     let update_part = update_msg.unwrap_or("");
     let status = format!(
-        " Slate │ {} widgets │ Focus: ({},{}) {}│ q: quit │ Tab: next │ ←↑↓→: navigate ",
+        " Slate │ {} widgets │ Focus: ({},{}) {}│ ?: help │ q: quit │ Tab: next │ ←↑↓→: navigate ",
         widget_count, focus.row, focus.col, update_part
     );
     let paragraph =
@@ -331,6 +334,95 @@ pub fn render_input_bar(frame: &mut Frame, area: Rect, prompt: &str, buffer: &st
     let paragraph =
         Paragraph::new(text).style(Style::default().fg(RatColor::Yellow).bg(RatColor::DarkGray));
     frame.render_widget(paragraph, area);
+}
+
+/// Render an overlay describing the focused widget and its available list actions.
+pub fn render_widget_help_modal(
+    frame: &mut Frame,
+    area: Rect,
+    metadata: &WidgetMetadata,
+    actions: &[Action],
+) {
+    let mut lines = vec![
+        Line::styled(
+            "Description",
+            Style::default().fg(SLATE_TEXT).add_modifier(Modifier::BOLD),
+        ),
+        Line::from(if metadata.description.trim().is_empty() {
+            "No description available."
+        } else {
+            metadata.description.as_str()
+        }),
+        Line::default(),
+        Line::styled(
+            "Keybindings",
+            Style::default().fg(SLATE_TEXT).add_modifier(Modifier::BOLD),
+        ),
+    ];
+    lines.extend(
+        HOST_KEYBINDINGS
+            .iter()
+            .map(|(key, label)| keybinding_line(key, label)),
+    );
+
+    let keybindings: Vec<&Action> = actions
+        .iter()
+        .filter(|action| action.key.is_some() && !action_has_reserved_key(action))
+        .collect();
+    if keybindings.is_empty() {
+        lines.push(Line::styled(
+            "No widget-specific keybindings available.",
+            Style::default().fg(SLATE_MUTED),
+        ));
+    } else {
+        lines.extend(keybindings.into_iter().map(|action| {
+            keybinding_line(action.key.as_deref().unwrap_or_default(), &action.label)
+        }));
+    }
+    lines.push(Line::default());
+    lines.push(Line::styled(
+        "Esc, ?, or q to close",
+        Style::default().fg(SLATE_MUTED),
+    ));
+
+    let width = area.width.min(72);
+    let height = area.height.min((lines.len() as u16).saturating_add(2));
+    let popup_area = Rect::new(
+        area.x.saturating_add(area.width.saturating_sub(width) / 2),
+        area.y
+            .saturating_add(area.height.saturating_sub(height) / 2),
+        width,
+        height,
+    );
+    let block = Block::default()
+        .title(format!(" {} Help ", metadata.name))
+        .title_style(Style::default().fg(SLATE_TEXT).add_modifier(Modifier::BOLD))
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(SLATE_BORDER_FOCUSED))
+        .style(Style::default().bg(SLATE_SURFACE).fg(SLATE_TEXT));
+    let inner = block.inner(popup_area);
+
+    frame.render_widget(Clear, popup_area);
+    frame.render_widget(block, popup_area);
+    frame.render_widget(
+        Paragraph::new(lines)
+            .style(Style::default().bg(SLATE_SURFACE).fg(SLATE_TEXT))
+            .wrap(Wrap { trim: true }),
+        inner,
+    );
+}
+
+fn keybinding_line(key: &str, label: &str) -> Line<'static> {
+    Line::from(vec![
+        Span::styled(
+            format!("{key:<12}"),
+            Style::default()
+                .fg(SLATE_CHART)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::raw(label.to_string()),
+    ])
 }
 
 fn convert_style(style: &slate_plugin_sdk::CellStyle) -> Style {
@@ -567,6 +659,7 @@ mod tests {
         assert!(status.contains("5 widgets"));
         assert!(status.contains("Focus: (1,2)"));
         assert!(status.contains("Update ready"));
+        assert!(status.contains("?: help"));
         assert!(status.contains("q: quit"));
     }
 
@@ -649,5 +742,49 @@ mod tests {
         assert!(rendered.contains("Add todo"));
         assert!(rendered.contains("my task"));
         assert!(rendered.contains('_'));
+    }
+
+    #[test]
+    fn render_widget_help_modal_shows_description_and_list_action_keys() {
+        let backend = TestBackend::new(80, 20);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let actions = vec![
+            Action {
+                id: "refresh".to_string(),
+                label: "Override refresh".to_string(),
+                key: Some("r".to_string()),
+                confirm: false,
+            },
+            Action {
+                id: "open".to_string(),
+                label: "Open selected item".to_string(),
+                key: Some("o".to_string()),
+                confirm: false,
+            },
+        ];
+
+        terminal
+            .draw(|frame| {
+                render_widget_help_modal(frame, frame.area(), &metadata(), &actions);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let mut rendered = String::new();
+        for y in 0..20 {
+            for x in 0..80 {
+                rendered.push_str(buffer[(x, y)].symbol());
+            }
+            rendered.push('\n');
+        }
+
+        assert!(rendered.contains("Widget Help"));
+        assert!(rendered.contains("Description"));
+        assert!(rendered.contains("Rendered widget"));
+        assert!(rendered.contains("Keybindings"));
+        assert!(rendered.contains("Refresh widget"));
+        assert!(rendered.contains("Open selected item"));
+        assert!(!rendered.contains("Override refresh"));
+        assert!(rendered.contains("Esc, ?, or q to close"));
     }
 }
