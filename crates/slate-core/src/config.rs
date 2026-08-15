@@ -137,9 +137,21 @@ impl SlateConfig {
 
     /// Default config file path.
     pub fn default_path() -> Result<PathBuf> {
-        let config_dir = dirs::config_dir().context("Could not determine config directory")?;
+        let config_dir = default_config_dir()?;
         Ok(config_dir.join("slate").join("slate.toml"))
     }
+}
+
+#[cfg(target_os = "windows")]
+fn default_config_dir() -> Result<PathBuf> {
+    std::env::var_os("APPDATA")
+        .map(PathBuf::from)
+        .context("Could not determine APPDATA")
+}
+
+#[cfg(not(target_os = "windows"))]
+fn default_config_dir() -> Result<PathBuf> {
+    dirs::config_dir().context("Could not determine config directory")
 }
 
 /// Interpolate ${ENV_VAR} patterns in TOML values.
@@ -374,6 +386,15 @@ position = { row = 0, col = 1 }
         let default_path = SlateConfig::default_path().unwrap();
         assert!(default_path.ends_with(std::path::Path::new("slate").join("slate.toml")));
         assert!(SlateConfig::load_default().is_ok());
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn default_config_dir_uses_appdata_environment_variable() {
+        assert_eq!(
+            default_config_dir().unwrap(),
+            PathBuf::from(std::env::var_os("APPDATA").unwrap())
+        );
     }
 
     #[test]

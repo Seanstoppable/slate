@@ -1,4 +1,4 @@
-﻿use std::io;
+use std::io;
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
@@ -10,13 +10,13 @@ use crossterm::{
 use ratatui::{
     backend::CrosstermBackend, layout::Constraint, layout::Direction, layout::Layout, Terminal,
 };
-use slate_plugin_sdk::{BoxedWidget, Color, WidgetAction, WidgetContent};
+use slate_plugin_sdk::{Action, BoxedWidget, Color, WidgetAction, WidgetContent};
 
 use crate::config::SlateConfig;
 use crate::dashboard::{Dashboard, WidgetInstance};
 use crate::layout::{compute_grid, compute_widget_area, FocusPosition};
 use crate::notifications::UpdateNotifications;
-use crate::render::{render_input_bar, render_status_bar, render_widget};
+use crate::render::{render_input_bar, render_status_bar, render_widget, render_widget_help_modal};
 
 /// Active text-input prompt state.
 struct InputMode {
@@ -34,6 +34,8 @@ pub struct App {
     notifications: UpdateNotifications,
     /// Active text-input prompt, if any.
     input_mode: Option<InputMode>,
+    /// Whether help for the focused widget is displayed.
+    help_visible: bool,
 }
 
 impl App {
@@ -50,6 +52,7 @@ impl App {
             running: true,
             notifications,
             input_mode: None,
+            help_visible: false,
         }
     }
 
@@ -178,6 +181,16 @@ impl App {
                         self.notifications.status_message().as_deref(),
                     );
                 }
+
+                if self.help_visible {
+                    if let Some(instance) = self.focused_widget() {
+                        let actions: &[Action] = match &instance.content {
+                            WidgetContent::List { actions, .. } => actions,
+                            _ => &[],
+                        };
+                        render_widget_help_modal(frame, frame.area(), &instance.metadata, actions);
+                    }
+                }
             })?;
 
             // Handle input (poll with timeout for refresh)
@@ -242,6 +255,16 @@ impl App {
             }
         }
 
+        if self.help_visible {
+            match key.code {
+                KeyCode::Esc | KeyCode::Char('?') | KeyCode::Char('q') => {
+                    self.help_visible = false;
+                }
+                _ => {}
+            }
+            return;
+        }
+
         // If showing detail view, Escape dismisses it
         let focused_showing_detail = self
             .focused_widget()
@@ -271,6 +294,9 @@ impl App {
         }
 
         match key.code {
+            KeyCode::Char('?') if self.focused_widget().is_some() => {
+                self.help_visible = true;
+            }
             KeyCode::Char('q') => self.running = false,
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.running = false;
@@ -1007,6 +1033,37 @@ mod tests {
     }
 
     #[test]
+    fn help_modal_captures_input_until_dismissed() {
+        let last_action = Arc::new(Mutex::new(None));
+        let mut app = App::new(SlateConfig::default());
+        app.add_widget(
+            Box::new(ActionKeyWidget::new(last_action.clone())),
+            0,
+            0,
+            1,
+            1,
+            Some(60),
+            None,
+        );
+
+        app.handle_key(make_key(KeyCode::Char('?')));
+        assert!(app.help_visible);
+
+        app.handle_key(make_key(KeyCode::Char('o')));
+        assert!(app.help_visible);
+        assert_eq!(*last_action.lock().unwrap(), None);
+
+        app.handle_key(make_key(KeyCode::Esc));
+        assert!(!app.help_visible);
+
+        app.handle_key(make_key(KeyCode::Char('o')));
+        assert_eq!(
+            *last_action.lock().unwrap(),
+            Some(("open".to_string(), "item-1".to_string()))
+        );
+    }
+
+    #[test]
     fn list_action_hotkey_returns_false_for_non_action_states() {
         let mut empty_app = App::new(SlateConfig::default());
         assert!(!empty_app.try_trigger_list_action(&make_key(KeyCode::Char('o'))));
@@ -1380,6 +1437,7 @@ mod tests {
             app.handle_key(make_key(KeyCode::Char('r')));
             app.handle_key(make_key(KeyCode::Left));
             app.handle_key(make_key(KeyCode::Esc));
+            app.handle_key(make_key(KeyCode::Char('?')));
         }));
 
         assert!(result.is_ok());

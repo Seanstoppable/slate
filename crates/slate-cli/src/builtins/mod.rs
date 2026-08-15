@@ -10,6 +10,13 @@ use slate_plugin_sdk::WidgetConfig;
 
 pub(crate) use welcome::WelcomeWidget;
 
+pub fn is_builtin(name: &str) -> bool {
+    matches!(
+        name,
+        "firewall" | "ipaddresses" | "logfile" | "power" | "resource_usage"
+    )
+}
+
 pub fn create_builtin(
     name: &str,
     config: WidgetConfig,
@@ -26,7 +33,7 @@ pub fn create_builtin(
 
 #[cfg(test)]
 mod tests {
-    use super::create_builtin;
+    use super::{create_builtin, is_builtin};
     use slate_plugin_sdk::{Position, WidgetConfig};
 
     fn test_widget_config() -> WidgetConfig {
@@ -65,5 +72,20 @@ mod tests {
             Err(err) => err,
         };
         assert!(err.to_string().contains("Unknown builtin widget"));
+    }
+
+    #[test]
+    fn is_builtin_matches_the_widget_registry() {
+        for name in [
+            "firewall",
+            "ipaddresses",
+            "logfile",
+            "power",
+            "resource_usage",
+        ] {
+            assert!(is_builtin(name));
+            assert!(create_builtin(name, test_widget_config()).is_ok());
+        }
+        assert!(!is_builtin("unknown-widget"));
     }
 }
