@@ -7,6 +7,7 @@ use slate_plugin_sdk::{Permissions, WidgetConfig, WidgetContent, WidgetMetadata}
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use url::Url;
 
 use crate::builtins;
 
@@ -86,9 +87,7 @@ fn try_load_widget(
             check_os_support(&wasm_path)?;
             let mut widget = WasmPlugin::from_file(
                 &wasm_path,
-                manifest
-                    .map(|manifest| manifest.permissions)
-                    .unwrap_or_default(),
+                effective_plugin_permissions(manifest.as_ref(), &widget_config),
             )?;
             slate_plugin_sdk::Widget::init(&mut widget, widget_config);
             Ok(Box::new(widget))
@@ -116,9 +115,7 @@ fn try_load_widget(
             check_os_support(&wasm_path)?;
             let mut widget = WasmPlugin::from_file(
                 &wasm_path,
-                manifest
-                    .map(|manifest| manifest.permissions)
-                    .unwrap_or_default(),
+                effective_plugin_permissions(manifest.as_ref(), &widget_config),
             )?;
             slate_plugin_sdk::Widget::init(&mut widget, widget_config);
             Ok(Box::new(widget))
@@ -146,6 +143,48 @@ struct PluginManifestPlugin {
     name: String,
     #[serde(default)]
     os: Vec<String>,
+}
+
+/// Grant feedreader access only to the hosts selected by the user.
+fn effective_plugin_permissions(
+    manifest: Option<&PluginManifest>,
+    widget_config: &WidgetConfig,
+) -> Permissions {
+    let mut permissions = manifest
+        .map(|manifest| manifest.permissions.clone())
+        .unwrap_or_default();
+
+    if manifest.is_some_and(|manifest| manifest.plugin.name == "feedreader")
+        && (permissions.network.is_empty()
+            || (permissions.network.len() == 1 && permissions.network[0] == "*"))
+    {
+        permissions.network = feedreader_hosts(widget_config);
+    }
+
+    permissions
+}
+
+fn feedreader_hosts(widget_config: &WidgetConfig) -> Vec<String> {
+    let mut hosts = std::collections::BTreeSet::new();
+    let feeds = widget_config
+        .settings
+        .get("feeds")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(serde_json::Value::as_str);
+
+    for feed in feeds {
+        if let Ok(url) = Url::parse(feed.trim()) {
+            if matches!(url.scheme(), "http" | "https") {
+                if let Some(host) = url.host_str() {
+                    hosts.insert(host.to_string());
+                }
+            }
+        }
+    }
+
+    hosts.into_iter().collect()
 }
 
 /// Find and parse plugin.toml next to a WASM file (in same dir or parent dir).
@@ -1172,6 +1211,59 @@ mod tests {
             Some(&serde_json::json!("Now"))
         );
         assert_eq!(config.settings.get("limit"), Some(&serde_json::json!(5)));
+    }
+
+    #[test]
+    fn feedreader_permissions_are_limited_to_configured_feed_hosts() {
+        let config = WidgetConfig {
+            settings: HashMap::from([(
+                "feeds".to_string(),
+                serde_json::json!([
+                    "http://blog.example.com/atom.xml",
+                    "https://news.example.com/other.xml",
+                    "file:///not-a-feed",
+                    "not a URL"
+                ]),
+            )]),
+            ..widget_config()
+        };
+        let manifest = PluginManifest {
+            plugin: PluginManifestPlugin {
+                name: "feedreader".to_string(),
+                ..Default::default()
+            },
+            permissions: Permissions {
+                ..Default::default()
+            },
+        };
+
+        let permissions = effective_plugin_permissions(Some(&manifest), &config);
+
+        assert_eq!(
+            permissions.network,
+            vec![
+                "blog.example.com".to_string(),
+                "news.example.com".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn non_feedreader_wildcard_permissions_are_unchanged() {
+        let manifest = PluginManifest {
+            plugin: PluginManifestPlugin {
+                name: "other-plugin".to_string(),
+                ..Default::default()
+            },
+            permissions: Permissions {
+                network: vec!["*".to_string()],
+                ..Default::default()
+            },
+        };
+
+        let permissions = effective_plugin_permissions(Some(&manifest), &widget_config());
+
+        assert_eq!(permissions.network, vec!["*".to_string()]);
     }
 
     #[test]

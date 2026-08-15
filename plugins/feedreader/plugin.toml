@@ -6,9 +6,5 @@ version = "0.1.0"
 author = "Slate Community"
 language = "rust"
 
-[permissions]
-network = ["*"]
-
 [config]
-feed_url = { type = "string", required = true, description = "URL of the RSS or Atom feed to display" }
-feeds = { type = "array", required = false, description = "List of feed URLs to aggregate (alternative to feed_url)" }
+feeds = { type = "array", required = true, description = "List of RSS or Atom feed URLs to aggregate" }
