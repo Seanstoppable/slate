@@ -357,28 +357,21 @@ pub fn render_widget_help_modal(
             "Keybindings",
             Style::default().fg(SLATE_TEXT).add_modifier(Modifier::BOLD),
         ),
+        keybinding_line("r", "Refresh widget"),
     ];
 
     let keybindings: Vec<&Action> = actions
         .iter()
-        .filter(|action| action.key.is_some())
+        .filter(|action| action.key.as_deref().is_some_and(|key| key != "r"))
         .collect();
     if keybindings.is_empty() {
         lines.push(Line::styled(
-            "No widget keybindings available.",
+            "No widget-specific keybindings available.",
             Style::default().fg(SLATE_MUTED),
         ));
     } else {
         lines.extend(keybindings.into_iter().map(|action| {
-            Line::from(vec![
-                Span::styled(
-                    format!("{:<12}", action.key.as_deref().unwrap_or_default()),
-                    Style::default()
-                        .fg(SLATE_CHART)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::raw(action.label.as_str()),
-            ])
+            keybinding_line(action.key.as_deref().unwrap_or_default(), &action.label)
         }));
     }
     lines.push(Line::default());
@@ -413,6 +406,18 @@ pub fn render_widget_help_modal(
             .wrap(Wrap { trim: true }),
         inner,
     );
+}
+
+fn keybinding_line(key: &str, label: &str) -> Line<'static> {
+    Line::from(vec![
+        Span::styled(
+            format!("{key:<12}"),
+            Style::default()
+                .fg(SLATE_CHART)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::raw(label.to_string()),
+    ])
 }
 
 fn convert_style(style: &slate_plugin_sdk::CellStyle) -> Style {
@@ -738,12 +743,20 @@ mod tests {
     fn render_widget_help_modal_shows_description_and_list_action_keys() {
         let backend = TestBackend::new(80, 20);
         let mut terminal = Terminal::new(backend).unwrap();
-        let actions = vec![Action {
-            id: "open".to_string(),
-            label: "Open selected item".to_string(),
-            key: Some("o".to_string()),
-            confirm: false,
-        }];
+        let actions = vec![
+            Action {
+                id: "refresh".to_string(),
+                label: "Override refresh".to_string(),
+                key: Some("r".to_string()),
+                confirm: false,
+            },
+            Action {
+                id: "open".to_string(),
+                label: "Open selected item".to_string(),
+                key: Some("o".to_string()),
+                confirm: false,
+            },
+        ];
 
         terminal
             .draw(|frame| {
@@ -764,7 +777,9 @@ mod tests {
         assert!(rendered.contains("Description"));
         assert!(rendered.contains("Rendered widget"));
         assert!(rendered.contains("Keybindings"));
+        assert!(rendered.contains("Refresh widget"));
         assert!(rendered.contains("Open selected item"));
+        assert!(!rendered.contains("Override refresh"));
         assert!(rendered.contains("Esc, ?, or q to close"));
     }
 }

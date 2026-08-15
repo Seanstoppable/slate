@@ -289,7 +289,7 @@ impl App {
             .map(|w| w.content.is_selectable_list())
             .unwrap_or(false);
 
-        if focused_is_list && self.try_trigger_list_action(&key) {
+        if focused_is_list && key.code != KeyCode::Char('r') && self.try_trigger_list_action(&key) {
             return;
         }
 
@@ -1030,6 +1030,36 @@ mod tests {
             *last_action.lock().unwrap(),
             Some(("open".to_string(), "item-1".to_string()))
         );
+    }
+
+    #[test]
+    fn refresh_key_is_reserved_from_list_actions() {
+        let last_action = Arc::new(Mutex::new(None));
+        let mut app = App::new(SlateConfig::default());
+        app.add_widget(
+            Box::new(ActionKeyWidget::new(last_action.clone())),
+            0,
+            0,
+            1,
+            1,
+            Some(60),
+            None,
+        );
+        if let WidgetContent::List { actions, .. } = &mut app.dashboard.widgets[0].content {
+            actions.push(slate_plugin_sdk::Action {
+                id: "reset".to_string(),
+                label: "Reset".to_string(),
+                key: Some("r".to_string()),
+                confirm: false,
+            });
+        }
+        let previous_refresh = Instant::now() - Duration::from_secs(60);
+        app.dashboard.widgets[0].last_refresh = previous_refresh;
+
+        app.handle_key(make_key(KeyCode::Char('r')));
+
+        assert_eq!(*last_action.lock().unwrap(), None);
+        assert!(app.dashboard.widgets[0].last_refresh > previous_refresh);
     }
 
     #[test]
