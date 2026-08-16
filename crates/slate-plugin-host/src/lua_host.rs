@@ -8,6 +8,9 @@ pub struct LuaPlugin {
     lua: Lua,
     metadata: WidgetMetadata,
     script_path: String,
+    /// Most recent error from a callback (`on_key`, `on_action`, `on_focus`,
+    /// `on_blur`), surfaced on the next `refresh()` render.
+    last_error: Option<String>,
 }
 
 impl LuaPlugin {
@@ -53,6 +56,7 @@ impl LuaPlugin {
                 homepage: None,
             },
             script_path: path.display().to_string(),
+            last_error: None,
         })
     }
 
@@ -92,7 +96,10 @@ impl LuaPlugin {
         let read_file_fn = lua
             .create_function(|_, path: String| match std::fs::read_to_string(&path) {
                 Ok(content) => Ok(Some(content)),
-                Err(_) => Ok(None),
+                Err(e) => {
+                    tracing::warn!(path = %path, error = %e, "slate.read_file failed");
+                    Ok(None)
+                }
             })
             .map_err(|e| anyhow::anyhow!("{}", e))?;
         slate
@@ -157,6 +164,17 @@ impl LuaPlugin {
 
         Ok(())
     }
+
+    /// Log a Lua callback failure and stash it so the next render shows it.
+    fn record_error(&mut self, callback: &str, err: &LuaError) {
+        tracing::error!(
+            script = %self.script_path,
+            callback = %callback,
+            error = %err,
+            "Lua callback failed"
+        );
+        self.last_error = Some(format!("{}: {}", callback, err));
+    }
 }
 
 impl slate_plugin_sdk::Widget for LuaPlugin {
@@ -181,6 +199,13 @@ impl slate_plugin_sdk::Widget for LuaPlugin {
 
         match result {
             Ok(content) => {
+                if let Some(err) = self.last_error.take() {
+                    return WidgetContent::Text {
+                        content: format!("[Lua error] {}: {}", self.script_path, err),
+                        scrollable: false,
+                        wrap: true,
+                    };
+                }
                 // Try to parse as JSON WidgetContent
                 serde_json::from_str(&content).unwrap_or(WidgetContent::Text {
                     content,
@@ -188,17 +213,23 @@ impl slate_plugin_sdk::Widget for LuaPlugin {
                     wrap: true,
                 })
             }
-            Err(e) => WidgetContent::Text {
-                content: format!("[Lua error] {}: {}", self.script_path, e),
-                scrollable: false,
-                wrap: true,
-            },
+            Err(e) => {
+                self.last_error = None;
+                tracing::error!(script = %self.script_path, error = %e, "Lua refresh() failed");
+                WidgetContent::Text {
+                    content: format!("[Lua error] {}: {}", self.script_path, e),
+                    scrollable: false,
+                    wrap: true,
+                }
+            }
         }
     }
 
     fn on_key(&mut self, key: &str, action: &str) {
         if let Ok(func) = self.lua.globals().get::<LuaFunction>("on_key") {
-            let _ = func.call::<()>((key.to_string(), action.to_string()));
+            if let Err(e) = func.call::<()>((key.to_string(), action.to_string())) {
+                self.record_error("on_key", &e);
+            }
         }
     }
 
@@ -208,10 +239,10 @@ impl slate_plugin_sdk::Widget for LuaPlugin {
         item_id: &str,
     ) -> Option<slate_plugin_sdk::WidgetAction> {
         if let Ok(func) = self.lua.globals().get::<LuaFunction>("on_action") {
-            if let Ok(Some(json_str)) =
-                func.call::<Option<String>>((action_id.to_string(), item_id.to_string()))
-            {
-                return parse_widget_action(&json_str);
+            match func.call::<Option<String>>((action_id.to_string(), item_id.to_string())) {
+                Ok(Some(json_str)) => return parse_widget_action(&json_str),
+                Ok(None) => {}
+                Err(e) => self.record_error("on_action", &e),
             }
         }
         None
@@ -219,13 +250,17 @@ impl slate_plugin_sdk::Widget for LuaPlugin {
 
     fn on_focus(&mut self) {
         if let Ok(func) = self.lua.globals().get::<LuaFunction>("on_focus") {
-            let _ = func.call::<()>(());
+            if let Err(e) = func.call::<()>(()) {
+                self.record_error("on_focus", &e);
+            }
         }
     }
 
     fn on_blur(&mut self) {
         if let Ok(func) = self.lua.globals().get::<LuaFunction>("on_blur") {
-            let _ = func.call::<()>(());
+            if let Err(e) = func.call::<()>(()) {
+                self.record_error("on_blur", &e);
+            }
         }
     }
 }
@@ -253,6 +288,126 @@ fn parse_widget_action(json_str: &str) -> Option<slate_plugin_sdk::WidgetAction>
 mod tests {
     use super::*;
     use slate_plugin_sdk::Widget;
+
+    fn write_script(dir_name: &str, body: &str) -> (std::path::PathBuf, std::path::PathBuf) {
+        let dir = std::env::temp_dir().join(dir_name);
+        std::fs::create_dir_all(&dir).unwrap();
+        let script_path = dir.join("s.lua");
+        std::fs::write(&script_path, body).unwrap();
+        (dir, script_path)
+    }
+
+    const OK_REFRESH: &str =
+        "function refresh() return '{\"type\":\"text\",\"content\":\"ok\",\"scrollable\":false,\"wrap\":true}' end\n";
+
+    fn error_text(content: WidgetContent) -> String {
+        match content {
+            WidgetContent::Text { content, .. } => content,
+            other => panic!("expected text, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn on_key_error_surfaces_in_next_refresh() {
+        let (dir, path) = write_script(
+            "slate_test_lua_on_key_err",
+            &format!("{}function on_key(k, a) error('boom') end\n", OK_REFRESH),
+        );
+        let mut plugin = LuaPlugin::from_file(&path).unwrap();
+        plugin.on_key("j", "down");
+        let text = error_text(plugin.refresh());
+        assert!(text.contains("[Lua error]"), "{}", text);
+        assert!(text.contains("on_key"), "{}", text);
+        assert!(text.contains("boom"), "{}", text);
+        // Error is cleared after being shown once.
+        assert_eq!(error_text(plugin.refresh()), "ok");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn on_action_error_surfaces_and_returns_none() {
+        let (dir, path) = write_script(
+            "slate_test_lua_on_action_err",
+            &format!(
+                "{}function on_action(a, i) error('bad action') end\n",
+                OK_REFRESH
+            ),
+        );
+        let mut plugin = LuaPlugin::from_file(&path).unwrap();
+        assert!(plugin.on_action("open", "1").is_none());
+        let text = error_text(plugin.refresh());
+        assert!(
+            text.contains("on_action") && text.contains("bad action"),
+            "{}",
+            text
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn on_action_returning_nil_records_no_error() {
+        let (dir, path) = write_script(
+            "slate_test_lua_on_action_nil",
+            &format!("{}function on_action(a, i) return nil end\n", OK_REFRESH),
+        );
+        let mut plugin = LuaPlugin::from_file(&path).unwrap();
+        assert!(plugin.on_action("open", "1").is_none());
+        assert_eq!(error_text(plugin.refresh()), "ok");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn on_focus_and_on_blur_errors_surface() {
+        let (dir, path) = write_script(
+            "slate_test_lua_focus_err",
+            &format!(
+                "{}function on_focus() error('focus fail') end\nfunction on_blur() error('blur fail') end\n",
+                OK_REFRESH
+            ),
+        );
+        let mut plugin = LuaPlugin::from_file(&path).unwrap();
+        plugin.on_focus();
+        let text = error_text(plugin.refresh());
+        assert!(
+            text.contains("on_focus") && text.contains("focus fail"),
+            "{}",
+            text
+        );
+
+        plugin.on_blur();
+        let text = error_text(plugin.refresh());
+        assert!(
+            text.contains("on_blur") && text.contains("blur fail"),
+            "{}",
+            text
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn refresh_error_clears_pending_callback_error() {
+        let (dir, path) = write_script(
+            "slate_test_lua_refresh_err",
+            "function refresh() error('refresh fail') end\nfunction on_key(k, a) error('key fail') end\n",
+        );
+        let mut plugin = LuaPlugin::from_file(&path).unwrap();
+        plugin.on_key("j", "down");
+        let text = error_text(plugin.refresh());
+        assert!(text.contains("refresh fail"), "{}", text);
+        assert!(plugin.last_error.is_none());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn read_file_returns_nil_for_missing_path() {
+        let (dir, path) = write_script(
+            "slate_test_lua_read_file",
+            "function refresh()\n  local c = slate.read_file('/definitely/not/a/real/path/xyz')\n  if c == nil then return 'missing' end\n  return 'found'\nend\n",
+        );
+        let mut plugin = LuaPlugin::from_file(&path).unwrap();
+        assert_eq!(error_text(plugin.refresh()), "missing");
+        std::fs::remove_dir_all(&dir).ok();
+    }
 
     #[test]
     fn lua_plugin_loads_metadata_from_globals() {
