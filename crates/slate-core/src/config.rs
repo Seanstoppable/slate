@@ -132,7 +132,25 @@ impl SlateConfig {
         for widget in &mut config.widget {
             interpolate_env_vars(&mut widget.settings);
         }
+        config.validate()?;
         Ok(config)
+    }
+
+    /// Validate structural invariants that the type system can't express.
+    pub fn validate(&self) -> Result<()> {
+        if self.layout.rows < 1 {
+            anyhow::bail!(
+                "Invalid config: [layout] rows must be at least 1 (got {})",
+                self.layout.rows
+            );
+        }
+        if self.layout.cols < 1 {
+            anyhow::bail!(
+                "Invalid config: [layout] cols must be at least 1 (got {})",
+                self.layout.cols
+            );
+        }
+        Ok(())
     }
 
     /// Default config file path.
@@ -212,6 +230,32 @@ mod tests {
         assert_eq!(config.global.refresh_interval, 300);
         assert_eq!(config.layout.rows, 2);
         assert_eq!(config.layout.cols, 2);
+    }
+
+    #[test]
+    fn test_parse_rejects_zero_rows() {
+        let err = SlateConfig::parse("[layout]\nrows = 0\ncols = 3\n").unwrap_err();
+        assert!(
+            err.to_string().contains("rows must be at least 1"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn test_parse_rejects_zero_cols() {
+        let err = SlateConfig::parse("[layout]\nrows = 3\ncols = 0\n").unwrap_err();
+        assert!(
+            err.to_string().contains("cols must be at least 1"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn test_parse_accepts_single_cell_layout() {
+        let config = SlateConfig::parse("[layout]\nrows = 1\ncols = 1\n").unwrap();
+        assert_eq!(config.layout.rows, 1);
+        assert_eq!(config.layout.cols, 1);
+        assert!(config.validate().is_ok());
     }
 
     #[test]
