@@ -97,7 +97,9 @@ notify = true
 auto_update = false
 ```
 
-Environment variable interpolation: `token = "${GITHUB_TOKEN}"`
+Environment variable interpolation: `token = "${GITHUB_TOKEN}"`. Unset variables
+produce a per-widget config error (surfaced as an `ErrorWidget` and by `slate
+check`) rather than an empty string; interpolation is non-recursive.
 
 ## Builtin Widgets
 
