@@ -2,6 +2,9 @@ use ratatui::layout::{Constraint, Direction, Layout, Rect};
 
 /// Compute grid cell rects from a total area, given rows and cols.
 pub fn compute_grid(area: Rect, rows: u16, cols: u16) -> Vec<Vec<Rect>> {
+    if rows == 0 || cols == 0 {
+        return Vec::new();
+    }
     let row_constraints: Vec<Constraint> = (0..rows)
         .map(|_| Constraint::Ratio(1, rows as u32))
         .collect();
@@ -78,7 +81,7 @@ impl FocusPosition {
     }
 
     pub fn move_down(&mut self, max_rows: u16) {
-        if self.row < max_rows - 1 {
+        if self.row + 1 < max_rows {
             self.row += 1;
         }
     }
@@ -90,7 +93,7 @@ impl FocusPosition {
     }
 
     pub fn move_right(&mut self, max_cols: u16) {
-        if self.col < max_cols - 1 {
+        if self.col + 1 < max_cols {
             self.col += 1;
         }
     }
@@ -112,11 +115,11 @@ impl FocusPosition {
         if self.col > 0 {
             self.col -= 1;
         } else {
-            self.col = max_cols - 1;
+            self.col = max_cols.saturating_sub(1);
             if self.row > 0 {
                 self.row -= 1;
             } else {
-                self.row = max_rows - 1;
+                self.row = max_rows.saturating_sub(1);
             }
         }
     }
@@ -125,6 +128,25 @@ impl FocusPosition {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_compute_grid_zero_dimensions() {
+        let area = Rect::new(0, 0, 80, 24);
+        assert!(compute_grid(area, 0, 3).is_empty());
+        assert!(compute_grid(area, 3, 0).is_empty());
+        assert!(compute_grid(area, 0, 0).is_empty());
+    }
+
+    #[test]
+    fn test_focus_movement_zero_bounds() {
+        let mut focus = FocusPosition::new(0, 0);
+        focus.move_down(0);
+        assert_eq!(focus.row, 0);
+        focus.move_right(0);
+        assert_eq!(focus.col, 0);
+        focus.move_prev(0, 0);
+        assert_eq!((focus.row, focus.col), (0, 0));
+    }
 
     #[test]
     fn test_focus_movement() {
