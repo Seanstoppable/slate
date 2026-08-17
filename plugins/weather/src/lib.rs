@@ -109,14 +109,25 @@ pub fn refresh(input: String) -> FnResult<String> {
     }
 
     let url = build_weather_url(settings.location.trim(), settings.api_key.trim());
-    let req = HttpRequest::new(&url)
-        .with_header("Accept", "application/json")
-        .with_header("User-Agent", "slate-weather-plugin");
-    let response = http::request::<String>(&req, None)?;
-    let body = response.body();
-    let body_str = std::str::from_utf8(&body).unwrap_or("{}");
+    let headers = [
+        ("Accept", "application/json"),
+        ("User-Agent", "slate-weather-plugin"),
+    ];
 
-    match serde_json::from_str::<WeatherResponse>(body_str) {
+    let body_str = match slate_plugin_http::get_text(&url, &headers) {
+        Ok(body) => body,
+        Err(err) => {
+            return Ok(json!({
+                "type": "text",
+                "content": format!("Weather API error: {}", err),
+                "scrollable": false,
+                "wrap": true
+            })
+            .to_string());
+        }
+    };
+
+    match serde_json::from_str::<WeatherResponse>(&body_str) {
         Ok(weather) if !weather.message.trim().is_empty() && weather.name.trim().is_empty() => Ok(json!({
             "type": "text",
             "content": format!("Weather API error: {}", weather.message),

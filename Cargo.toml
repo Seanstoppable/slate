@@ -2,6 +2,7 @@
 members = [
     "crates/slate-core",
     "crates/slate-plugin-host",
+    "crates/slate-plugin-http",
     "crates/slate-plugin-sdk",
     "crates/slate-plugin-manager",
     "crates/slate-plugin-exec",
@@ -49,6 +50,7 @@ repository = "https://github.com/Seanstoppable/slate"
 [workspace.dependencies]
 slate-core = { path = "crates/slate-core" }
 slate-plugin-host = { path = "crates/slate-plugin-host" }
+slate-plugin-http = { path = "crates/slate-plugin-http" }
 slate-plugin-sdk = { path = "crates/slate-plugin-sdk" }
 slate-plugin-manager = { path = "crates/slate-plugin-manager" }
 

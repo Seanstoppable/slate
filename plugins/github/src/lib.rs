@@ -126,24 +126,22 @@ fn fetch_pull_requests(token: &str, repos: &[String]) -> FnResult<String> {
             "https://api.github.com/repos/{}/pulls?state=open&per_page=10",
             repo
         );
-        let req = HttpRequest::new(&url)
-            .with_header("Authorization", &auth_header(token))
-            .with_header("Accept", "application/vnd.github.v3+json")
-            .with_header("User-Agent", "slate-github-plugin");
+        let auth = auth_header(token);
+        let headers = [
+            ("Authorization", auth.as_str()),
+            ("Accept", "application/vnd.github.v3+json"),
+            ("User-Agent", "slate-github-plugin"),
+        ];
 
-        if let Ok(response) = http::request::<String>(&req, None) {
-            let body = response.body();
-            let body_str = std::str::from_utf8(&body).unwrap_or("[]");
-            if let Ok(prs) = serde_json::from_str::<Vec<PullRequest>>(body_str) {
-                for pr in prs {
-                    let icon = if pr.draft { "📝" } else { "🟢" };
-                    items.push(json!({
-                        "id": format!("{}#{}", repo, pr.number),
-                        "title": format!("{} #{} {}", icon, pr.number, pr.title),
-                        "subtitle": format!("by {} in {}", pr.user.login, repo),
-                        "style": {}
-                    }));
-                }
+        if let Ok(prs) = slate_plugin_http::get_json::<Vec<PullRequest>>(&url, &headers) {
+            for pr in prs {
+                let icon = if pr.draft { "📝" } else { "🟢" };
+                items.push(json!({
+                    "id": format!("{}#{}", repo, pr.number),
+                    "title": format!("{} #{} {}", icon, pr.number, pr.title),
+                    "subtitle": format!("by {} in {}", pr.user.login, repo),
+                    "style": {}
+                }));
             }
         }
     }
@@ -171,29 +169,27 @@ fn fetch_issues(token: &str, repos: &[String]) -> FnResult<String> {
             "https://api.github.com/repos/{}/issues?state=open&per_page=10",
             repo
         );
-        let req = HttpRequest::new(&url)
-            .with_header("Authorization", &auth_header(token))
-            .with_header("Accept", "application/vnd.github.v3+json")
-            .with_header("User-Agent", "slate-github-plugin");
+        let auth = auth_header(token);
+        let headers = [
+            ("Authorization", auth.as_str()),
+            ("Accept", "application/vnd.github.v3+json"),
+            ("User-Agent", "slate-github-plugin"),
+        ];
 
-        if let Ok(response) = http::request::<String>(&req, None) {
-            let body = response.body();
-            let body_str = std::str::from_utf8(&body).unwrap_or("[]");
-            if let Ok(issues) = serde_json::from_str::<Vec<Issue>>(body_str) {
-                for issue in issues {
-                    let labels: String = issue
-                        .labels
-                        .iter()
-                        .map(|l| format!("[{}]", l.name))
-                        .collect::<Vec<_>>()
-                        .join(" ");
-                    items.push(json!({
-                        "id": format!("{}#{}", repo, issue.number),
-                        "title": format!("#{} {}", issue.number, issue.title),
-                        "subtitle": format!("by {} {} ", issue.user.login, labels),
-                        "style": {}
-                    }));
-                }
+        if let Ok(issues) = slate_plugin_http::get_json::<Vec<Issue>>(&url, &headers) {
+            for issue in issues {
+                let labels: String = issue
+                    .labels
+                    .iter()
+                    .map(|l| format!("[{}]", l.name))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                items.push(json!({
+                    "id": format!("{}#{}", repo, issue.number),
+                    "title": format!("#{} {}", issue.number, issue.title),
+                    "subtitle": format!("by {} {} ", issue.user.login, labels),
+                    "style": {}
+                }));
             }
         }
     }
@@ -214,33 +210,30 @@ fn fetch_issues(token: &str, repos: &[String]) -> FnResult<String> {
 #[cfg(target_arch = "wasm32")]
 fn fetch_notifications(token: &str) -> FnResult<String> {
     let url = "https://api.github.com/notifications?per_page=15";
-    let req = HttpRequest::new(url)
-        .with_header("Authorization", &auth_header(token))
-        .with_header("Accept", "application/vnd.github.v3+json")
-        .with_header("User-Agent", "slate-github-plugin");
+    let auth = auth_header(token);
+    let headers = [
+        ("Authorization", auth.as_str()),
+        ("Accept", "application/vnd.github.v3+json"),
+        ("User-Agent", "slate-github-plugin"),
+    ];
 
     let mut items = Vec::new();
 
-    if let Ok(response) = http::request::<String>(&req, None) {
-        let body = response.body();
-        if let Ok(notifications) =
-            serde_json::from_str::<Vec<Notification>>(std::str::from_utf8(&body).unwrap_or("[]"))
-        {
-            for notif in notifications {
-                let icon = match notif.subject.subject_type.as_str() {
-                    "PullRequest" => "🔀",
-                    "Issue" => "🐛",
-                    "Release" => "🏷️",
-                    _ => "📬",
-                };
-                let unread_marker = if notif.unread { "●" } else { "○" };
-                items.push(json!({
-                    "id": notif.id,
-                    "title": format!("{} {} {}", unread_marker, icon, notif.subject.title),
-                    "subtitle": format!("{}", notif.reason),
-                    "style": {}
-                }));
-            }
+    if let Ok(notifications) = slate_plugin_http::get_json::<Vec<Notification>>(url, &headers) {
+        for notif in notifications {
+            let icon = match notif.subject.subject_type.as_str() {
+                "PullRequest" => "🔀",
+                "Issue" => "🐛",
+                "Release" => "🏷️",
+                _ => "📬",
+            };
+            let unread_marker = if notif.unread { "●" } else { "○" };
+            items.push(json!({
+                "id": notif.id,
+                "title": format!("{} {} {}", unread_marker, icon, notif.subject.title),
+                "subtitle": format!("{}", notif.reason),
+                "style": {}
+            }));
         }
     }
 

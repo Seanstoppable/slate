@@ -37,11 +37,8 @@ pub fn metadata(_input: String) -> FnResult<String> {
 #[plugin_fn]
 pub fn refresh(_input: String) -> FnResult<String> {
     // Fetch top story IDs
-    let req = HttpRequest::new("https://hacker-news.firebaseio.com/v0/topstories.json");
-    let response = http::request::<String>(&req, None)?;
-    let resp_body = response.body();
-    let body_str = std::str::from_utf8(&resp_body).unwrap_or("[]");
-    let ids: Vec<u64> = serde_json::from_str(body_str).unwrap_or_default();
+    let ids: Vec<u64> =
+        slate_plugin_http::get_json("https://hacker-news.firebaseio.com/v0/topstories.json", &[])?;
 
     let mut items = Vec::new();
 
@@ -51,18 +48,13 @@ pub fn refresh(_input: String) -> FnResult<String> {
             "https://hacker-news.firebaseio.com/v0/item/{}.json",
             id
         );
-        let req = HttpRequest::new(&story_url);
-        if let Ok(resp) = http::request::<String>(&req, None) {
-            let body = resp.body();
-            let resp_str = std::str::from_utf8(&body).unwrap_or("{}");
-            if let Ok(story) = serde_json::from_str::<Story>(resp_str) {
-                items.push(json!({
-                    "id": story.id.to_string(),
-                    "title": format!("▲{} {}", story.score, story.title),
-                    "subtitle": format!("by {} | {} comments", story.by, story.descendants),
-                    "style": {}
-                }));
-            }
+        if let Ok(story) = slate_plugin_http::get_json::<Story>(&story_url, &[]) {
+            items.push(json!({
+                "id": story.id.to_string(),
+                "title": format!("▲{} {}", story.score, story.title),
+                "subtitle": format!("by {} | {} comments", story.by, story.descendants),
+                "style": {}
+            }));
         }
     }
 

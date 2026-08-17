@@ -65,14 +65,12 @@ pub fn refresh(input: String) -> FnResult<String> {
 
     let mut items = Vec::new();
     for feed in feed_urls {
-        let req = HttpRequest::new(feed).with_header(
+        let headers = [(
             "Accept",
             "application/rss+xml, application/atom+xml, application/xml, text/xml",
-        );
-        let response = http::request::<String>(&req, None)?;
-        let body = response.body();
-        let xml = std::str::from_utf8(&body).unwrap_or("");
-        items.extend(parse_feed_items(xml));
+        )];
+        let xml = slate_plugin_http::get_text(feed, &headers)?;
+        items.extend(parse_feed_items(&xml));
     }
 
     if items.is_empty() {

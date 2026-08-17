@@ -51,15 +51,12 @@ pub fn refresh(input: String) -> FnResult<String> {
     let settings: serde_json::Value = serde_json::from_str(&input).unwrap_or_default();
 
     let url = build_api_url(&settings);
-    let req = HttpRequest::new(&url)
-        .with_header("Accept", "application/json")
-        .with_header("User-Agent", "slate-devto/0.1.0");
+    let headers = [
+        ("Accept", "application/json"),
+        ("User-Agent", "slate-devto/0.1.0"),
+    ];
 
-    let response = http::request::<String>(&req, None)?;
-    let body = response.body();
-    let body_str = std::str::from_utf8(&body).unwrap_or("[]");
-
-    let articles: Vec<Article> = serde_json::from_str(body_str).unwrap_or_default();
+    let articles: Vec<Article> = slate_plugin_http::get_json(&url, &headers).unwrap_or_default();
     let limit = settings["numberOfArticles"]
         .as_u64()
         .unwrap_or(10) as usize;

@@ -9,6 +9,7 @@ crate-type = ["cdylib"]
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 extism-pdk = "1"
+slate-plugin-http = { path = "../../crates/slate-plugin-http" }
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
