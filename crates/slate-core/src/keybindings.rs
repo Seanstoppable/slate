@@ -2,8 +2,9 @@ use slate_plugin_sdk::{Action, WidgetContent};
 
 pub(crate) const HOST_KEYBINDINGS: &[(&str, &str)] = &[
     ("?", "Show widget help"),
-    ("r", "Refresh widget"),
     ("q", "Quit Slate"),
+    ("r", "Refresh widget"),
+    ("w", "Show config warnings"),
 ];
 
 pub(crate) fn reserved_keybinding(key: &str) -> Option<&'static str> {

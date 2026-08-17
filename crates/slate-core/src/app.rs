@@ -17,7 +17,10 @@ use crate::dashboard::{refresh_widget_content, Dashboard, WidgetInstance};
 use crate::keybindings::reserved_keybinding;
 use crate::layout::{compute_grid, compute_widget_area, FocusPosition};
 use crate::notifications::UpdateNotifications;
-use crate::render::{render_input_bar, render_status_bar, render_widget, render_widget_help_modal};
+use crate::render::{
+    render_config_warnings_modal, render_input_bar, render_status_bar, render_widget,
+    render_widget_help_modal,
+};
 
 /// Active text-input prompt state.
 struct InputMode {
@@ -39,6 +42,8 @@ pub struct App {
     help_visible: bool,
     /// Non-fatal config problems surfaced in the status bar.
     config_warnings: Vec<ConfigWarning>,
+    /// Whether the config warnings overlay is displayed.
+    warnings_visible: bool,
 }
 
 impl App {
@@ -58,6 +63,7 @@ impl App {
             input_mode: None,
             help_visible: false,
             config_warnings,
+            warnings_visible: false,
         }
     }
 
@@ -202,6 +208,10 @@ impl App {
                         render_widget_help_modal(frame, frame.area(), &instance.metadata, actions);
                     }
                 }
+
+                if self.warnings_visible {
+                    render_config_warnings_modal(frame, frame.area(), &self.config_warnings);
+                }
             })?;
 
             // Handle input (poll with timeout for refresh)
@@ -266,6 +276,16 @@ impl App {
             }
         }
 
+        if self.warnings_visible {
+            match key.code {
+                KeyCode::Esc | KeyCode::Char('w') | KeyCode::Char('q') => {
+                    self.warnings_visible = false;
+                }
+                _ => {}
+            }
+            return;
+        }
+
         if self.help_visible {
             match key.code {
                 KeyCode::Esc | KeyCode::Char('?') | KeyCode::Char('q') => {
@@ -311,6 +331,9 @@ impl App {
         match key.code {
             KeyCode::Char('?') if self.focused_widget().is_some() => {
                 self.help_visible = true;
+            }
+            KeyCode::Char('w') if !self.config_warnings.is_empty() => {
+                self.warnings_visible = true;
             }
             KeyCode::Char('q') => self.running = false,
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -910,6 +933,52 @@ mod tests {
         let widget = MockListWidget::new(action);
         app.add_widget(Box::new(widget), 0, 0, 1, 1, Some(300), None);
         app
+    }
+
+    #[test]
+    fn w_opens_and_closes_config_warnings_modal() {
+        let config = SlateConfig::parse(
+            "[layout]\nrows = 2\ncols = 2\n\n[[widget]]\ntype = \"builtin:clock\"\nposition = { row = 7, col = 0 }\n",
+        )
+        .unwrap();
+        let mut app = App::new(config);
+        assert!(!app.warnings_visible);
+
+        app.handle_key(make_key(KeyCode::Char('w')));
+        assert!(app.warnings_visible);
+
+        // Unrelated keys are swallowed while the overlay is up.
+        app.handle_key(make_key(KeyCode::Char('x')));
+        assert!(app.warnings_visible);
+
+        app.handle_key(make_key(KeyCode::Esc));
+        assert!(!app.warnings_visible);
+    }
+
+    #[test]
+    fn w_closes_config_warnings_modal_and_q_does_not_quit() {
+        let config = SlateConfig::parse(
+            "[layout]\nrows = 2\ncols = 2\n\n[[widget]]\ntype = \"builtin:clock\"\nposition = { row = 7, col = 0 }\n",
+        )
+        .unwrap();
+        let mut app = App::new(config);
+
+        app.handle_key(make_key(KeyCode::Char('w')));
+        app.handle_key(make_key(KeyCode::Char('w')));
+        assert!(!app.warnings_visible);
+
+        // q closes the overlay rather than quitting outright.
+        app.handle_key(make_key(KeyCode::Char('w')));
+        app.handle_key(make_key(KeyCode::Char('q')));
+        assert!(!app.warnings_visible);
+        assert!(app.running);
+    }
+
+    #[test]
+    fn w_is_ignored_when_there_are_no_config_warnings() {
+        let mut app = App::new(SlateConfig::default());
+        app.handle_key(make_key(KeyCode::Char('w')));
+        assert!(!app.warnings_visible);
     }
 
     #[test]

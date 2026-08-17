@@ -10,6 +10,7 @@ use ratatui::{
 };
 use slate_plugin_sdk::{Action, Color, WidgetContent, WidgetMetadata};
 
+use crate::config::ConfigWarning;
 use crate::keybindings::{action_has_reserved_key, HOST_KEYBINDINGS};
 use crate::layout::FocusPosition;
 
@@ -323,7 +324,7 @@ pub fn render_status_bar(
     let update_part = update_msg.unwrap_or("");
     let warning_part = if config_warnings > 0 {
         format!(
-            "⚠ {} config warning{} │ ",
+            "w: ⚠ {} config warning{} │ ",
             config_warnings,
             if config_warnings == 1 { "" } else { "s" }
         )
@@ -410,6 +411,73 @@ pub fn render_widget_help_modal(
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(SLATE_BORDER_FOCUSED))
+        .style(Style::default().bg(SLATE_SURFACE).fg(SLATE_TEXT));
+    let inner = block.inner(popup_area);
+
+    frame.render_widget(Clear, popup_area);
+    frame.render_widget(block, popup_area);
+    frame.render_widget(
+        Paragraph::new(lines)
+            .style(Style::default().bg(SLATE_SURFACE).fg(SLATE_TEXT))
+            .wrap(Wrap { trim: true }),
+        inner,
+    );
+}
+
+/// Render an overlay listing non-fatal configuration problems.
+pub fn render_config_warnings_modal(frame: &mut Frame, area: Rect, warnings: &[ConfigWarning]) {
+    let mut lines = vec![Line::styled(
+        "These widgets will not render as configured.",
+        Style::default().fg(SLATE_MUTED),
+    )];
+    lines.push(Line::default());
+
+    if warnings.is_empty() {
+        lines.push(Line::styled(
+            "No configuration warnings.",
+            Style::default().fg(SLATE_MUTED),
+        ));
+    } else {
+        for warning in warnings {
+            lines.push(Line::from(vec![
+                Span::styled(
+                    format!("widget #{}", warning.widget_index() + 1),
+                    Style::default()
+                        .fg(RatColor::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(format!(": {}", warning), Style::default().fg(SLATE_TEXT)),
+            ]));
+        }
+    }
+
+    lines.push(Line::default());
+    lines.push(Line::styled(
+        "Run `slate check` for full validation. Esc, w, or q to close",
+        Style::default().fg(SLATE_MUTED),
+    ));
+
+    let width = area.width.min(72);
+    // Warnings wrap, so reserve two rendered rows per entry.
+    let estimated_rows = lines.len().saturating_add(warnings.len()) as u16;
+    let height = area.height.min(estimated_rows.saturating_add(2));
+    let popup_area = Rect::new(
+        area.x.saturating_add(area.width.saturating_sub(width) / 2),
+        area.y
+            .saturating_add(area.height.saturating_sub(height) / 2),
+        width,
+        height,
+    );
+    let block = Block::default()
+        .title(" Config Warnings ")
+        .title_style(
+            Style::default()
+                .fg(RatColor::Yellow)
+                .add_modifier(Modifier::BOLD),
+        )
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(RatColor::Yellow))
         .style(Style::default().bg(SLATE_SURFACE).fg(SLATE_TEXT));
     let inner = block.inner(popup_area);
 
@@ -514,6 +582,64 @@ mod tests {
             rendered.push('\n');
         }
         rendered
+    }
+
+    fn render_warnings_modal_to_string(warnings: &[ConfigWarning]) -> String {
+        let (width, height) = (80u16, 20u16);
+        let backend = TestBackend::new(width, height);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| {
+                render_config_warnings_modal(frame, Rect::new(0, 0, width, height), warnings);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let mut rendered = String::new();
+        for y in 0..height {
+            for x in 0..width {
+                rendered.push_str(buffer[(x, y)].symbol());
+            }
+            rendered.push('\n');
+        }
+        rendered
+    }
+
+    #[test]
+    fn render_config_warnings_modal_lists_each_warning() {
+        let warnings = vec![
+            ConfigWarning::OutOfBounds {
+                index: 2,
+                widget_type: "builtin:power".to_string(),
+                row: 9,
+                col: 0,
+                rows: 5,
+                cols: 3,
+            },
+            ConfigWarning::ZeroSpan {
+                index: 4,
+                widget_type: "builtin:clock".to_string(),
+                row_span: 0,
+                col_span: 1,
+            },
+        ];
+        let rendered = render_warnings_modal_to_string(&warnings);
+
+        assert!(rendered.contains("Config Warnings"), "got: {rendered}");
+        // 1-based numbering matches `slate check` output.
+        assert!(rendered.contains("widget #3"), "got: {rendered}");
+        assert!(rendered.contains("widget #5"), "got: {rendered}");
+        assert!(rendered.contains("builtin:power"), "got: {rendered}");
+        assert!(rendered.contains("slate check"), "got: {rendered}");
+    }
+
+    #[test]
+    fn render_config_warnings_modal_handles_empty_list() {
+        let rendered = render_warnings_modal_to_string(&[]);
+        assert!(
+            rendered.contains("No configuration warnings"),
+            "got: {rendered}"
+        );
     }
 
     fn render_status_to_string(
@@ -682,11 +808,11 @@ mod tests {
     #[test]
     fn render_status_bar_shows_config_warning_count() {
         let one = render_status_to_string_with_warnings(FocusPosition::new(0, 0), 2, None, 1);
-        assert!(one.contains("1 config warning"), "got: {one}");
+        assert!(one.contains("w: ⚠ 1 config warning"), "got: {one}");
         assert!(!one.contains("warnings"), "should be singular, got: {one}");
 
         let many = render_status_to_string_with_warnings(FocusPosition::new(0, 0), 2, None, 3);
-        assert!(many.contains("3 config warnings"), "got: {many}");
+        assert!(many.contains("w: ⚠ 3 config warnings"), "got: {many}");
 
         let none = render_status_to_string_with_warnings(FocusPosition::new(0, 0), 2, None, 0);
         assert!(!none.contains("config warning"), "got: {none}");
