@@ -26,10 +26,24 @@ struct Settings {
 
 #[derive(Deserialize, Default, Clone)]
 struct Player {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "nullable_string")]
     name: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_nullable_u32")]
     ranking: u32,
+}
+
+fn deserialize_nullable_u32<'de, D>(deserializer: D) -> Result<u32, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Option::<u32>::deserialize(deserializer).map(|opt| opt.unwrap_or(0))
+}
+
+fn nullable_string<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Option::<String>::deserialize(deserializer).map(|opt| opt.unwrap_or_default())
 }
 
 #[derive(Deserialize, Default, Clone)]
@@ -56,18 +70,25 @@ struct Score {
 
 #[derive(Deserialize, Default, Clone)]
 struct Match {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "nullable_string")]
     tournament: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "nullable_string")]
     round: String,
     #[serde(default)]
     players: Players,
     #[serde(default)]
     score: Option<Score>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "nullable_string")]
     scheduled_time: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_nullable_u8")]
     winner: u8,
+}
+
+fn deserialize_nullable_u8<'de, D>(deserializer: D) -> Result<u8, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Option::<u8>::deserialize(deserializer).map(|opt| opt.unwrap_or(0))
 }
 
 #[derive(Deserialize, Default)]
@@ -195,7 +216,10 @@ pub fn refresh(input: String) -> FnResult<String> {
     Ok(json!({
         "type": "list",
         "items": items,
-        "selectable": false
+        "selectable": true,
+        "actions": [
+            {"id": "details", "label": "Show details", "key": "enter", "confirm": false}
+        ]
     })
     .to_string())
 }
@@ -208,7 +232,20 @@ pub fn on_key(_input: String) -> FnResult<String> {
 
 #[cfg(target_arch = "wasm32")]
 #[plugin_fn]
-pub fn on_action(_input: String) -> FnResult<String> {
+pub fn on_action(input: String) -> FnResult<String> {
+    #[derive(Deserialize)]
+    struct ActionInput {
+        #[serde(default)]
+        action_id: String,
+        #[serde(default)]
+        item_id: String,
+    }
+
+    if let Ok(action) = serde_json::from_str::<ActionInput>(&input) {
+        if action.action_id == "details" || action.action_id == "select" {
+            return Ok(json!({"show_detail": format!("Match: {}", action.item_id)}).to_string());
+        }
+    }
     Ok(String::new())
 }
 
