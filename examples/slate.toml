@@ -62,6 +62,14 @@ numberOfStories = 10
 # matches_to = 5
 # standing_count = 5
 
+# MLB plugin (no API key required)
+# [[widget]]
+# type = "github.com/slate-community/slate-mlb"
+# position = { row = 2, col = 2 }
+# matches_from = -1
+# matches_to = 1
+# standing_count = 5
+
 # Yahoo Finance stock quotes (no API key required)
 # [[widget]]
 # type = "github.com/slate-community/slate-yfinance"

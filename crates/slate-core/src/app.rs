@@ -19,7 +19,7 @@ use crate::layout::{compute_grid, compute_widget_area, FocusPosition};
 use crate::notifications::UpdateNotifications;
 use crate::render::{
     render_config_warnings_modal, render_input_bar, render_status_bar, render_widget,
-    render_widget_help_modal,
+    render_widget_help_modal, render_widget_with_scroll,
 };
 
 /// Active text-input prompt state.
@@ -164,7 +164,7 @@ impl App {
                             scrollable: true,
                             wrap: true,
                         };
-                        render_widget(
+                        render_widget_with_scroll(
                             frame,
                             area,
                             &detail_widget_content,
@@ -172,6 +172,7 @@ impl App {
                             focused,
                             None,
                             instance.border_color.as_ref(),
+                            instance.detail_scroll,
                         );
                     } else {
                         render_widget(
@@ -248,6 +249,7 @@ impl App {
                             match action {
                                 WidgetAction::ShowDetail(d) => {
                                     instance.detail_content = Some(d);
+                                    instance.detail_scroll = 0;
                                 }
                                 other => pending_action = Some(other),
                             }
@@ -307,10 +309,41 @@ impl App {
                 KeyCode::Esc | KeyCode::Char('q') => {
                     if let Some(instance) = self.focused_widget_mut() {
                         instance.detail_content = None;
+                        instance.detail_scroll = 0;
                     }
                     return;
                 }
-                _ => return, // Ignore all other keys while in detail view
+                KeyCode::Up | KeyCode::Char('k') => {
+                    if let Some(instance) = self.focused_widget_mut() {
+                        instance.detail_scroll = instance.detail_scroll.saturating_sub(1);
+                    }
+                    return;
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    if let Some(instance) = self.focused_widget_mut() {
+                        instance.detail_scroll = instance.detail_scroll.saturating_add(1);
+                    }
+                    return;
+                }
+                KeyCode::PageUp => {
+                    if let Some(instance) = self.focused_widget_mut() {
+                        instance.detail_scroll = instance.detail_scroll.saturating_sub(5);
+                    }
+                    return;
+                }
+                KeyCode::PageDown => {
+                    if let Some(instance) = self.focused_widget_mut() {
+                        instance.detail_scroll = instance.detail_scroll.saturating_add(5);
+                    }
+                    return;
+                }
+                KeyCode::Home => {
+                    if let Some(instance) = self.focused_widget_mut() {
+                        instance.detail_scroll = 0;
+                    }
+                    return;
+                }
+                _ => return,
             }
         }
 
@@ -412,6 +445,7 @@ impl App {
                             match action {
                                 WidgetAction::ShowDetail(detail) => {
                                     instance.detail_content = Some(detail);
+                                    instance.detail_scroll = 0;
                                 }
                                 other => pending_action = Some(other),
                             }
@@ -571,7 +605,10 @@ impl App {
         if let Some(instance) = self.focused_widget_mut() {
             if let Some(action) = instance.widget.on_action(&action_id, &item_id) {
                 match action {
-                    WidgetAction::ShowDetail(detail) => instance.detail_content = Some(detail),
+                    WidgetAction::ShowDetail(detail) => {
+                        instance.detail_content = Some(detail);
+                        instance.detail_scroll = 0;
+                    }
                     other => pending_action = Some(other),
                 }
             }
@@ -1477,12 +1514,29 @@ mod tests {
         // Enter detail view
         app.handle_key(make_key(KeyCode::Enter));
 
-        // j/k/Tab should be ignored â€” selection should not change
+        // Tab should be ignored â€” focus and selection should not change
         let selected_before = app.dashboard.widgets[0].selected;
-        app.handle_key(make_key(KeyCode::Char('j')));
-        app.handle_key(make_key(KeyCode::Char('k')));
         app.handle_key(make_key(KeyCode::Tab));
         assert_eq!(app.dashboard.widgets[0].selected, selected_before);
+    }
+
+    #[test]
+    fn detail_view_scrolls_with_navigation_keys() {
+        let mut app =
+            test_app_with_list_widget(Some(WidgetAction::ShowDetail("Details".to_string())));
+
+        app.handle_key(make_key(KeyCode::Enter));
+        app.handle_key(make_key(KeyCode::Char('j')));
+        assert_eq!(app.dashboard.widgets[0].detail_scroll, 1);
+
+        app.handle_key(make_key(KeyCode::PageDown));
+        assert_eq!(app.dashboard.widgets[0].detail_scroll, 6);
+
+        app.handle_key(make_key(KeyCode::Char('k')));
+        assert_eq!(app.dashboard.widgets[0].detail_scroll, 5);
+
+        app.handle_key(make_key(KeyCode::Home));
+        assert_eq!(app.dashboard.widgets[0].detail_scroll, 0);
     }
 
     #[test]
