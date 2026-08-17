@@ -1,5 +1,7 @@
 #[cfg(target_arch = "wasm32")]
 use extism_pdk::*;
+#[cfg(target_arch = "wasm32")]
+use slate_plugin_exec::{run_exec, ExecResult};
 use serde::Deserialize;
 #[cfg(target_arch = "wasm32")]
 use serde_json::json;
@@ -38,23 +40,6 @@ struct Container {
 
 
 
-#[cfg(target_arch = "wasm32")]
-#[derive(Deserialize)]
-struct ExecResult {
-
-    #[serde(default)]
-
-    stdout: String,
-
-    #[serde(default)]
-
-    stderr: String,
-
-    #[serde(default)]
-
-    exit_code: i32,
-
-}
 
 
 
@@ -363,16 +348,8 @@ pub fn on_action(input: String) -> FnResult<String> {
 
 
 #[cfg(target_arch = "wasm32")]
-#[host_fn]
-extern "ExtismHost" {
-    fn exec_command(input: String) -> String;
-}
-
-#[cfg(target_arch = "wasm32")]
 fn run_docker_exec(cmd: &str, args: &[&str]) -> Result<ExecResult, Error> {
-    let request = json!({"cmd": cmd, "args": args}).to_string();
-    let output = unsafe { exec_command(request)? };
-    serde_json::from_str(&output).map_err(|e| Error::msg(e.to_string()))
+    run_exec(cmd, args)
 }
 
 
