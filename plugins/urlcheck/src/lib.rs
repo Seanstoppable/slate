@@ -146,14 +146,10 @@ pub fn on_action(input: String) -> FnResult<String> {
 /// A URL is considered valid if it declares an `http://` or `https://`
 /// scheme and has a non-empty host component.
 fn is_valid_url(url: &str) -> bool {
-    let rest = if let Some(stripped) = url.strip_prefix("https://") {
-        stripped
-    } else if let Some(stripped) = url.strip_prefix("http://") {
-        stripped
-    } else {
-        return false;
-    };
-    !rest.is_empty()
+    url::Url::parse(url).is_ok_and(|parsed| {
+        matches!(parsed.scheme(), "http" | "https")
+            && parsed.host_str().is_some_and(|host| !host.is_empty())
+    })
 }
 
 /// Determine the status icon for a check result, matching wtfutil's
@@ -243,6 +239,11 @@ mod tests {
     #[test]
     fn test_is_valid_url_empty_host() {
         assert!(!is_valid_url("https://"));
+    }
+
+    #[test]
+    fn test_is_valid_url_missing_host() {
+        assert!(!is_valid_url("https:///"));
     }
 
     #[test]
