@@ -243,76 +243,31 @@ pub fn refresh(input: String) -> FnResult<String> {
 
 
 #[cfg(target_arch = "wasm32")]
-
 fn fetch_from_ipinfo() -> Result<Vec<serde_json::Value>, Error> {
-
-    let req = HttpRequest::new("https://ipinfo.io/json").with_header("Accept", "application/json");
-
-
-
-    let response = http::request::<String>(&req, None)?;
-
-    let body = response.body();
-
-    let body_str = std::str::from_utf8(&body).unwrap_or("{}");
-
-
-
-    let info: IpInfoResponse = serde_json::from_str(body_str)
-
-        .map_err(|e| Error::msg(format!("Failed to parse ipinfo.io response: {}", e)))?;
-
-
+    let info: IpInfoResponse =
+        slate_plugin_http::get_json("https://ipinfo.io/json", &[("Accept", "application/json")])
+            .map_err(|e| Error::msg(format!("Failed to parse ipinfo.io response: {}", e)))?;
 
     Ok(vec![
-
         json!({"key": "IP", "value": info.ip}),
-
         json!({"key": "Location", "value": format!("{}, {}, {}", info.city, info.region, info.country)}),
-
         json!({"key": "Org", "value": info.org}),
-
         json!({"key": "Timezone", "value": info.timezone}),
-
     ])
-
 }
 
-
-
 #[cfg(target_arch = "wasm32")]
-
 fn fetch_from_ipapi(args: &[String]) -> Result<Vec<serde_json::Value>, Error> {
-
     let api_fields = args
-
         .iter()
-
         .map(|a| arg_to_api_field(a))
-
         .collect::<Vec<_>>()
-
         .join(",");
-
     let url = format!("http://ip-api.com/json/?fields={}", api_fields);
 
-
-
-    let req = HttpRequest::new(&url).with_header("Accept", "application/json");
-
-
-
-    let response = http::request::<String>(&req, None)?;
-
-    let body = response.body();
-
-    let body_str = std::str::from_utf8(&body).unwrap_or("{}");
-
-
-
-    let info: IpApiResponse = serde_json::from_str(body_str)
-
-        .map_err(|e| Error::msg(format!("Failed to parse ip-api.com response: {}", e)))?;
+    let info: IpApiResponse =
+        slate_plugin_http::get_json(&url, &[("Accept", "application/json")])
+            .map_err(|e| Error::msg(format!("Failed to parse ip-api.com response: {}", e)))?;
 
 
 

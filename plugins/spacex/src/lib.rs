@@ -56,28 +56,18 @@ mod wasm {
 
     #[plugin_fn]
     pub fn refresh(_input: String) -> FnResult<String> {
-        let req = HttpRequest::new("https://api.spacexdata.com/v5/launches/next");
-        let resp = match http::request::<()>(&req, None) {
-            Ok(r) => r,
-            Err(_) => {
-                return Ok(serde_json::json!({
-                    "type": "text",
-                    "content": "Failed to fetch launch data"
-                })
-                .to_string());
-            }
-        };
-
-        let launch: Launch = match serde_json::from_slice(&resp.body()) {
-            Ok(l) => l,
-            Err(_) => {
-                return Ok(serde_json::json!({
-                    "type": "text",
-                    "content": "No upcoming launch found"
-                })
-                .to_string());
-            }
-        };
+        let launch: Launch =
+            match slate_plugin_http::get_json("https://api.spacexdata.com/v5/launches/next", &[])
+            {
+                Ok(l) => l,
+                Err(_) => {
+                    return Ok(serde_json::json!({
+                        "type": "text",
+                        "content": "Failed to fetch launch data"
+                    })
+                    .to_string());
+                }
+            };
 
         let pairs = build_pairs(&launch);
         Ok(pairs_to_content(pairs).to_string())

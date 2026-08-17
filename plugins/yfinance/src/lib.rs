@@ -123,15 +123,14 @@ fn fetch_chart_meta(symbol: &str) -> Result<ChartMeta, String> {
         CHART_API_BASE,
         encode_component(symbol)
     );
-    let req = HttpRequest::new(&url)
-        .with_header("Accept", "application/json")
-        .with_header("User-Agent", "Mozilla/5.0 (compatible; slate-yfinance/1.0)");
-    let response = http::request::<String>(&req, None).map_err(|e| e.to_string())?;
-    let body = response.body();
-    let body_str = std::str::from_utf8(&body).unwrap_or("{}");
+    let headers = [
+        ("Accept", "application/json"),
+        ("User-Agent", "Mozilla/5.0 (compatible; slate-yfinance/1.0)"),
+    ];
+    let body_str = slate_plugin_http::get_text(&url, &headers).map_err(|e| e.to_string())?;
 
     let parsed: ChartResponse =
-        serde_json::from_str(body_str).map_err(|e| format!("parse error: {}", e))?;
+        serde_json::from_str(&body_str).map_err(|e| format!("parse error: {}", e))?;
 
     if let Some(err) = parsed.chart.error {
         if !err.is_null() {

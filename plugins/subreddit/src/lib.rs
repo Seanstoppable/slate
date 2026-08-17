@@ -76,14 +76,9 @@ pub fn refresh(input: String) -> FnResult<String> {
         .unwrap_or(15) as usize;
 
     let url = build_reddit_url(subreddit, sort, limit);
-    let req = HttpRequest::new(&url)
-        .with_header("User-Agent", "slate-subreddit/0.1.0");
+    let headers = [("User-Agent", "slate-subreddit/0.1.0")];
 
-    let response = http::request::<String>(&req, None)?;
-    let body = response.body();
-    let body_str = std::str::from_utf8(&body).unwrap_or("{}");
-
-    let listing: RedditListing = serde_json::from_str(body_str).unwrap_or_default();
+    let listing: RedditListing = slate_plugin_http::get_json(&url, &headers).unwrap_or_default();
     let posts: Vec<&RedditPost> = listing.data.children.iter().map(|c| &c.data).collect();
 
     let show_nsfw = settings["showNsfw"].as_bool().unwrap_or(false);

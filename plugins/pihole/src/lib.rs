@@ -95,16 +95,10 @@ pub fn refresh(input: String) -> FnResult<String> {
         format!("{}?summaryRaw&auth={}", base_url, auth_token)
     };
 
-    let req = HttpRequest::new(&url)
-        .with_header("Accept", "application/json");
-
     // Note: if the host is unreachable, extism HTTP will trap (WASM abort).
     // The host catches this via catch_unwind and shows an error in the widget.
-    let response = http::request::<Vec<u8>>(&req, None)?;
-
-    let body_bytes = response.body();
-    let body_str = std::str::from_utf8(&body_bytes).unwrap_or("{}");
-    let summary: PiholeSummary = serde_json::from_str(body_str).unwrap_or_default();
+    let body_str = slate_plugin_http::get_text(&url, &[("Accept", "application/json")])?;
+    let summary: PiholeSummary = serde_json::from_str(&body_str).unwrap_or_default();
     let content = build_summary_content(&summary);
     Ok(content.to_string())
 }
