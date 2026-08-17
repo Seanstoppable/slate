@@ -1,7 +1,9 @@
+[plugin]
 name = "disk-usage"
 description = "Shows disk space usage for mounted filesystems"
 version = "0.1.0"
 tags = ["disk", "filesystem", "storage", "system"]
+author = "Slate Community"
 
 [permissions]
 exec = ["df", "powershell", "wmic"]

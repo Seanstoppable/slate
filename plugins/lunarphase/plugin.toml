@@ -1,4 +1,4 @@
-[metadata]
+[plugin]
 name = "lunarphase"
 description = "Displays the current lunar phase with visual representation"
 tags = ["astronomy", "fun", "utility"]

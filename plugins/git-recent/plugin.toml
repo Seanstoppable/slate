@@ -1,7 +1,9 @@
+[plugin]
 name = "git-recent"
 description = "Shows recent git commits in a repository"
 version = "0.1.0"
 tags = ["developer", "git", "productivity", "vcs"]
+author = "Slate Community"
 
 [permissions]
 exec = ["git"]

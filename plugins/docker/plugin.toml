@@ -1,4 +1,4 @@
-[metadata]
+[plugin]
 name = "docker"
 description = "Shows Docker container status and resource usage"
 tags = ["containers", "dev", "docker"]

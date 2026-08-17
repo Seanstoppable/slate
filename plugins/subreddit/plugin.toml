@@ -3,6 +3,7 @@ name = "Subreddit"
 description = "Shows posts from Reddit subreddits"
 tags = ["news", "reddit"]
 version = "0.1.0"
+author = "Slate Community"
 
 [permissions]
 network = ["www.reddit.com"]

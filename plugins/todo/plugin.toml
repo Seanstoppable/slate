@@ -1,7 +1,9 @@
+[plugin]
 name = "todo"
 description = "Displays tasks from a todo.txt file in your plugin data directory"
 version = "0.1.0"
 tags = ["productivity", "tasks", "todo"]
+author = "Slate Community"
 
 [permissions]
 storage = true

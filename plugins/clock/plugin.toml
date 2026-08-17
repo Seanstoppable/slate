@@ -1,4 +1,4 @@
-[metadata]
+[plugin]
 name = "clock"
 description = "Displays multiple world clocks as a location list (wtfutil-style)"
 tags = ["clock", "time", "utility"]

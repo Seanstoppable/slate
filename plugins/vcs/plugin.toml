@@ -3,6 +3,7 @@ name = "VCS"
 description = "Version control status (git/hg)"
 tags = ["dev", "git", "vcs"]
 version = "0.1.0"
+author = "Slate Community"
 
 [permissions]
 exec = ["git", "hg"]
