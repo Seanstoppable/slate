@@ -314,14 +314,19 @@ impl App {
             }
         }
 
-        // Check if focused widget is a selectable list
-        let focused_is_list = self
+        // Check if focused widget supports selection/navigation.
+        let focused_is_selectable = self
+            .focused_widget()
+            .map(|w| w.content.is_selectable())
+            .unwrap_or(false);
+
+        let focused_is_selectable_list = self
             .focused_widget()
             .map(|w| w.content.is_selectable_list())
             .unwrap_or(false);
 
         let key_name = key_to_action_name(&key);
-        if focused_is_list
+        if focused_is_selectable_list
             && reserved_keybinding(&key_name).is_none()
             && self.try_trigger_list_action(&key)
         {
@@ -368,7 +373,7 @@ impl App {
                 self.set_focus(next);
             }
             KeyCode::Up | KeyCode::Char('k') => {
-                if focused_is_list {
+                if focused_is_selectable {
                     if let Some(instance) = self.focused_widget_mut() {
                         if let Some(sel) = &mut instance.selected {
                             if *sel > 0 {
@@ -383,9 +388,9 @@ impl App {
                 }
             }
             KeyCode::Down | KeyCode::Char('j') => {
-                if focused_is_list {
+                if focused_is_selectable {
                     if let Some(instance) = self.focused_widget_mut() {
-                        let max = instance.content.list_len().saturating_sub(1);
+                        let max = instance.content.selectable_len().saturating_sub(1);
                         if let Some(sel) = &mut instance.selected {
                             if *sel < max {
                                 *sel += 1;
@@ -402,18 +407,13 @@ impl App {
                 // Forward to focused widget with selected item
                 let mut pending_action: Option<WidgetAction> = None;
                 if let Some(instance) = self.focused_widget_mut() {
-                    if let (Some(sel), WidgetContent::List { items, .. }) =
-                        (instance.selected, &instance.content)
-                    {
-                        if let Some(item) = items.get(sel) {
-                            let item_id = item.id.clone();
-                            if let Some(action) = instance.widget.on_action("select", &item_id) {
-                                match action {
-                                    WidgetAction::ShowDetail(detail) => {
-                                        instance.detail_content = Some(detail);
-                                    }
-                                    other => pending_action = Some(other),
+                    if let Some(item_id) = selected_item_id(&instance.content, instance.selected) {
+                        if let Some(action) = instance.widget.on_action("select", &item_id) {
+                            match action {
+                                WidgetAction::ShowDetail(detail) => {
+                                    instance.detail_content = Some(detail);
                                 }
+                                other => pending_action = Some(other),
                             }
                         }
                     }
@@ -427,8 +427,8 @@ impl App {
                 if let Some(instance) = self.focused_widget_mut() {
                     instance.content = refresh_widget_content(instance.widget.as_mut());
                     instance.last_refresh = Instant::now();
-                    // Reset selection if list changed
-                    if instance.content.is_selectable_list() {
+                    // Reset selection if selectable content changed
+                    if instance.content.is_selectable() {
                         instance.selected = Some(0);
                     }
                 }
@@ -443,7 +443,7 @@ impl App {
                     instance.widget.on_key(&key_str, "");
                     instance.content = refresh_widget_content(instance.widget.as_mut());
                     instance.last_refresh = Instant::now();
-                    if instance.content.is_selectable_list() && instance.selected.is_none() {
+                    if instance.content.is_selectable() && instance.selected.is_none() {
                         instance.selected = Some(0);
                     }
                 }
@@ -598,6 +598,24 @@ fn key_to_action_name(key: &KeyEvent) -> String {
     }
 }
 
+fn selected_item_id(content: &WidgetContent, selected: Option<usize>) -> Option<String> {
+    let selected = selected?;
+
+    match content {
+        WidgetContent::List {
+            items,
+            selectable: true,
+            ..
+        } => items.get(selected).map(|item| item.id.clone()),
+        WidgetContent::Table {
+            rows,
+            selectable: true,
+            ..
+        } => rows.get(selected).map(|_| selected.to_string()),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -612,6 +630,11 @@ mod tests {
     struct MockListWidget {
         action_response: Option<WidgetAction>,
         refresh_count: std::cell::Cell<u32>,
+    }
+
+    struct MockTableWidget {
+        last_action: Arc<Mutex<Option<(String, String)>>>,
+        action_response: Option<WidgetAction>,
     }
 
     impl MockListWidget {
@@ -661,6 +684,49 @@ mod tests {
         }
 
         fn on_action(&mut self, _action_id: &str, _item_id: &str) -> Option<WidgetAction> {
+            self.action_response.clone()
+        }
+    }
+
+    impl MockTableWidget {
+        fn new(
+            last_action: Arc<Mutex<Option<(String, String)>>>,
+            action_response: Option<WidgetAction>,
+        ) -> Self {
+            Self {
+                last_action,
+                action_response,
+            }
+        }
+    }
+
+    impl Widget for MockTableWidget {
+        fn metadata(&self) -> WidgetMetadata {
+            WidgetMetadata {
+                name: "Mock Table".to_string(),
+                description: "Test table widget".to_string(),
+                version: "0.1.0".to_string(),
+                author: None,
+                homepage: None,
+            }
+        }
+
+        fn init(&mut self, _config: WidgetConfig) {}
+
+        fn refresh(&mut self) -> WidgetContent {
+            WidgetContent::Table {
+                headers: vec!["Name".to_string()],
+                rows: vec![
+                    vec![slate_plugin_sdk::Cell::plain("First Row")],
+                    vec![slate_plugin_sdk::Cell::plain("Second Row")],
+                    vec![slate_plugin_sdk::Cell::plain("Third Row")],
+                ],
+                selectable: true,
+            }
+        }
+
+        fn on_action(&mut self, action_id: &str, item_id: &str) -> Option<WidgetAction> {
+            *self.last_action.lock().unwrap() = Some((action_id.to_string(), item_id.to_string()));
             self.action_response.clone()
         }
     }
@@ -935,6 +1001,17 @@ mod tests {
         app
     }
 
+    fn test_app_with_table_widget(
+        last_action: Arc<Mutex<Option<(String, String)>>>,
+        action: Option<WidgetAction>,
+    ) -> App {
+        let config = SlateConfig::default();
+        let mut app = App::new(config);
+        let widget = MockTableWidget::new(last_action, action);
+        app.add_widget(Box::new(widget), 0, 0, 1, 1, Some(300), None);
+        app
+    }
+
     #[test]
     fn w_opens_and_closes_config_warnings_modal() {
         let config = SlateConfig::parse(
@@ -1037,6 +1114,24 @@ mod tests {
             app.dashboard.widgets[0].refresh_interval,
             Duration::from_secs(42)
         );
+        assert_eq!(app.dashboard.widgets[0].selected, Some(0));
+    }
+
+    #[test]
+    fn add_widget_initializes_selectable_table_selection() {
+        let last_action = Arc::new(Mutex::new(None));
+        let mut app = App::new(SlateConfig::default());
+
+        app.add_widget(
+            Box::new(MockTableWidget::new(last_action, None)),
+            0,
+            0,
+            1,
+            1,
+            Some(60),
+            None,
+        );
+
         assert_eq!(app.dashboard.widgets[0].selected, Some(0));
     }
 
@@ -1410,6 +1505,20 @@ mod tests {
     }
 
     #[test]
+    fn enter_on_table_dispatches_selected_row_index() {
+        let last_action = Arc::new(Mutex::new(None));
+        let mut app = test_app_with_table_widget(last_action.clone(), None);
+
+        app.handle_key(make_key(KeyCode::Down));
+        app.handle_key(make_key(KeyCode::Enter));
+
+        assert_eq!(
+            *last_action.lock().unwrap(),
+            Some(("select".to_string(), "1".to_string()))
+        );
+    }
+
+    #[test]
     fn j_k_navigate_list_selection() {
         let mut app = test_app_with_list_widget(None);
 
@@ -1636,6 +1745,32 @@ mod tests {
         app.handle_key(make_key(KeyCode::Up));
         assert_eq!(app.dashboard.widgets[0].selected, Some(0));
         assert_eq!((app.focus.row, app.focus.col), (0, 0));
+    }
+
+    #[test]
+    fn arrow_keys_change_table_selection_without_moving_focus() {
+        let last_action = Arc::new(Mutex::new(None));
+        let mut app = test_app_with_table_widget(last_action, None);
+
+        app.handle_key(make_key(KeyCode::Down));
+        assert_eq!(app.dashboard.widgets[0].selected, Some(1));
+        assert_eq!((app.focus.row, app.focus.col), (0, 0));
+
+        app.handle_key(make_key(KeyCode::Down));
+        assert_eq!(app.dashboard.widgets[0].selected, Some(2));
+        assert_eq!((app.focus.row, app.focus.col), (0, 0));
+
+        app.handle_key(make_key(KeyCode::Down));
+        assert_eq!(app.dashboard.widgets[0].selected, Some(2));
+
+        app.handle_key(make_key(KeyCode::Up));
+        assert_eq!(app.dashboard.widgets[0].selected, Some(1));
+
+        app.handle_key(make_key(KeyCode::Char('k')));
+        assert_eq!(app.dashboard.widgets[0].selected, Some(0));
+
+        app.handle_key(make_key(KeyCode::Char('k')));
+        assert_eq!(app.dashboard.widgets[0].selected, Some(0));
     }
 
     #[test]

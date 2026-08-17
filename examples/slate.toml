@@ -52,6 +52,16 @@ numberOfStories = 10
 # api_key = "${OPENWEATHER_API_KEY}"
 # location = "New York"
 
+# Football plugin (requires API key from https://www.football-data.org/)
+# [[widget]]
+# type = "github.com/slate-community/slate-football"
+# position = { row = 2, col = 2 }
+# api_key = "${FOOTBALL_DATA_API_KEY}"
+# competitions = ["PL", "CL"]
+# matches_from = 2
+# matches_to = 5
+# standing_count = 5
+
 # Yahoo Finance stock quotes (no API key required)
 # [[widget]]
 # type = "github.com/slate-community/slate-yfinance"

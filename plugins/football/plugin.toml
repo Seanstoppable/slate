@@ -1,0 +1,18 @@
+[plugin]
+name = "football"
+description = "Football matches and standings via football-data.org (API v4)"
+tags = ["football", "sports"]
+version = "0.1.0"
+author = "Slate Community"
+language = "rust"
+
+[permissions]
+network = ["api.football-data.org"]
+secrets = ["api_key"]
+
+[config]
+api_key = { type = "string", required = true, description = "football-data.org API key (X-Auth-Token); sign up at https://www.football-data.org/" }
+competitions = { type = "array", required = true, description = "List of football-data competition codes to fetch (e.g. ['PL', 'CL'])" }
+matches_from = { type = "integer", required = false, description = "Start of the matches date window (days from today; default: 2)" }
+matches_to = { type = "integer", required = false, description = "End of the matches date window (days from today), inclusive; default: 5" }
+standing_count = { type = "integer", required = false, description = "Number of top standing rows to include per competition; default: 5" }

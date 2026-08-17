@@ -1,0 +1,16 @@
+[package]
+name = "slate-football"
+version = "0.1.0"
+edition = "2021"
+description = "Football matches and standings via football-data.org API"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", features = ["serde"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+extism-pdk = "1"
