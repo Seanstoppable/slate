@@ -30,12 +30,24 @@ pub fn parse_commit_line(line: &str) -> Option<CommitItem> {
     })
 }
 
-pub fn commits_to_list_json(items: &[CommitItem]) -> serde_json::Value {
+pub fn commit_item_id(path: &str, hash: &str) -> String {
+    format!("{}\0{}", path, hash)
+}
+
+pub fn parse_commit_item_id(item_id: &str) -> (String, String) {
+    match item_id.split_once('\0') {
+        Some((path, hash)) if !path.is_empty() => (path.to_string(), hash.to_string()),
+        Some((_, hash)) => (".".to_string(), hash.to_string()),
+        None => (".".to_string(), item_id.to_string()),
+    }
+}
+
+pub fn commits_to_list_json(items: &[CommitItem], path: &str) -> serde_json::Value {
     let json_items: Vec<serde_json::Value> = items
         .iter()
         .map(|c| {
             serde_json::json!({
-                "id": c.hash,
+                "id": commit_item_id(path, &c.hash),
                 "title": c.subject,
                 "subtitle": format!("{} \u{2022} {} \u{2022} {}", c.hash, c.author, c.time_ago),
                 "style": {}
@@ -140,7 +152,7 @@ pub fn refresh(input: String) -> FnResult<String> {
         return Ok(content.to_string());
     }
 
-    Ok(commits_to_list_json(&commits).to_string())
+    Ok(commits_to_list_json(&commits, &path).to_string())
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -160,16 +172,16 @@ pub fn on_action(input: String) -> FnResult<String> {
 
     if let Ok(action) = serde_json::from_str::<ActionInput>(&input) {
         if action.action_id == "detail" {
-            let hash = &action.item_id;
+            let (repo_path, hash) = parse_commit_item_id(&action.item_id);
             if let Ok(result) = run_exec(
                 "git",
                 &[
                     "-C",
-                    ".",
+                    &repo_path,
                     "show",
                     "--stat",
                     "--format=commit %H%nAuthor: %an <%ae>%nDate:   %ad%n%n%s%n%n%b",
-                    hash,
+                    &hash,
                 ],
             ) {
                 let content = json!({
@@ -224,6 +236,17 @@ mod tests {
     }
 
     #[test]
+    fn test_commit_item_id_round_trip() {
+        let item_id = commit_item_id("/repo/project", "abc1234");
+        let (path, hash) = parse_commit_item_id(&item_id);
+        assert_eq!(path, "/repo/project");
+        assert_eq!(hash, "abc1234");
+        let (fallback_path, fallback_hash) = parse_commit_item_id("abc1234");
+        assert_eq!(fallback_path, ".");
+        assert_eq!(fallback_hash, "abc1234");
+    }
+
+    #[test]
     fn test_commits_to_list_json() {
         let items = vec![CommitItem {
             hash: "abc1234".to_string(),
@@ -231,12 +254,12 @@ mod tests {
             time_ago: "2 hours ago".to_string(),
             author: "Alice Smith".to_string(),
         }];
-        let json = commits_to_list_json(&items);
+        let json = commits_to_list_json(&items, "/repo/project");
         assert_eq!(json["type"], "list");
         assert_eq!(json["selectable"], true);
         let list_items = json["items"].as_array().unwrap();
         assert_eq!(list_items.len(), 1);
-        assert_eq!(list_items[0]["id"], "abc1234");
+        assert_eq!(list_items[0]["id"], "/repo/project\0abc1234");
         assert_eq!(list_items[0]["title"], "Fix the bug");
         assert_eq!(
             list_items[0]["subtitle"],
