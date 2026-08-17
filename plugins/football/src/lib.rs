@@ -1,8 +1,8 @@
+use chrono::NaiveDate;
 #[cfg(target_arch = "wasm32")]
 use extism_pdk::*;
 use serde::Deserialize;
 use serde_json::json;
-use chrono::NaiveDate;
 use std::collections::HashMap;
 
 const API_BASE: &str = "https://api.football-data.org/v4";
@@ -23,9 +23,15 @@ pub struct Settings {
     pub standing_count: usize,
 }
 
-fn default_matches_from() -> i64 { 2 }
-fn default_matches_to() -> i64 { 5 }
-fn default_standing_count() -> usize { 5 }
+fn default_matches_from() -> i64 {
+    2
+}
+fn default_matches_to() -> i64 {
+    5
+}
+fn default_standing_count() -> usize {
+    5
+}
 
 // Minimal types for parsing the v4 API responses we need
 #[derive(Deserialize, Debug)]
@@ -216,10 +222,17 @@ pub struct TableEntry {
 // Build a matches URL for a competition and an inclusive date window in YYYY-MM-DD.
 // The v4 API's dateTo parameter is exclusive, so we add one day to the inclusive end.
 pub fn build_matches_url(competition: &str, date_from: &str, date_to_inclusive: &str) -> String {
-    let from = NaiveDate::parse_from_str(date_from, "%Y-%m-%d").unwrap_or_else(|_| NaiveDate::from_ymd_opt(1970,1,1).unwrap());
+    let from = NaiveDate::parse_from_str(date_from, "%Y-%m-%d")
+        .unwrap_or_else(|_| NaiveDate::from_ymd_opt(1970, 1, 1).unwrap());
     let to = NaiveDate::parse_from_str(date_to_inclusive, "%Y-%m-%d").unwrap_or(from);
     let to_exclusive = to + chrono::Duration::days(1);
-    format!("{}/competitions/{}/matches?dateFrom={}&dateTo={}", API_BASE, competition, from.format("%Y-%m-%d"), to_exclusive.format("%Y-%m-%d"))
+    format!(
+        "{}/competitions/{}/matches?dateFrom={}&dateTo={}",
+        API_BASE,
+        competition,
+        from.format("%Y-%m-%d"),
+        to_exclusive.format("%Y-%m-%d")
+    )
 }
 
 pub fn build_standings_url(competition: &str) -> String {
@@ -232,13 +245,25 @@ pub fn build_match_details_url(match_id: i64) -> String {
 
 // Choose the TOTAL standings if present, otherwise fall back to first available standings
 pub fn choose_total_standing(standings: &[Standing]) -> Option<&Standing> {
-    standings.iter().find(|s| match &s.r#type { Some(t) => t == "TOTAL", None => false }).or_else(|| standings.first())
+    standings
+        .iter()
+        .find(|s| match &s.r#type {
+            Some(t) => t == "TOTAL",
+            None => false,
+        })
+        .or_else(|| standings.first())
 }
 
 pub fn format_score(score: &Score) -> String {
     if let Some(ft) = &score.full_time {
-        let home = ft.home.map(|v| v.to_string()).unwrap_or_else(|| "-".to_string());
-        let away = ft.away.map(|v| v.to_string()).unwrap_or_else(|| "-".to_string());
+        let home = ft
+            .home
+            .map(|v| v.to_string())
+            .unwrap_or_else(|| "-".to_string());
+        let away = ft
+            .away
+            .map(|v| v.to_string())
+            .unwrap_or_else(|| "-".to_string());
         format!("{} - {}", home, away)
     } else {
         "-".to_string()
@@ -328,8 +353,12 @@ pub fn format_match_details(match_details: &MatchDetails) -> String {
                 format_minute(goal.minute, goal.injury_time),
                 format_person(&goal.scorer),
                 assist,
-                goal.score.home.map_or_else(|| "-".to_string(), |score| score.to_string()),
-                goal.score.away.map_or_else(|| "-".to_string(), |score| score.to_string())
+                goal.score
+                    .home
+                    .map_or_else(|| "-".to_string(), |score| score.to_string()),
+                goal.score
+                    .away
+                    .map_or_else(|| "-".to_string(), |score| score.to_string())
             ));
         }
     }
@@ -434,7 +463,8 @@ pub fn metadata(_input: String) -> FnResult<String> {
         "description": "Football matches and standings from football-data.org",
         "version": env!("CARGO_PKG_VERSION"),
         "author": "Slate Community"
-    }).to_string())
+    })
+    .to_string())
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -470,33 +500,30 @@ pub fn refresh(input: String) -> FnResult<String> {
 
     for comp in &settings.competitions {
         let today = chrono::Utc::now().date_naive();
-        let from_date = (today + chrono::Duration::days(settings.matches_from)).format("%Y-%m-%d").to_string();
-        let to_date = (today + chrono::Duration::days(settings.matches_to)).format("%Y-%m-%d").to_string();
+        let from_date = (today + chrono::Duration::days(settings.matches_from))
+            .format("%Y-%m-%d")
+            .to_string();
+        let to_date = (today + chrono::Duration::days(settings.matches_to))
+            .format("%Y-%m-%d")
+            .to_string();
 
         let matches_url = build_matches_url(comp, &from_date, &to_date);
         let standings_url = build_standings_url(comp);
 
-        let req = HttpRequest::new(&matches_url)
-            .with_header("Accept", "application/json")
-            .with_header("X-Auth-Token", &settings.api_key)
-            .with_header("User-Agent", "slate-football-plugin");
-        let response = http::request::<String>(&req, None)?;
-        let body = response.body();
-        let body_str = std::str::from_utf8(&body).unwrap_or("{}");
-        if let Ok(parsed) = serde_json::from_str::<MatchesResponse>(body_str) {
+        let headers = [
+            ("Accept", "application/json"),
+            ("X-Auth-Token", settings.api_key.as_str()),
+            ("User-Agent", "slate-football-plugin"),
+        ];
+        if let Ok(parsed) = slate_plugin_http::get_json::<MatchesResponse>(&matches_url, &headers) {
             for m in parsed.matches {
                 all_matches.push(m);
             }
         }
 
-        let req2 = HttpRequest::new(&standings_url)
-            .with_header("Accept", "application/json")
-            .with_header("X-Auth-Token", &settings.api_key)
-            .with_header("User-Agent", "slate-football-plugin");
-        let response2 = http::request::<String>(&req2, None)?;
-        let body2 = response2.body();
-        let body2_str = std::str::from_utf8(&body2).unwrap_or("{}");
-        if let Ok(parsed2) = serde_json::from_str::<StandingsResponse>(body2_str) {
+        if let Ok(parsed2) =
+            slate_plugin_http::get_json::<StandingsResponse>(&standings_url, &headers)
+        {
             if let Some(s) = choose_total_standing(&parsed2.standings) {
                 let table_entries = s.table.clone();
                 // store by competition code
@@ -566,18 +593,13 @@ pub fn on_action(input: String) -> FnResult<String> {
     }
 
     let url = build_match_details_url(match_id);
-    let request = HttpRequest::new(&url)
-        .with_header("Accept", "application/json")
-        .with_header("X-Auth-Token", &api_key)
-        .with_header("User-Agent", "slate-football-plugin");
-    let details = match http::request::<String>(&request, None) {
-        Ok(response) => {
-            let body = response.body();
-            serde_json::from_slice::<MatchDetails>(&body)
-                .map_err(|error| format!("Unable to parse match details: {}", error))
-        }
-        Err(error) => Err(format!("Unable to fetch match details: {}", error)),
-    };
+    let headers = [
+        ("Accept", "application/json"),
+        ("X-Auth-Token", api_key.as_str()),
+        ("User-Agent", "slate-football-plugin"),
+    ];
+    let details = slate_plugin_http::get_json::<MatchDetails>(&url, &headers)
+        .map_err(|error| format!("Unable to fetch or parse match details: {}", error));
 
     Ok(json!({
         "show_detail": match details {
@@ -610,8 +632,16 @@ mod tests {
 
     #[test]
     fn test_choose_total_standing_prefers_total() {
-        let s1 = Standing { stage: None, table: vec![], r#type: Some("GROUP".to_string()) };
-        let s2 = Standing { stage: None, table: vec![], r#type: Some("TOTAL".to_string()) };
+        let s1 = Standing {
+            stage: None,
+            table: vec![],
+            r#type: Some("GROUP".to_string()),
+        };
+        let s2 = Standing {
+            stage: None,
+            table: vec![],
+            r#type: Some("TOTAL".to_string()),
+        };
         let v = vec![s1, s2];
         let chosen = choose_total_standing(&v).unwrap();
         assert_eq!(chosen.r#type.as_ref().unwrap(), "TOTAL");
@@ -619,7 +649,11 @@ mod tests {
 
     #[test]
     fn test_choose_total_standing_fallback() {
-        let s1 = Standing { stage: None, table: vec![], r#type: None };
+        let s1 = Standing {
+            stage: None,
+            table: vec![],
+            r#type: None,
+        };
         let v = vec![s1];
         let chosen = choose_total_standing(&v).unwrap();
         assert!(chosen.r#type.is_none());
