@@ -3,16 +3,19 @@ use std::path::PathBuf;
 
 pub(crate) struct LogfileWidget {
     file_path: Option<PathBuf>,
+    config_error: Option<String>,
     max_lines: usize,
 }
 
 impl LogfileWidget {
     pub(crate) fn new(config: WidgetConfig) -> Self {
-        let file_path = config
-            .settings
-            .get("filePath")
-            .and_then(|v| v.as_str())
-            .map(expand_path);
+        let raw_path = config.settings.get("filePath").and_then(|v| v.as_str());
+
+        let (file_path, config_error) = match raw_path.map(expand_path) {
+            None => (None, None),
+            Some(Ok(path)) => (Some(path), None),
+            Some(Err(e)) => (None, Some(format!("{e:#}"))),
+        };
 
         let max_lines = config
             .settings
@@ -22,6 +25,7 @@ impl LogfileWidget {
 
         Self {
             file_path,
+            config_error,
             max_lines,
         }
     }
@@ -41,6 +45,14 @@ impl slate_plugin_sdk::Widget for LogfileWidget {
     fn init(&mut self, _config: WidgetConfig) {}
 
     fn refresh(&mut self) -> WidgetContent {
+        if let Some(err) = &self.config_error {
+            return WidgetContent::Text {
+                content: err.clone(),
+                scrollable: false,
+                wrap: true,
+            };
+        }
+
         let Some(path) = &self.file_path else {
             return WidgetContent::Text {
                 content: "No filePath configured".to_string(),
@@ -73,7 +85,9 @@ fn tail_file(path: &PathBuf, max_lines: usize) -> std::io::Result<String> {
 }
 
 /// Expand ~ to home directory and environment variables.
-fn expand_path(path: &str) -> PathBuf {
+///
+/// Returns an error if a referenced environment variable is unset.
+fn expand_path(path: &str) -> anyhow::Result<PathBuf> {
     let expanded = if path.starts_with('~') {
         if let Some(home) = dirs_next_home() {
             path.replacen('~', &home, 1)
@@ -84,24 +98,10 @@ fn expand_path(path: &str) -> PathBuf {
         path.to_string()
     };
 
-    // Expand ${VAR} patterns
-    let mut result = expanded;
-    while let Some(start) = result.find("${") {
-        if let Some(end) = result[start..].find('}') {
-            let var_name = &result[start + 2..start + end];
-            let value = std::env::var(var_name).unwrap_or_default();
-            result = format!(
-                "{}{}{}",
-                &result[..start],
-                value,
-                &result[start + end + 1..]
-            );
-        } else {
-            break;
-        }
-    }
-
-    PathBuf::from(result)
+    // Expand ${VAR} patterns (shared, non-recursive implementation)
+    Ok(PathBuf::from(slate_core::config::interpolate_string(
+        &expanded,
+    )?))
 }
 
 fn dirs_next_home() -> Option<String> {
@@ -170,7 +170,7 @@ mod tests {
 
     #[test]
     fn expand_path_tilde() {
-        let expanded = expand_path("~/logs/app.log");
+        let expanded = expand_path("~/logs/app.log").unwrap();
         let home = dirs_next_home().unwrap_or_default();
         assert!(expanded.to_string_lossy().starts_with(&home));
         assert!(
@@ -182,9 +182,33 @@ mod tests {
     #[test]
     fn expand_path_env_var() {
         std::env::set_var("SLATE_TEST_DIR", "/tmp/logs");
-        let expanded = expand_path("${SLATE_TEST_DIR}/app.log");
+        let expanded = expand_path("${SLATE_TEST_DIR}/app.log").unwrap();
         assert_eq!(expanded, PathBuf::from("/tmp/logs/app.log"));
         std::env::remove_var("SLATE_TEST_DIR");
+    }
+
+    #[test]
+    fn expand_path_unset_env_var_errors() {
+        std::env::remove_var("SLATE_TEST_UNSET_DIR");
+        let err = expand_path("${SLATE_TEST_UNSET_DIR}/app.log").unwrap_err();
+        assert!(format!("{err:#}").contains("SLATE_TEST_UNSET_DIR"));
+    }
+
+    #[test]
+    fn widget_surfaces_config_error_for_unset_env_var() {
+        std::env::remove_var("SLATE_TEST_UNSET_DIR2");
+        let mut settings = HashMap::new();
+        settings.insert(
+            "filePath".to_string(),
+            serde_json::Value::String("${SLATE_TEST_UNSET_DIR2}/app.log".to_string()),
+        );
+        let mut widget = LogfileWidget::new(make_config(settings));
+        match widget.refresh() {
+            WidgetContent::Text { content, .. } => {
+                assert!(content.contains("SLATE_TEST_UNSET_DIR2"));
+            }
+            _ => panic!("Expected Text content"),
+        }
     }
 
     #[test]

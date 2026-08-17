@@ -72,6 +72,12 @@ pub struct WidgetEntry {
     /// All extra keys become widget-specific settings.
     #[serde(flatten)]
     pub settings: HashMap<String, toml::Value>,
+    /// Populated when env interpolation of this widget's settings failed.
+    ///
+    /// Scoped per widget so one misconfigured entry renders an error in its
+    /// own cell rather than preventing the whole dashboard from loading.
+    #[serde(skip)]
+    pub settings_error: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -128,9 +134,13 @@ impl SlateConfig {
     pub fn parse(content: &str) -> Result<Self> {
         let mut config: SlateConfig =
             toml::from_str(content).context("Failed to parse slate.toml")?;
-        // Interpolate environment variables in settings
+        // Interpolate environment variables in settings. Failures are recorded
+        // per widget so a single misconfigured entry renders an error in its own
+        // cell instead of preventing the whole dashboard from loading.
         for widget in &mut config.widget {
-            interpolate_env_vars(&mut widget.settings);
+            if let Err(e) = interpolate_env_vars(&mut widget.settings) {
+                widget.settings_error = Some(format!("{e:#}"));
+            }
         }
         Ok(config)
     }
@@ -155,51 +165,68 @@ fn default_config_dir() -> Result<PathBuf> {
 }
 
 /// Interpolate ${ENV_VAR} patterns in TOML values.
-fn interpolate_env_vars(settings: &mut HashMap<String, toml::Value>) {
-    for value in settings.values_mut() {
-        interpolate_value(value);
+fn interpolate_env_vars(settings: &mut HashMap<String, toml::Value>) -> Result<()> {
+    let mut keys: Vec<String> = settings.keys().cloned().collect();
+    keys.sort();
+    for key in keys {
+        if let Some(value) = settings.get_mut(&key) {
+            interpolate_value(value)
+                .with_context(|| format!("Failed to interpolate setting `{key}`"))?;
+        }
     }
+    Ok(())
 }
 
-fn interpolate_value(value: &mut toml::Value) {
+fn interpolate_value(value: &mut toml::Value) -> Result<()> {
     match value {
         toml::Value::String(s) => {
-            *s = interpolate_string(s);
+            *s = interpolate_string(s)?;
         }
         toml::Value::Array(arr) => {
-            for item in arr {
-                interpolate_value(item);
+            for (idx, item) in arr.iter_mut().enumerate() {
+                interpolate_value(item).with_context(|| format!("in array element {idx}"))?;
             }
         }
         toml::Value::Table(table) => {
-            let keys: Vec<String> = table.keys().cloned().collect();
+            let mut keys: Vec<String> = table.keys().cloned().collect();
+            keys.sort();
             for key in keys {
                 if let Some(v) = table.get_mut(&key) {
-                    interpolate_value(v);
+                    interpolate_value(v).with_context(|| format!("in nested key `{key}`"))?;
                 }
             }
         }
         _ => {}
     }
+    Ok(())
 }
 
-fn interpolate_string(s: &str) -> String {
-    let mut result = s.to_string();
-    while let Some(start) = result.find("${") {
-        if let Some(end) = result[start..].find('}') {
-            let var_name = &result[start + 2..start + end];
-            let replacement = std::env::var(var_name).unwrap_or_default();
-            result = format!(
-                "{}{}{}",
-                &result[..start],
-                replacement,
-                &result[start + end + 1..]
-            );
-        } else {
+/// Expand `${VAR}` patterns using process environment variables.
+///
+/// Returns an error if a referenced variable is unset, so a misconfigured
+/// environment surfaces immediately instead of silently yielding an empty
+/// value. An unclosed `${` is left as-is. Expansion is non-recursive:
+/// substituted values are never rescanned.
+pub fn interpolate_string(s: &str) -> Result<String> {
+    let mut result = String::with_capacity(s.len());
+    let mut rest = s;
+    // Single pass: substituted values are appended to the output and never
+    // rescanned, so a variable whose value contains "${...}" (including a
+    // self-reference) cannot cause infinite expansion.
+    while let Some(start) = rest.find("${") {
+        let Some(end) = rest[start..].find('}') else {
             break;
-        }
+        };
+        let var_name = &rest[start + 2..start + end];
+        let value = std::env::var(var_name).with_context(|| {
+            format!("Environment variable `{var_name}` referenced in config is not set")
+        })?;
+        result.push_str(&rest[..start]);
+        result.push_str(&value);
+        rest = &rest[start + end + 1..];
     }
-    result
+    result.push_str(rest);
+    Ok(result)
 }
 
 #[cfg(test)]
@@ -369,16 +396,101 @@ position = { row = 0, col = 1 }
         std::env::set_var("SLATE_MULTI_TWO", "beta");
 
         assert_eq!(
-            interpolate_string("${SLATE_MULTI_ONE}-${SLATE_MULTI_TWO}-${MISSING}"),
-            "alpha-beta-"
+            interpolate_string("${SLATE_MULTI_ONE}-${SLATE_MULTI_TWO}").unwrap(),
+            "alpha-beta"
         );
         assert_eq!(
-            interpolate_string("prefix ${SLATE_MULTI_ONE"),
+            interpolate_string("prefix ${SLATE_MULTI_ONE").unwrap(),
             "prefix ${SLATE_MULTI_ONE"
         );
 
         std::env::remove_var("SLATE_MULTI_ONE");
         std::env::remove_var("SLATE_MULTI_TWO");
+    }
+
+    #[test]
+    fn test_interpolate_string_errors_on_unset_variable() {
+        std::env::remove_var("SLATE_DEFINITELY_UNSET");
+        let err = interpolate_string("${SLATE_DEFINITELY_UNSET}").unwrap_err();
+        assert!(format!("{err:#}").contains("SLATE_DEFINITELY_UNSET"));
+    }
+
+    #[test]
+    fn test_parse_records_per_widget_error_on_unset_variable() {
+        std::env::remove_var("SLATE_UNSET_IN_CONFIG");
+        let toml = r#"
+[[widget]]
+type = "test"
+position = { row = 0, col = 0 }
+value = "${SLATE_UNSET_IN_CONFIG}"
+
+[[widget]]
+type = "builtin:clock"
+position = { row = 0, col = 1 }
+"#;
+        // Parsing succeeds so the rest of the dashboard still loads.
+        let config = SlateConfig::parse(toml).unwrap();
+        let err = config.widget[0].settings_error.as_ref().unwrap();
+        assert!(err.contains("SLATE_UNSET_IN_CONFIG"), "{err}");
+        assert!(err.contains("value"), "{err}");
+        // The healthy widget is unaffected.
+        assert!(config.widget[1].settings_error.is_none());
+    }
+
+    #[test]
+    fn test_parse_records_error_for_nested_settings() {
+        std::env::remove_var("SLATE_UNSET_NESTED");
+        let toml = r#"
+[[widget]]
+type = "test"
+position = { row = 0, col = 0 }
+list = ["${SLATE_UNSET_NESTED}"]
+"#;
+        let config = SlateConfig::parse(toml).unwrap();
+        assert!(config.widget[0]
+            .settings_error
+            .as_ref()
+            .unwrap()
+            .contains("SLATE_UNSET_NESTED"));
+
+        let nested = r#"
+[[widget]]
+type = "test"
+position = { row = 0, col = 0 }
+opts = { inner = "${SLATE_UNSET_NESTED}" }
+"#;
+        let config = SlateConfig::parse(nested).unwrap();
+        assert!(config.widget[0]
+            .settings_error
+            .as_ref()
+            .unwrap()
+            .contains("SLATE_UNSET_NESTED"));
+    }
+
+    #[test]
+    fn test_interpolate_string_does_not_expand_substituted_values() {
+        std::env::set_var("SLATE_SELF_REF", "${SLATE_SELF_REF}");
+        std::env::set_var("SLATE_NESTED", "${SLATE_PLAIN}");
+        std::env::set_var("SLATE_PLAIN", "plain");
+
+        // A self-referential value must terminate, not loop forever.
+        assert_eq!(
+            interpolate_string("${SLATE_SELF_REF}").unwrap(),
+            "${SLATE_SELF_REF}"
+        );
+        // Substituted values are not rescanned for further expansion.
+        assert_eq!(
+            interpolate_string("${SLATE_NESTED}").unwrap(),
+            "${SLATE_PLAIN}"
+        );
+        assert_eq!(
+            interpolate_string("a${SLATE_SELF_REF}b${SLATE_PLAIN}").unwrap(),
+            "a${SLATE_SELF_REF}bplain"
+        );
+
+        std::env::remove_var("SLATE_NESTED");
+        std::env::remove_var("SLATE_PLAIN");
+        std::env::remove_var("SLATE_SELF_REF");
     }
 
     #[test]

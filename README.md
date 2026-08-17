@@ -94,6 +94,11 @@ location = "San Francisco"
 
 Environment variables are interpolated with `${VAR_NAME}` syntax.
 
+If a referenced variable is not set, that widget reports a configuration error
+in its own cell (and in `slate check`) instead of silently receiving an empty
+value. Other widgets continue to load normally. Interpolation is non-recursive:
+a substituted value containing `${...}` is not expanded again.
+
 ## Plugins
 
 ### Available Plugins

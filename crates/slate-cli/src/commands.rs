@@ -68,6 +68,10 @@ fn try_load_widget(
     entry: &slate_core::config::WidgetEntry,
     widget_config: WidgetConfig,
 ) -> Result<Box<dyn slate_plugin_sdk::Widget>> {
+    if let Some(err) = &entry.settings_error {
+        anyhow::bail!("{err}");
+    }
+
     if entry.widget_type.starts_with("builtin:") {
         let name = entry.widget_type.trim_start_matches("builtin:");
         builtins::create_builtin(name, widget_config)
@@ -756,6 +760,12 @@ pub async fn check(config_path: Option<&str>) -> Result<()> {
             entry.position.row, entry.position.col, entry.widget_type
         );
 
+        if let Some(err) = &entry.settings_error {
+            println!("  {:2}. {} ✗ {}", i + 1, label, err);
+            errors += 1;
+            continue;
+        }
+
         if entry.widget_type.starts_with("builtin:") {
             let name = entry.widget_type.trim_start_matches("builtin:");
             if builtins::is_builtin(name) {
@@ -1190,6 +1200,7 @@ mod tests {
                 ("title".to_string(), toml::Value::String("Now".to_string())),
                 ("limit".to_string(), toml::Value::Integer(5)),
             ]),
+            settings_error: None,
         };
 
         let config = build_widget_config(&entry);
@@ -1271,6 +1282,7 @@ mod tests {
             },
             refresh_interval: None,
             settings: std::collections::HashMap::new(),
+            settings_error: None,
         };
         assert!(border_color_for(&entry).is_none());
 
@@ -1310,6 +1322,34 @@ mod tests {
         assert_eq!(plugin_display_name("a/b/c"), "c");
     }
 
+    #[test]
+    fn load_widget_or_error_reports_settings_interpolation_failure() {
+        let entry = WidgetEntry {
+            widget_type: "builtin:clock".to_string(),
+            position: Position {
+                row: 0,
+                col: 0,
+                row_span: 1,
+                col_span: 1,
+            },
+            refresh_interval: None,
+            settings: Default::default(),
+            settings_error: Some(
+                "Environment variable `SLATE_MISSING_TOKEN` referenced in config is not set"
+                    .to_string(),
+            ),
+        };
+
+        let mut widget = load_widget_or_error(&entry, widget_config());
+
+        match widget.refresh() {
+            WidgetContent::Text { content, .. } => {
+                assert!(content.contains("SLATE_MISSING_TOKEN"), "{content}");
+            }
+            other => panic!("Expected Text content, got {other:?}"),
+        }
+    }
+
     fn widget_config() -> WidgetConfig {
         WidgetConfig {
             position: Position {
@@ -1347,6 +1387,7 @@ mod tests {
                 col_span: 1,
             },
             settings: Default::default(),
+            settings_error: None,
             refresh_interval: None,
         };
 
@@ -1887,6 +1928,7 @@ position = {{ row = 0, col = 0 }}
             },
             refresh_interval: None,
             settings: Default::default(),
+            settings_error: None,
         };
 
         let mut widget = load_widget_or_error(&entry, widget_config());
@@ -1915,6 +1957,7 @@ position = {{ row = 0, col = 0 }}
             },
             refresh_interval: None,
             settings: Default::default(),
+            settings_error: None,
         };
 
         let mut widget = load_widget_or_error(&entry, widget_config());
@@ -1955,6 +1998,7 @@ end
             },
             refresh_interval: None,
             settings: Default::default(),
+            settings_error: None,
         };
 
         let mut widget = try_load_widget(&entry, widget_config()).unwrap();
@@ -2000,6 +2044,7 @@ position = {{ row = 0, col = 0 }}
             },
             refresh_interval: None,
             settings: Default::default(),
+            settings_error: None,
         };
 
         let error = match try_load_widget(&entry, widget_config()) {
@@ -2041,6 +2086,7 @@ position = {{ row = 0, col = 0 }}
             },
             refresh_interval: None,
             settings: Default::default(),
+            settings_error: None,
         };
 
         let error = match try_load_widget(&entry, widget_config()) {
@@ -2066,6 +2112,7 @@ position = {{ row = 0, col = 0 }}
             },
             refresh_interval: None,
             settings: Default::default(),
+            settings_error: None,
         };
 
         let error = match try_load_widget(&entry, widget_config()) {
@@ -2100,6 +2147,7 @@ position = {{ row = 0, col = 0 }}
             },
             refresh_interval: None,
             settings: Default::default(),
+            settings_error: None,
         };
 
         let mut widget = try_load_widget(&entry, widget_config()).unwrap();
@@ -2141,6 +2189,7 @@ position = {{ row = 0, col = 0 }}
             },
             refresh_interval: None,
             settings: Default::default(),
+            settings_error: None,
         };
 
         let mut widget = try_load_widget(&entry, widget_config()).unwrap();
@@ -2572,6 +2621,7 @@ position = {{ row = 0, col = 1 }}
                     toml::Value::String(log_path.display().to_string()),
                 ),
             ]),
+            settings_error: None,
         }];
 
         let dashboard = build_dashboard(config);
