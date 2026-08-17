@@ -1172,7 +1172,6 @@ mod tests {
     }
 
     #[test]
-    #[test]
     fn border_color_for_reads_valid_colors_and_ignores_others() {
         let mut entry = WidgetEntry {
             widget_type: "builtin:clock".to_string(),
