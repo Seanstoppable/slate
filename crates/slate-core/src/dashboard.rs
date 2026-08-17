@@ -31,7 +31,7 @@ pub struct WidgetInstance {
     pub col_span: u16,
     pub last_refresh: Instant,
     pub refresh_interval: Duration,
-    /// Selected index for list widgets
+    /// Selected index for selectable list/table widgets
     pub selected: Option<usize>,
     /// Detail view content (replaces normal rendering, suppresses refresh)
     pub detail_content: Option<String>,
@@ -55,7 +55,7 @@ impl WidgetInstance {
 
         if let Some(focus) = focus {
             let is_focused = self.row == focus.row && self.col == focus.col;
-            if is_focused && self.content.is_selectable_list() {
+            if is_focused && self.content.is_selectable() {
                 return false;
             }
         }
@@ -92,7 +92,7 @@ impl Dashboard {
         let metadata = widget.metadata();
         let interval = refresh_interval.unwrap_or(self.config.global.refresh_interval);
         let content = refresh_widget_content(widget.as_mut());
-        let selected = if content.is_selectable_list() {
+        let selected = if content.is_selectable() {
             Some(0)
         } else {
             None
@@ -119,7 +119,7 @@ impl Dashboard {
             if instance.should_refresh_with_optional_focus(now, focus) {
                 instance.content = refresh_widget_content(instance.widget.as_mut());
                 instance.last_refresh = now;
-                if instance.content.is_selectable_list() && instance.selected.is_none() {
+                if instance.content.is_selectable() && instance.selected.is_none() {
                     instance.selected = Some(0);
                 }
             }
@@ -192,7 +192,13 @@ mod tests {
 
     struct CountingWidget {
         count: u32,
-        list: bool,
+        mode: CountingWidgetMode,
+    }
+
+    enum CountingWidgetMode {
+        Text,
+        List,
+        Table,
     }
 
     struct ReservedKeyWidget;
@@ -212,18 +218,25 @@ mod tests {
 
         fn refresh(&mut self) -> WidgetContent {
             self.count += 1;
-            if self.list {
-                WidgetContent::List {
+            match self.mode {
+                CountingWidgetMode::List => WidgetContent::List {
                     items: vec![],
                     selectable: true,
                     actions: vec![],
-                }
-            } else {
-                WidgetContent::Text {
+                },
+                CountingWidgetMode::Table => WidgetContent::Table {
+                    headers: vec!["Name".to_string()],
+                    rows: vec![vec![slate_plugin_sdk::Cell::plain(format!(
+                        "Refresh #{}",
+                        self.count
+                    ))]],
+                    selectable: true,
+                },
+                CountingWidgetMode::Text => WidgetContent::Text {
                     content: format!("Refresh #{}", self.count),
                     scrollable: false,
                     wrap: true,
-                }
+                },
             }
         }
     }
@@ -265,7 +278,7 @@ mod tests {
         dashboard.add_widget(
             Box::new(CountingWidget {
                 count: 0,
-                list: false,
+                mode: CountingWidgetMode::Text,
             }),
             0,
             0,
@@ -290,7 +303,7 @@ mod tests {
         dashboard.add_widget(
             Box::new(CountingWidget {
                 count: 0,
-                list: true,
+                mode: CountingWidgetMode::List,
             }),
             0,
             0,
@@ -308,6 +321,30 @@ mod tests {
     }
 
     #[test]
+    fn refresh_due_skips_focused_selectable_tables() {
+        let mut dashboard = Dashboard::new(config());
+        dashboard.add_widget(
+            Box::new(CountingWidget {
+                count: 0,
+                mode: CountingWidgetMode::Table,
+            }),
+            0,
+            0,
+            1,
+            1,
+            Some(1),
+            None,
+        );
+        dashboard.widgets[0].last_refresh = Instant::now() - Duration::from_secs(2);
+        let previous_refresh = dashboard.widgets[0].last_refresh;
+
+        dashboard.refresh_due(Some(&FocusPosition::new(0, 0)));
+
+        assert_eq!(dashboard.widgets[0].last_refresh, previous_refresh);
+        assert_eq!(dashboard.widgets[0].selected, Some(0));
+    }
+
+    #[test]
     fn snapshot_includes_layout_and_widget_positions() {
         let mut dashboard = Dashboard::new(config());
         dashboard.config.layout.rows = 3;
@@ -315,7 +352,7 @@ mod tests {
         dashboard.add_widget(
             Box::new(CountingWidget {
                 count: 0,
-                list: false,
+                mode: CountingWidgetMode::Text,
             }),
             1,
             2,

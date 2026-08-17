@@ -14,7 +14,8 @@ pub trait Widget: Send {
     /// Handle a key press while the widget has focus.
     fn on_key(&mut self, _key: &str, _action: &str) {}
 
-    /// Handle an action triggered on a specific item (e.g., list item action).
+    /// Handle an action triggered on a specific item (e.g., a list item or
+    /// selectable table row).
     /// Returns an optional action for the host to execute.
     fn on_action(&mut self, _action_id: &str, _item_id: &str) -> Option<WidgetAction> {
         None

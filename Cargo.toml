@@ -13,6 +13,7 @@ exclude = [
     "plugins/digitalclock",
     "plugins/disk-usage",
     "plugins/docker",
+    "plugins/football",
     "plugins/ipinfo",
     "plugins/hackernews",
     "plugins/git-recent",

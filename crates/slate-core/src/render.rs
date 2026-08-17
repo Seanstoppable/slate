@@ -4,7 +4,8 @@ use ratatui::{
     style::{Color as RatColor, Modifier, Style},
     text::{Line, Span},
     widgets::{
-        Block, BorderType, Borders, Clear, List, ListItem, ListState, Paragraph, Row, Table, Wrap,
+        Block, BorderType, Borders, Clear, List, ListItem, ListState, Paragraph, Row, Table,
+        TableState, Wrap,
     },
     Frame, Terminal,
 };
@@ -183,7 +184,11 @@ pub fn render_widget(
             };
             frame.render_widget(paragraph, inner);
         }
-        WidgetContent::Table { headers, rows, .. } => {
+        WidgetContent::Table {
+            headers,
+            rows,
+            selectable,
+        } => {
             let header_cells: Vec<Span> = headers
                 .iter()
                 .map(|h| {
@@ -218,8 +223,20 @@ pub fn render_widget(
             let table = Table::new(table_rows, widths)
                 .header(header)
                 .column_spacing(2)
+                .row_highlight_style(
+                    Style::default()
+                        .fg(SLATE_TEXT)
+                        .bg(SLATE_SELECTION_BG)
+                        .add_modifier(Modifier::BOLD),
+                )
                 .style(Style::default().bg(SLATE_SURFACE).fg(SLATE_TEXT));
-            frame.render_widget(table, inner);
+
+            if *selectable && selected.is_some() {
+                let mut state = TableState::default().with_selected(selected);
+                frame.render_stateful_widget(table, inner, &mut state);
+            } else {
+                frame.render_widget(table, inner);
+            }
         }
         WidgetContent::KeyValue { pairs } => {
             let lines: Vec<Line> = pairs
@@ -803,6 +820,26 @@ mod tests {
         assert!(chart.contains("CPU"));
         assert!(chart.contains("Mem"));
         assert!(chart.contains("█"));
+    }
+
+    #[test]
+    fn render_widget_keeps_selected_table_row_visible() {
+        let rendered = render_to_string(
+            &WidgetContent::Table {
+                headers: vec!["Name".to_string()],
+                rows: (0..8)
+                    .map(|index| vec![Cell::plain(format!("Row {index}"))])
+                    .collect(),
+                selectable: true,
+            },
+            false,
+            Some(6),
+            30,
+            6,
+        );
+
+        assert!(rendered.contains("Row 6"), "got: {rendered}");
+        assert!(!rendered.contains("Row 0"), "got: {rendered}");
     }
 
     #[test]

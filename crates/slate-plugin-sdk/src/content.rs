@@ -129,6 +129,37 @@ pub enum ChartType {
 }
 
 impl WidgetContent {
+    /// Returns true if this content supports row/item selection.
+    pub fn is_selectable(&self) -> bool {
+        matches!(
+            self,
+            WidgetContent::Table {
+                selectable: true,
+                ..
+            } | WidgetContent::List {
+                selectable: true,
+                ..
+            }
+        )
+    }
+
+    /// Returns the number of selectable rows/items, or 0 if not selectable content.
+    pub fn selectable_len(&self) -> usize {
+        match self {
+            WidgetContent::Table {
+                rows,
+                selectable: true,
+                ..
+            } => rows.len(),
+            WidgetContent::List {
+                items,
+                selectable: true,
+                ..
+            } => items.len(),
+            _ => 0,
+        }
+    }
+
     /// Returns true if this is a selectable list.
     pub fn is_selectable_list(&self) -> bool {
         matches!(
@@ -225,6 +256,58 @@ mod tests {
     }
 
     #[test]
+    fn selectable_content_detects_tables_and_lists() {
+        let variants = vec![
+            WidgetContent::Text {
+                content: "text".to_string(),
+                scrollable: false,
+                wrap: true,
+            },
+            WidgetContent::Table {
+                headers: vec!["name".to_string()],
+                rows: vec![vec![Cell::plain("value")]],
+                selectable: false,
+            },
+            WidgetContent::KeyValue {
+                pairs: vec![("status".to_string(), Cell::plain("ok"))],
+            },
+            WidgetContent::List {
+                items: vec![sample_list_item()],
+                selectable: false,
+                actions: vec![],
+            },
+            WidgetContent::Chart {
+                data: vec![DataPoint {
+                    label: "Jan".to_string(),
+                    value: 42.0,
+                }],
+                chart_type: ChartType::Bar,
+            },
+            WidgetContent::Empty {
+                message: "Nothing here".to_string(),
+            },
+        ];
+
+        for variant in variants {
+            assert!(!variant.is_selectable());
+        }
+
+        let selectable_table = WidgetContent::Table {
+            headers: vec!["name".to_string()],
+            rows: vec![vec![Cell::plain("value")]],
+            selectable: true,
+        };
+        let selectable_list = WidgetContent::List {
+            items: vec![sample_list_item()],
+            selectable: true,
+            actions: vec![],
+        };
+
+        assert!(selectable_table.is_selectable());
+        assert!(selectable_list.is_selectable());
+    }
+
+    #[test]
     fn list_len_returns_item_count_only_for_lists() {
         let list = WidgetContent::List {
             items: vec![sample_list_item(), sample_list_item()],
@@ -262,6 +345,36 @@ mod tests {
         for content in non_lists {
             assert_eq!(content.list_len(), 0);
         }
+    }
+
+    #[test]
+    fn selectable_len_returns_row_or_item_count() {
+        let table = WidgetContent::Table {
+            headers: vec!["name".to_string()],
+            rows: vec![
+                vec![Cell::plain("value-1")],
+                vec![Cell::plain("value-2")],
+                vec![Cell::plain("value-3")],
+            ],
+            selectable: true,
+        };
+        let list = WidgetContent::List {
+            items: vec![sample_list_item(), sample_list_item()],
+            selectable: true,
+            actions: vec![],
+        };
+
+        assert_eq!(table.selectable_len(), 3);
+        assert_eq!(list.selectable_len(), 2);
+        assert_eq!(
+            WidgetContent::Text {
+                content: "text".to_string(),
+                scrollable: false,
+                wrap: true,
+            }
+            .selectable_len(),
+            0
+        );
     }
 
     #[test]
