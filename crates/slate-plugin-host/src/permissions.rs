@@ -1,4 +1,40 @@
-use slate_plugin_sdk::Permissions;
+use slate_plugin_sdk::{Permissions, WidgetConfig};
+use url::Url;
+
+/// Resolve user-configured HTTP(S) destinations into a concrete host allowlist.
+pub fn resolve_network_permissions(
+    mut permissions: Permissions,
+    widget_config: &WidgetConfig,
+) -> Permissions {
+    let mut hosts = permissions
+        .network
+        .into_iter()
+        .collect::<std::collections::BTreeSet<_>>();
+
+    for setting in &permissions.network_from_config {
+        let urls = match widget_config.settings.get(setting) {
+            Some(serde_json::Value::String(url)) => vec![url.as_str()],
+            Some(serde_json::Value::Array(urls)) => {
+                urls.iter().filter_map(serde_json::Value::as_str).collect()
+            }
+            Some(_) | None => Vec::new(),
+        };
+
+        for url in urls {
+            if let Ok(url) = Url::parse(url.trim()) {
+                if matches!(url.scheme(), "http" | "https") {
+                    if let Some(host) = url.host_str() {
+                        hosts.insert(host.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    permissions.network = hosts.into_iter().collect();
+    permissions.network_from_config.clear();
+    permissions
+}
 
 /// Guards capability access based on declared permissions.
 #[derive(Debug, Clone)]
@@ -121,6 +157,58 @@ pub enum PermissionError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use slate_plugin_sdk::Position;
+
+    fn widget_config(
+        settings: std::collections::HashMap<String, serde_json::Value>,
+    ) -> WidgetConfig {
+        WidgetConfig {
+            position: Position {
+                row: 0,
+                col: 0,
+                row_span: 1,
+                col_span: 1,
+            },
+            settings,
+            refresh_interval: None,
+        }
+    }
+
+    #[test]
+    fn resolves_network_hosts_from_declared_config_fields() {
+        let permissions = resolve_network_permissions(
+            Permissions {
+                network: vec!["api.example.test".to_string()],
+                network_from_config: vec!["api_url".to_string(), "urls".to_string()],
+                ..Default::default()
+            },
+            &widget_config(std::collections::HashMap::from([
+                (
+                    "api_url".to_string(),
+                    serde_json::json!("https://pihole.example.test/admin/api.php"),
+                ),
+                (
+                    "urls".to_string(),
+                    serde_json::json!([
+                        "https://status.example.test",
+                        "http://status.example.test/health",
+                        "ftp://ignored.example.test",
+                        "not a URL"
+                    ]),
+                ),
+            ])),
+        );
+
+        assert_eq!(
+            permissions.network,
+            vec![
+                "api.example.test".to_string(),
+                "pihole.example.test".to_string(),
+                "status.example.test".to_string(),
+            ]
+        );
+        assert!(permissions.network_from_config.is_empty());
+    }
 
     #[test]
     fn test_network_permission() {

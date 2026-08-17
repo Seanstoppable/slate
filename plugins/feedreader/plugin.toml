@@ -6,5 +6,8 @@ version = "0.1.0"
 author = "Slate Community"
 language = "rust"
 
+[permissions]
+network_from_config = ["feeds"]
+
 [config]
-feeds = { type = "array", required = true, description = "List of RSS or Atom feed URLs to aggregate" }
+feeds = { type = "array", required = true, description = "List of RSS or Atom feed URLs to aggregate; their hosts are the only network destinations" }

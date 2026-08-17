@@ -105,13 +105,14 @@ Available to WASM plugins:
 ```toml
 [permissions]
 network = ["api.github.com"]
+network_from_config = ["endpoint"] # URL string or array of URL strings
 exec = ["docker"]
 storage = true
 secrets = ["token"] # documents expected secret-backed config values
 ```
 
 Wildcard network permissions (`network = ["*"]`) are rejected. For user-configured
-destinations, derive the network allowlist from the configured URLs instead.
+destinations, declare the relevant URL-valued config fields with `network_from_config`.
 
 ## Creating a Lua Plugin
 

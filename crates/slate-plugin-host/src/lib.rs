@@ -9,5 +9,5 @@ pub mod permissions;
 pub mod wasm_host;
 
 pub use lua_host::LuaPlugin;
-pub use permissions::PermissionGuard;
+pub use permissions::{resolve_network_permissions, PermissionGuard};
 pub use wasm_host::{parse_widget_content, WasmPlugin};
