@@ -4,6 +4,7 @@ members = [
     "crates/slate-plugin-host",
     "crates/slate-plugin-sdk",
     "crates/slate-plugin-manager",
+    "crates/slate-plugin-exec",
     "crates/slate-cli",
 ]
 exclude = [

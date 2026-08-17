@@ -4,6 +4,8 @@ use extism_pdk::*;
 use serde::Deserialize;
 #[cfg(target_arch = "wasm32")]
 use serde_json::json;
+#[cfg(target_arch = "wasm32")]
+use slate_plugin_exec::run_exec;
 
 pub struct CommitItem {
     pub hash: String,
@@ -62,17 +64,6 @@ pub fn commits_to_list_json(items: &[CommitItem], path: &str) -> serde_json::Val
             {"id": "detail", "label": "Show details", "key": "d", "confirm": false}
         ]
     })
-}
-
-#[cfg(target_arch = "wasm32")]
-#[derive(Deserialize)]
-struct ExecResult {
-    #[serde(default)]
-    stdout: String,
-    #[serde(default)]
-    stderr: String,
-    #[serde(default)]
-    exit_code: i32,
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -195,19 +186,6 @@ pub fn on_action(input: String) -> FnResult<String> {
     }
 
     Ok(String::new())
-}
-
-#[cfg(target_arch = "wasm32")]
-#[host_fn]
-extern "ExtismHost" {
-    fn exec_command(input: String) -> String;
-}
-
-#[cfg(target_arch = "wasm32")]
-fn run_exec(cmd: &str, args: &[&str]) -> Result<ExecResult, Error> {
-    let request = json!({"cmd": cmd, "args": args}).to_string();
-    let output = unsafe { exec_command(request)? };
-    serde_json::from_str(&output).map_err(|e| Error::msg(e.to_string()))
 }
 
 #[cfg(test)]

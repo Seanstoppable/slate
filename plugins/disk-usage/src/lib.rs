@@ -1,9 +1,9 @@
 #[cfg(target_arch = "wasm32")]
 use extism_pdk::*;
 #[cfg(target_arch = "wasm32")]
-use serde::Deserialize;
-#[cfg(target_arch = "wasm32")]
 use serde_json::json;
+#[cfg(target_arch = "wasm32")]
+use slate_plugin_exec::run_exec;
 
 pub struct DiskEntry {
     pub label: String,
@@ -115,17 +115,6 @@ pub fn entries_to_key_value_json(entries: &[DiskEntry]) -> serde_json::Value {
 }
 
 #[cfg(target_arch = "wasm32")]
-#[derive(Deserialize)]
-struct ExecResult {
-    #[serde(default)]
-    stdout: String,
-    #[serde(default)]
-    stderr: String,
-    #[serde(default)]
-    exit_code: i32,
-}
-
-#[cfg(target_arch = "wasm32")]
 #[plugin_fn]
 pub fn metadata(_input: String) -> FnResult<String> {
     let meta = json!({
@@ -197,19 +186,6 @@ pub fn on_key(_input: String) -> FnResult<String> {
 #[plugin_fn]
 pub fn on_action(_input: String) -> FnResult<String> {
     Ok(String::new())
-}
-
-#[cfg(target_arch = "wasm32")]
-#[host_fn]
-extern "ExtismHost" {
-    fn exec_command(input: String) -> String;
-}
-
-#[cfg(target_arch = "wasm32")]
-fn run_exec(cmd: &str, args: &[&str]) -> Result<ExecResult, Error> {
-    let request = json!({"cmd": cmd, "args": args}).to_string();
-    let output = unsafe { exec_command(request)? };
-    serde_json::from_str(&output).map_err(|e| Error::msg(e.to_string()))
 }
 
 #[cfg(test)]
