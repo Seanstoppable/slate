@@ -60,6 +60,10 @@ struct NotificationSubject {
     subject_type: String,
 }
 
+fn auth_header(token: &str) -> String {
+    format!("Bearer {}", token)
+}
+
 #[cfg(target_arch = "wasm32")]
 #[plugin_fn]
 pub fn metadata(_input: String) -> FnResult<String> {
@@ -76,8 +80,14 @@ pub fn metadata(_input: String) -> FnResult<String> {
 #[plugin_fn]
 pub fn refresh(_input: String) -> FnResult<String> {
     let token = config::get("token").ok().flatten().unwrap_or_default();
-    let repos_json = config::get("repos").ok().flatten().unwrap_or_else(|| "[]".to_string());
-    let view = config::get("view").ok().flatten().unwrap_or_else(|| "prs".to_string());
+    let repos_json = config::get("repos")
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| "[]".to_string());
+    let view = config::get("view")
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| "prs".to_string());
 
     if token.is_empty() {
         return Ok(json!({
@@ -95,7 +105,8 @@ pub fn refresh(_input: String) -> FnResult<String> {
             "content": "⚠️  No repos configured.\nAdd 'repos = [\"owner/repo\"]' to widget config.",
             "scrollable": false,
             "wrap": true
-        }).to_string());
+        })
+        .to_string());
     }
 
     match view.as_str() {
@@ -111,9 +122,12 @@ fn fetch_pull_requests(token: &str, repos: &[String]) -> FnResult<String> {
     let mut items = Vec::new();
 
     for repo in repos {
-        let url = format!("https://api.github.com/repos/{}/pulls?state=open&per_page=10", repo);
+        let url = format!(
+            "https://api.github.com/repos/{}/pulls?state=open&per_page=10",
+            repo
+        );
         let req = HttpRequest::new(&url)
-            .with_header("Authorization", &format!("Bearer {}", token))
+            .with_header("Authorization", &auth_header(token))
             .with_header("Accept", "application/vnd.github.v3+json")
             .with_header("User-Agent", "slate-github-plugin");
 
@@ -153,9 +167,12 @@ fn fetch_issues(token: &str, repos: &[String]) -> FnResult<String> {
     let mut items = Vec::new();
 
     for repo in repos {
-        let url = format!("https://api.github.com/repos/{}/issues?state=open&per_page=10", repo);
+        let url = format!(
+            "https://api.github.com/repos/{}/issues?state=open&per_page=10",
+            repo
+        );
         let req = HttpRequest::new(&url)
-            .with_header("Authorization", &format!("Bearer {}", token))
+            .with_header("Authorization", &auth_header(token))
             .with_header("Accept", "application/vnd.github.v3+json")
             .with_header("User-Agent", "slate-github-plugin");
 
@@ -164,7 +181,9 @@ fn fetch_issues(token: &str, repos: &[String]) -> FnResult<String> {
             let body_str = std::str::from_utf8(&body).unwrap_or("[]");
             if let Ok(issues) = serde_json::from_str::<Vec<Issue>>(body_str) {
                 for issue in issues {
-                    let labels: String = issue.labels.iter()
+                    let labels: String = issue
+                        .labels
+                        .iter()
                         .map(|l| format!("[{}]", l.name))
                         .collect::<Vec<_>>()
                         .join(" ");
@@ -196,7 +215,7 @@ fn fetch_issues(token: &str, repos: &[String]) -> FnResult<String> {
 fn fetch_notifications(token: &str) -> FnResult<String> {
     let url = "https://api.github.com/notifications?per_page=15";
     let req = HttpRequest::new(url)
-        .with_header("Authorization", &format!("Bearer {}", token))
+        .with_header("Authorization", &auth_header(token))
         .with_header("Accept", "application/vnd.github.v3+json")
         .with_header("User-Agent", "slate-github-plugin");
 
@@ -204,7 +223,9 @@ fn fetch_notifications(token: &str) -> FnResult<String> {
 
     if let Ok(response) = http::request::<String>(&req, None) {
         let body = response.body();
-        if let Ok(notifications) = serde_json::from_str::<Vec<Notification>>(std::str::from_utf8(&body).unwrap_or("[]")) {
+        if let Ok(notifications) =
+            serde_json::from_str::<Vec<Notification>>(std::str::from_utf8(&body).unwrap_or("[]"))
+        {
             for notif in notifications {
                 let icon = match notif.subject.subject_type.as_str() {
                     "PullRequest" => "🔀",
@@ -283,7 +304,9 @@ pub fn on_action(input: String) -> FnResult<String> {
             "approve" | "merge" | "close" | "mark_read" => {
                 // These would call GitHub API mutations via host functions
                 // For PoC, just acknowledge
-                return Ok(json!({"status": "acknowledged", "action": action.action_id}).to_string());
+                return Ok(
+                    json!({"status": "acknowledged", "action": action.action_id}).to_string(),
+                );
             }
             _ => {}
         }
@@ -299,6 +322,18 @@ fn build_pr_url(item_id: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_auth_header_uses_bearer_scheme() {
+        let header = auth_header("ghp_example");
+        assert_eq!(header, "Bearer ghp_example");
+        assert!(header.ends_with("ghp_example"));
+    }
+
+    #[test]
+    fn test_auth_header_empty_token() {
+        assert_eq!(auth_header(""), "Bearer ");
+    }
 
     #[test]
     fn test_build_pr_url_valid() {
@@ -352,7 +387,9 @@ mod tests {
         let pr = PullRequest {
             number: 123,
             title: "Fix bug".to_string(),
-            user: User { login: "dev".to_string() },
+            user: User {
+                login: "dev".to_string(),
+            },
             state: "open".to_string(),
             draft: false,
             html_url: String::new(),
@@ -370,10 +407,15 @@ mod tests {
     #[test]
     fn test_issue_label_formatting() {
         let labels = vec![
-            Label { name: "bug".to_string() },
-            Label { name: "urgent".to_string() },
+            Label {
+                name: "bug".to_string(),
+            },
+            Label {
+                name: "urgent".to_string(),
+            },
         ];
-        let formatted: String = labels.iter()
+        let formatted: String = labels
+            .iter()
             .map(|l| format!("[{}]", l.name))
             .collect::<Vec<_>>()
             .join(" ");
