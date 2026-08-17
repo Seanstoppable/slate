@@ -234,6 +234,8 @@ secrets = ["token"]               # Documents expected secret-backed config valu
 ```
 
 WASM enforces sandboxing architecturally — plugins cannot bypass permissions.
+Wildcard network permissions (`network = ["*"]`) are rejected. Plugins with user-configured
+destinations must derive their host allowlist from the configured URLs.
 Lua scripts do not use this permission model and should be treated as trusted local code.
 
 ## Keyboard Navigation

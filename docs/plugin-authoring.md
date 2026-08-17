@@ -110,6 +110,9 @@ storage = true
 secrets = ["token"] # documents expected secret-backed config values
 ```
 
+Wildcard network permissions (`network = ["*"]`) are rejected. For user-configured
+destinations, derive the network allowlist from the configured URLs instead.
+
 ## Creating a Lua Plugin
 
 Create a `.lua` file with globals and a `refresh()` function:

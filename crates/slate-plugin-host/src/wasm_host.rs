@@ -333,6 +333,7 @@ fn make_get_config_function(host_state: UserData<HostState>) -> Function {
 impl WasmPlugin {
     /// Load a WASM plugin from a file path.
     pub fn from_file(path: &Path, permissions: Permissions) -> Result<Self> {
+        PermissionGuard::validate(&permissions)?;
         let wasm_bytes = std::fs::read(path)
             .with_context(|| format!("Failed to read WASM file: {}", path.display()))?;
 
@@ -391,6 +392,7 @@ impl WasmPlugin {
         metadata: WidgetMetadata,
         permissions: Permissions,
     ) -> Result<Self> {
+        PermissionGuard::validate(&permissions)?;
         let wasm = Wasm::data(bytes);
         let mut manifest = Manifest::new([wasm])
             .with_allowed_hosts(permissions.network.clone().into_iter())
@@ -1655,6 +1657,29 @@ mod tests {
             WidgetContent::Text { content, .. } => assert!(content.contains("[bytes] Error:")),
             other => panic!("expected text content, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn wasm_plugin_rejects_wildcard_network_permissions() {
+        let result = WasmPlugin::from_bytes(
+            Vec::new(),
+            WidgetMetadata {
+                name: "wildcard".to_string(),
+                description: String::new(),
+                version: "0.1.0".to_string(),
+                author: None,
+                homepage: None,
+            },
+            Permissions {
+                network: vec!["*".to_string()],
+                ..Default::default()
+            },
+        );
+
+        assert!(matches!(
+            result,
+            Err(err) if err.to_string().contains("wildcard network permissions")
+        ));
     }
 
     #[test]

@@ -145,7 +145,7 @@ struct PluginManifestPlugin {
     os: Vec<String>,
 }
 
-/// Grant feedreader access only to the hosts selected by the user.
+/// Grant dynamic-destination plugins access only to the hosts selected by the user.
 fn effective_plugin_permissions(
     manifest: Option<&PluginManifest>,
     widget_config: &WidgetConfig,
@@ -154,28 +154,45 @@ fn effective_plugin_permissions(
         .map(|manifest| manifest.permissions.clone())
         .unwrap_or_default();
 
-    if manifest.is_some_and(|manifest| manifest.plugin.name == "feedreader")
-        && (permissions.network.is_empty()
-            || (permissions.network.len() == 1 && permissions.network[0] == "*"))
-    {
-        permissions.network = feedreader_hosts(widget_config);
+    let Some(manifest) = manifest else {
+        return permissions;
+    };
+
+    match manifest.plugin.name.to_ascii_lowercase().as_str() {
+        "feedreader" => permissions.network = configured_url_hosts(widget_config, "feeds", None),
+        "pi-hole" | "pihole" => {
+            permissions.network = configured_url_hosts(
+                widget_config,
+                "apiUrl",
+                Some("http://pi.hole/admin/api.php"),
+            )
+        }
+        "url check" | "urlcheck" => {
+            permissions.network = configured_url_hosts(widget_config, "urls", None)
+        }
+        _ => {}
     }
 
     permissions
 }
 
-fn feedreader_hosts(widget_config: &WidgetConfig) -> Vec<String> {
+fn configured_url_hosts(
+    widget_config: &WidgetConfig,
+    setting: &str,
+    default_url: Option<&str>,
+) -> Vec<String> {
     let mut hosts = std::collections::BTreeSet::new();
-    let feeds = widget_config
-        .settings
-        .get("feeds")
-        .and_then(serde_json::Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(serde_json::Value::as_str);
+    let urls = match widget_config.settings.get(setting) {
+        Some(serde_json::Value::String(url)) => vec![url.as_str()],
+        Some(serde_json::Value::Array(urls)) => {
+            urls.iter().filter_map(serde_json::Value::as_str).collect()
+        }
+        Some(_) => Vec::new(),
+        None => default_url.into_iter().collect(),
+    };
 
-    for feed in feeds {
-        if let Ok(url) = Url::parse(feed.trim()) {
+    for url in urls {
+        if let Ok(url) = Url::parse(url.trim()) {
             if matches!(url.scheme(), "http" | "https") {
                 if let Some(host) = url.host_str() {
                     hosts.insert(host.to_string());
@@ -1207,7 +1224,7 @@ mod tests {
     }
 
     #[test]
-    fn feedreader_permissions_are_limited_to_configured_feed_hosts() {
+    fn dynamic_network_permissions_are_limited_to_configured_hosts() {
         let config = WidgetConfig {
             settings: HashMap::from([(
                 "feeds".to_string(),
@@ -1242,21 +1259,59 @@ mod tests {
     }
 
     #[test]
-    fn non_feedreader_wildcard_permissions_are_unchanged() {
+    fn pihole_permissions_use_configured_api_host_or_default() {
         let manifest = PluginManifest {
             plugin: PluginManifestPlugin {
-                name: "other-plugin".to_string(),
+                name: "Pi-hole".to_string(),
                 ..Default::default()
             },
-            permissions: Permissions {
-                network: vec!["*".to_string()],
-                ..Default::default()
-            },
+            permissions: Permissions::default(),
         };
 
-        let permissions = effective_plugin_permissions(Some(&manifest), &widget_config());
+        let configured = WidgetConfig {
+            settings: HashMap::from([(
+                "apiUrl".to_string(),
+                serde_json::json!("https://pihole.example.test/admin/api.php"),
+            )]),
+            ..widget_config()
+        };
 
-        assert_eq!(permissions.network, vec!["*".to_string()]);
+        assert_eq!(
+            effective_plugin_permissions(Some(&manifest), &configured).network,
+            vec!["pihole.example.test".to_string()]
+        );
+        assert_eq!(
+            effective_plugin_permissions(Some(&manifest), &widget_config()).network,
+            vec!["pi.hole".to_string()]
+        );
+    }
+
+    #[test]
+    fn urlcheck_permissions_use_configured_url_hosts() {
+        let manifest = PluginManifest {
+            plugin: PluginManifestPlugin {
+                name: "URL Check".to_string(),
+                ..Default::default()
+            },
+            permissions: Permissions::default(),
+        };
+        let config = WidgetConfig {
+            settings: HashMap::from([(
+                "urls".to_string(),
+                serde_json::json!([
+                    "https://status.example.test",
+                    "http://status.example.test/health",
+                    "ftp://invalid.example.test",
+                    "not a URL"
+                ]),
+            )]),
+            ..widget_config()
+        };
+
+        assert_eq!(
+            effective_plugin_permissions(Some(&manifest), &config).network,
+            vec!["status.example.test".to_string()]
+        );
     }
 
     #[test]

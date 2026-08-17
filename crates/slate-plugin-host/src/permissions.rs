@@ -11,11 +11,18 @@ impl PermissionGuard {
         Self { permissions }
     }
 
+    /// Reject network permission declarations that would grant unrestricted access.
+    pub fn validate(permissions: &Permissions) -> Result<(), PermissionError> {
+        if permissions.network.iter().any(|host| host == "*") {
+            return Err(PermissionError::WildcardNetworkHost);
+        }
+        Ok(())
+    }
+
     /// Check if HTTP access to a specific host is permitted.
     pub fn check_network(&self, host: &str) -> Result<(), PermissionError> {
         if self.permissions.network.iter().any(|allowed| {
-            allowed == "*"
-                || host == allowed
+            host == allowed
                 || host
                     .strip_suffix(allowed)
                     .is_some_and(|prefix| prefix.ends_with('.'))
@@ -93,6 +100,8 @@ impl PermissionGuard {
 
 #[derive(Debug, thiserror::Error)]
 pub enum PermissionError {
+    #[error("wildcard network permissions are not supported")]
+    WildcardNetworkHost,
     #[error("network access denied for host: {0}")]
     NetworkDenied(String),
     #[error("exec access denied for command: {0}")]
@@ -224,14 +233,16 @@ mod tests {
     }
 
     #[test]
-    fn test_network_permission_allows_wildcard_host() {
-        let guard = PermissionGuard::new(Permissions {
+    fn network_permission_validation_rejects_wildcard_host() {
+        let permissions = Permissions {
             network: vec!["*".to_string()],
             ..Default::default()
-        });
+        };
 
-        assert!(guard.check_network("example.com").is_ok());
-        assert!(guard.check_network("nested.example.com").is_ok());
+        assert!(matches!(
+            PermissionGuard::validate(&permissions),
+            Err(PermissionError::WildcardNetworkHost)
+        ));
     }
 
     #[test]
