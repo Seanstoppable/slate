@@ -45,6 +45,9 @@ fn default_span() -> u16 {
 pub struct Permissions {
     #[serde(default)]
     pub network: Vec<String>,
+    /// Config fields containing HTTP(S) URLs whose hosts are allowed at runtime.
+    #[serde(default)]
+    pub network_from_config: Vec<String>,
     #[serde(default)]
     pub exec: Vec<String>,
     #[serde(default)]

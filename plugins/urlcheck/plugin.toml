@@ -6,7 +6,7 @@ version = "0.1.0"
 author = "Slate Community"
 
 [permissions]
-network = ["*"]
+network_from_config = ["urls"]
 
 [config]
-urls = { type = "array", required = true, description = "List of URLs to check (e.g. [\"https://example.com\"])" }
+urls = { type = "array", required = true, description = "List of URLs to check; only their hosts are permitted (e.g. [\"https://example.com\"])" }

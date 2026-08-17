@@ -13,7 +13,7 @@ Modules that have been fully implemented in Slate.
 | devto | Plugin | `devto` | network | No | Dev.to articles | Filter by tag, username, state |
 | digitalclock | Plugin | `digitalclock` | — | No | Large ASCII art time display | Uses WASI time; supports 12/24h |
 | docker | Plugin | `docker` | exec | No | Container list/status | Runs `docker ps` |
-| feedreader | Plugin | `feedreader` | network | No | RSS/Atom feed reader | Supports any feed URL |
+| feedreader | Plugin | `feedreader` | network | No | RSS/Atom feed reader | Hosts are derived from configured feed URLs |
 | git | Plugin | `vcs` | exec | No | Git repo status | Branch, staged, modified, commits |
 | github | Plugin | `github` | network | Yes | PRs, issues, repo stats | |
 | hackernews | Plugin | `hackernews` | network | No | Top stories with actions | Selectable list, open in browser |
@@ -21,7 +21,7 @@ Modules that have been fully implemented in Slate.
 | kubernetes | Lua | `scripts/kubernetes.lua` | exec | No | Pod status | Runs kubectl |
 | lunarphase | Plugin | `lunarphase` | — | No | Moon phase calculator | Pure computation, no network |
 | mercurial | Plugin | `vcs` | exec | No | Hg repo status | Set `engine = "hg"` |
-| pihole | Plugin | `pihole` | network | No | Pi-hole DNS filtering stats | Configurable `apiUrl`; auth optional for summary |
+| pihole | Plugin | `pihole` | network | No | Pi-hole DNS filtering stats | `apiUrl` host is allowlisted; auth optional for summary |
 | power | Builtin | `power` | — | No | Battery/charge state | |
 | resourceusage | Builtin | `resource_usage` | — | No | CPU, memory, swap, temp | |
 | security | Builtin | `firewall` | — | No | Firewall status/rules | Renamed from `security` |
@@ -31,7 +31,7 @@ Modules that have been fully implemented in Slate.
 | subreddit | Plugin | `subreddit` | network | No | Reddit subreddit posts | Sort by hot/new/top; NSFW filter |
 | system | Builtin | `resource_usage` | — | No | System info | Merged into resource_usage |
 | textfile | Builtin | `logfile` | — | No | Display/tail any text file | |
-| urlcheck | Plugin | `urlcheck` | network | No | URL health check | Selectable list; open in browser; HEAD requests |
+| urlcheck | Plugin | `urlcheck` | network | No | URL health check | Configured URL hosts are allowlisted; selectable list; HEAD requests |
 | weatherservices | Plugin | `weather` | network | Yes | Weather forecast | OpenWeatherMap API |
 
 ## Planned (42)

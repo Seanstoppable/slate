@@ -27,7 +27,6 @@ wasmparser = { workspace = true }
 serde = { workspace = true }
 regex = "1"
 axum = "0.8.9"
-url = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3"

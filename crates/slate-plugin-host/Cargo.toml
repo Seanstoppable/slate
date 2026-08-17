@@ -18,6 +18,7 @@ chrono = "0.4"
 chrono-tz = "0.10"
 ureq = "3"
 dirs = { workspace = true }
+url = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3"
