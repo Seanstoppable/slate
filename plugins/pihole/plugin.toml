@@ -3,6 +3,7 @@ name = "Pi-hole"
 description = "Displays Pi-hole DNS filtering statistics"
 tags = ["dns", "network", "pihole"]
 version = "0.1.0"
+author = "Slate Community"
 
 [permissions]
 network_from_config = ["apiUrl"]

@@ -3,6 +3,7 @@ name = "Dev.to"
 description = "Shows articles from dev.to (by tag, user, or state)"
 tags = ["dev", "news"]
 version = "0.1.0"
+author = "Slate Community"
 
 [permissions]
 network = ["dev.to"]

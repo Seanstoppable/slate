@@ -1,4 +1,4 @@
-[metadata]
+[plugin]
 name = "ipinfo"
 description = "Shows your public IP and geolocation info (supports ipinfo.io and ip-api.com backends)"
 tags = ["ip", "network", "utility"]
