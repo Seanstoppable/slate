@@ -59,6 +59,15 @@ numberOfStories = 10
 # symbols = ["AAPL", "MSFT", "GC=F"]
 # sort = true
 
+# Tennis plugin (requires API key - free at https://livetennisapi.com/subscribe/free)
+[[widget]]
+type = "github.com/slate-community/slate-tennis"
+position = { row = 2, col = 0, col_span = 2 }
+api_key = "${LIVE_TENNIS_API_KEY}"
+status = "live"
+# tour = "atp"
+# match_limit = 8
+
 # Lua script widget
 # [[widget]]
 # type = "lua:~/.config/slate/scripts/greeting.lua"

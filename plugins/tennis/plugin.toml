@@ -1,0 +1,17 @@
+[plugin]
+name = "tennis"
+description = "Live tennis match scores via Live Tennis API"
+tags = ["sports", "tennis"]
+version = "0.1.0"
+author = "Slate Community"
+language = "rust"
+
+[permissions]
+network = ["api.livetennisapi.com"]
+secrets = ["api_key"]
+
+[config]
+api_key = { type = "string", required = true, description = "Live Tennis API key. Free (1,000 req/day) at https://livetennisapi.com/subscribe/free" }
+match_limit = { type = "integer", required = false, description = "Maximum matches to display (default: 10)" }
+status = { type = "string", required = false, description = "Match status: 'live', 'upcoming', 'completed' (default: 'live')" }
+tour = { type = "string", required = false, description = "Restrict to a tour: 'atp', 'wta', or omit for all" }
