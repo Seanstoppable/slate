@@ -159,6 +159,7 @@ pub fn render_widget(
 }
 
 /// Render a widget's content with a vertical text scroll offset.
+#[allow(clippy::too_many_arguments)]
 pub fn render_widget_with_scroll(
     frame: &mut Frame,
     area: Rect,
