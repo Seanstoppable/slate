@@ -289,21 +289,33 @@ pub fn on_action(input: String) -> FnResult<String> {
         match action.action_id.as_str() {
 
             "start" => {
-
-                let _ = run_docker_exec("docker", &["start", container_id]);
-
+                if let Err(err) = run_docker_exec("docker", &["start", container_id]) {
+                    let notify = json!({
+                        "type": "notify",
+                        "message": format!("Failed to start container {}: {}", container_id, err)
+                    });
+                    return Ok(notify.to_string());
+                }
             }
 
             "stop" => {
-
-                let _ = run_docker_exec("docker", &["stop", container_id]);
-
+                if let Err(err) = run_docker_exec("docker", &["stop", container_id]) {
+                    let notify = json!({
+                        "type": "notify",
+                        "message": format!("Failed to stop container {}: {}", container_id, err)
+                    });
+                    return Ok(notify.to_string());
+                }
             }
 
             "restart" => {
-
-                let _ = run_docker_exec("docker", &["restart", container_id]);
-
+                if let Err(err) = run_docker_exec("docker", &["restart", container_id]) {
+                    let notify = json!({
+                        "type": "notify",
+                        "message": format!("Failed to restart container {}: {}", container_id, err)
+                    });
+                    return Ok(notify.to_string());
+                }
             }
 
             "logs" => {
