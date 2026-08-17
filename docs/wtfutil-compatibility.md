@@ -14,6 +14,7 @@ Modules that have been fully implemented in Slate.
 | digitalclock | Plugin | `digitalclock` | — | No | Large ASCII art time display | Uses WASI time; supports 12/24h |
 | docker | Plugin | `docker` | exec | No | Container list/status | Runs `docker ps` |
 | feedreader | Plugin | `feedreader` | network | No | RSS/Atom feed reader | Hosts are derived from configured feed URLs |
+| football | Plugin | `football` | network | Yes | Sports scores | Uses football-data.org API |
 | git | Plugin | `vcs` | exec | No | Git repo status | Branch, staged, modified, commits |
 | github | Plugin | `github` | network | Yes | PRs, issues, repo stats | |
 | hackernews | Plugin | `hackernews` | network | No | Top stories with actions | Selectable list, open in browser |
@@ -31,10 +32,11 @@ Modules that have been fully implemented in Slate.
 | subreddit | Plugin | `subreddit` | network | No | Reddit subreddit posts | Sort by hot/new/top; NSFW filter |
 | system | Builtin | `resource_usage` | — | No | System info | Merged into resource_usage |
 | textfile | Builtin | `logfile` | — | No | Display/tail any text file | |
+| todo | Plugin | `todo` | storage | No | Local todo list | Reads tasks from a todo.txt file |
 | urlcheck | Plugin | `urlcheck` | network | No | URL health check | Configured URL hosts are allowlisted; selectable list; HEAD requests |
 | weatherservices | Plugin | `weather` | network | Yes | Weather forecast | OpenWeatherMap API |
 
-## Planned (42)
+## Planned (36)
 
 Modules that are feasible but not yet implemented.
 
@@ -49,7 +51,6 @@ Modules that are feasible but not yet implemented.
 | circleci | network | Yes | CI pipeline status | |
 | datadog | network | Yes | Monitoring dashboard | |
 | digitalocean | network | Yes | Cloud droplet status | |
-| football | network | Yes | Sports scores | |
 | gcal | network | Yes (OAuth) | Google Calendar events | Needs OAuth flow |
 | gerrit | network | Yes | Code review status | |
 | gitlab | network | Yes | GitLab MRs and issues | |
@@ -61,19 +62,14 @@ Modules that are feasible but not yet implemented.
 | hibp | network | Yes | Breach notification check | |
 | jenkins | network | Yes | CI build status | |
 | jira | network | Yes | Issue tracking viewer | |
-| krisinformation | network | No | Swedish crisis alerts | Public API |
 | nbascore | network | No | Basketball scores | Public APIs available |
 | newrelic | network | Yes | APM dashboard | |
-| nextbus | network | No | Transit arrival times | Public APIs available |
 | opsgenie | network | Yes | Alert management | |
 | pagerduty | network | Yes | Incident management | |
 | ping | raw_network | No | ICMP ping latency | |
 | pivotal | network | Yes | Pivotal Tracker stories | |
-| pocket | network | Yes (OAuth) | Saved articles list | Needs OAuth flow |
 | rollbar | network | Yes | Error tracking dashboard | |
-| steam | network | Yes | Game library/friends | |
 | stocks/finnhub | network | Yes | Stock prices via Finnhub API | |
-| todo | storage | No | Local todo list | Needs KV storage |
 | todo_plus | storage | No | Enhanced todo with priorities | |
 | transmission | network | Yes | Torrent client status | |
 | twitch | network | Yes | Stream online status | |
@@ -83,9 +79,10 @@ Modules that are feasible but not yet implemented.
 | victorops | network | Yes | Incident management | |
 | zendesk | network | Yes | Support ticket viewer | |
 
-## Not Planned (14)
+## Not Planned (18)
 
-Modules that are deprecated, internal, or not applicable.
+Modules that are deprecated, internal, or not applicable to the core roadmap.
+Community contributions implementing these modules are more than welcome.
 
 | wtfutil Module | Reason |
 |----------------|--------|
@@ -95,10 +92,14 @@ Modules that are deprecated, internal, or not applicable.
 | cryptocurrency/cryptolive | Niche; community can create plugin |
 | cryptocurrency/mempool | Niche; community can create plugin |
 | gitter | Gitter shut down in 2023; migrated to Matrix |
+| krisinformation | Community can create plugin |
 | logger | wtfutil internal debug log, not a user-facing feature |
+| nextbus | Community can create plugin |
+| pocket | Community can create plugin |
 | progress | Demo/placeholder widget |
 | spotify | Spotify deprecated local CLI; web API needs OAuth |
 | spotifyweb | Spotify web API requires complex OAuth flow |
+| steam | Community can create plugin |
 | travisci | Travis CI is largely deprecated |
 | twitter | Twitter/X API deprecated for free tier |
 | twitterstats | Twitter/X API deprecated for free tier |
@@ -108,9 +109,9 @@ Modules that are deprecated, internal, or not applicable.
 
 | Category | Count |
 |----------|-------|
-| ✅ Migrated | 23 |
-| 🔲 Planned | 42 |
-| ➖ Not Planned | 14 |
+| ✅ Migrated | 25 |
+| 🔲 Planned | 36 |
+| ➖ Not Planned | 18 |
 | **Total** | 79 |
 
 ## Slate-Only Features (not in wtfutil)
