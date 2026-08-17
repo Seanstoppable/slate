@@ -318,11 +318,21 @@ pub fn render_status_bar(
     focus: &FocusPosition,
     widget_count: usize,
     update_msg: Option<&str>,
+    config_warnings: usize,
 ) {
     let update_part = update_msg.unwrap_or("");
+    let warning_part = if config_warnings > 0 {
+        format!(
+            "⚠ {} config warning{} │ ",
+            config_warnings,
+            if config_warnings == 1 { "" } else { "s" }
+        )
+    } else {
+        String::new()
+    };
     let status = format!(
-        " Slate │ {} widgets │ Focus: ({},{}) {}│ ?: help │ q: quit │ Tab: next │ ←↑↓→: navigate ",
-        widget_count, focus.row, focus.col, update_part
+        " Slate │ {} widgets │ Focus: ({},{}) │ {}{}?: help │ q: quit │ Tab: next │ ←↑↓→: navigate ",
+        widget_count, focus.row, focus.col, warning_part, update_part
     );
     let paragraph =
         Paragraph::new(status).style(Style::default().bg(SLATE_STATUS_BG).fg(SLATE_TEXT));
@@ -511,11 +521,27 @@ mod tests {
         widget_count: usize,
         update: Option<&str>,
     ) -> String {
+        render_status_to_string_with_warnings(focus, widget_count, update, 0)
+    }
+
+    fn render_status_to_string_with_warnings(
+        focus: FocusPosition,
+        widget_count: usize,
+        update: Option<&str>,
+        config_warnings: usize,
+    ) -> String {
         let backend = TestBackend::new(80, 2);
         let mut terminal = Terminal::new(backend).unwrap();
         terminal
             .draw(|frame| {
-                render_status_bar(frame, Rect::new(0, 1, 80, 1), &focus, widget_count, update);
+                render_status_bar(
+                    frame,
+                    Rect::new(0, 1, 80, 1),
+                    &focus,
+                    widget_count,
+                    update,
+                    config_warnings,
+                );
             })
             .unwrap();
 
@@ -651,6 +677,19 @@ mod tests {
         assert!(chart.contains("CPU"));
         assert!(chart.contains("Mem"));
         assert!(chart.contains("█"));
+    }
+
+    #[test]
+    fn render_status_bar_shows_config_warning_count() {
+        let one = render_status_to_string_with_warnings(FocusPosition::new(0, 0), 2, None, 1);
+        assert!(one.contains("1 config warning"), "got: {one}");
+        assert!(!one.contains("warnings"), "should be singular, got: {one}");
+
+        let many = render_status_to_string_with_warnings(FocusPosition::new(0, 0), 2, None, 3);
+        assert!(many.contains("3 config warnings"), "got: {many}");
+
+        let none = render_status_to_string_with_warnings(FocusPosition::new(0, 0), 2, None, 0);
+        assert!(!none.contains("config warning"), "got: {none}");
     }
 
     #[test]

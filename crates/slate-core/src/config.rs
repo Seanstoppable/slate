@@ -102,6 +102,89 @@ fn default_true() -> bool {
     true
 }
 
+/// A non-fatal configuration problem worth surfacing to the user.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConfigWarning {
+    /// Widget sits outside the declared grid and will not be rendered.
+    OutOfBounds {
+        index: usize,
+        widget_type: String,
+        row: u16,
+        col: u16,
+        rows: u16,
+        cols: u16,
+    },
+    /// Widget declared a zero span, which is clamped to 1.
+    ZeroSpan {
+        index: usize,
+        widget_type: String,
+        row_span: u16,
+        col_span: u16,
+    },
+    /// Widget spans past the grid edge and will be truncated.
+    SpanOverflow {
+        index: usize,
+        widget_type: String,
+        row: u16,
+        col: u16,
+        row_span: u16,
+        col_span: u16,
+        rows: u16,
+        cols: u16,
+    },
+}
+
+impl ConfigWarning {
+    /// Zero-based index of the offending `[[widget]]` entry.
+    pub fn widget_index(&self) -> usize {
+        match self {
+            Self::OutOfBounds { index, .. }
+            | Self::ZeroSpan { index, .. }
+            | Self::SpanOverflow { index, .. } => *index,
+        }
+    }
+}
+
+impl std::fmt::Display for ConfigWarning {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::OutOfBounds {
+                widget_type,
+                row,
+                col,
+                rows,
+                cols,
+                ..
+            } => write!(
+                f,
+                "'{widget_type}' at position ({row},{col}) is outside the {rows}x{cols} grid and will not be rendered"
+            ),
+            Self::ZeroSpan {
+                widget_type,
+                row_span,
+                col_span,
+                ..
+            } => write!(
+                f,
+                "'{widget_type}' declares row_span = {row_span}, col_span = {col_span}; zero spans are treated as 1"
+            ),
+            Self::SpanOverflow {
+                widget_type,
+                row,
+                col,
+                row_span,
+                col_span,
+                rows,
+                cols,
+                ..
+            } => write!(
+                f,
+                "'{widget_type}' at ({row},{col}) spans {row_span}x{col_span}, past the {rows}x{cols} grid edge; it will be truncated"
+            ),
+        }
+    }
+}
+
 impl SlateConfig {
     /// Load config from the default path (~/.config/slate/slate.toml)
     pub fn load_default() -> Result<Self> {
@@ -151,6 +234,58 @@ impl SlateConfig {
             );
         }
         Ok(())
+    }
+
+    /// Non-fatal configuration problems, in widget declaration order.
+    ///
+    /// These describe widgets that will still load but won't render as written,
+    /// so they are surfaced to the user rather than failing the config outright.
+    pub fn warnings(&self) -> Vec<ConfigWarning> {
+        let mut warnings = Vec::new();
+        for (index, widget) in self.widget.iter().enumerate() {
+            let pos = &widget.position;
+            let widget_type = widget.widget_type.clone();
+
+            if pos.row >= self.layout.rows || pos.col >= self.layout.cols {
+                warnings.push(ConfigWarning::OutOfBounds {
+                    index,
+                    widget_type: widget_type.clone(),
+                    row: pos.row,
+                    col: pos.col,
+                    rows: self.layout.rows,
+                    cols: self.layout.cols,
+                });
+                // Span warnings would be noise for a widget that can't be placed.
+                continue;
+            }
+
+            if pos.row_span == 0 || pos.col_span == 0 {
+                warnings.push(ConfigWarning::ZeroSpan {
+                    index,
+                    widget_type: widget_type.clone(),
+                    row_span: pos.row_span,
+                    col_span: pos.col_span,
+                });
+            }
+
+            let row_span = pos.row_span.max(1);
+            let col_span = pos.col_span.max(1);
+            if pos.row.saturating_add(row_span) > self.layout.rows
+                || pos.col.saturating_add(col_span) > self.layout.cols
+            {
+                warnings.push(ConfigWarning::SpanOverflow {
+                    index,
+                    widget_type,
+                    row: pos.row,
+                    col: pos.col,
+                    row_span,
+                    col_span,
+                    rows: self.layout.rows,
+                    cols: self.layout.cols,
+                });
+            }
+        }
+        warnings
     }
 
     /// Default config file path.
@@ -230,6 +365,87 @@ mod tests {
         assert_eq!(config.global.refresh_interval, 300);
         assert_eq!(config.layout.rows, 2);
         assert_eq!(config.layout.cols, 2);
+    }
+
+    #[test]
+    fn test_warnings_flags_out_of_bounds_widget() {
+        let config = SlateConfig::parse(
+            "[layout]\nrows = 2\ncols = 2\n\n[[widget]]\ntype = \"builtin:clock\"\nposition = { row = 5, col = 0 }\n",
+        )
+        .unwrap();
+        let warnings = config.warnings();
+        assert_eq!(warnings.len(), 1);
+        assert!(matches!(
+            warnings[0],
+            ConfigWarning::OutOfBounds { row: 5, .. }
+        ));
+        assert_eq!(warnings[0].widget_index(), 0);
+        assert!(warnings[0].to_string().contains("outside the 2x2 grid"));
+    }
+
+    #[test]
+    fn test_warnings_flags_zero_span() {
+        let config = SlateConfig::parse(
+            "[layout]\nrows = 2\ncols = 2\n\n[[widget]]\ntype = \"builtin:clock\"\nposition = { row = 0, col = 0, row_span = 0, col_span = 1 }\n",
+        )
+        .unwrap();
+        let warnings = config.warnings();
+        assert_eq!(warnings.len(), 1);
+        assert!(matches!(warnings[0], ConfigWarning::ZeroSpan { .. }));
+        assert!(warnings[0].to_string().contains("treated as 1"));
+    }
+
+    #[test]
+    fn test_warnings_flags_span_overflow() {
+        let config = SlateConfig::parse(
+            "[layout]\nrows = 2\ncols = 2\n\n[[widget]]\ntype = \"builtin:clock\"\nposition = { row = 1, col = 0, row_span = 4, col_span = 1 }\n",
+        )
+        .unwrap();
+        let warnings = config.warnings();
+        assert_eq!(warnings.len(), 1);
+        assert!(matches!(warnings[0], ConfigWarning::SpanOverflow { .. }));
+        assert!(warnings[0].to_string().contains("truncated"));
+    }
+
+    #[test]
+    fn test_warnings_skips_span_checks_for_out_of_bounds_widget() {
+        // An unplaceable widget shouldn't also emit span noise.
+        let config = SlateConfig::parse(
+            "[layout]\nrows = 2\ncols = 2\n\n[[widget]]\ntype = \"builtin:clock\"\nposition = { row = 9, col = 9, row_span = 0, col_span = 0 }\n",
+        )
+        .unwrap();
+        let warnings = config.warnings();
+        assert_eq!(warnings.len(), 1);
+        assert!(matches!(warnings[0], ConfigWarning::OutOfBounds { .. }));
+    }
+
+    #[test]
+    fn test_warnings_empty_for_valid_layout() {
+        let config = SlateConfig::parse(
+            "[layout]\nrows = 2\ncols = 2\n\n[[widget]]\ntype = \"builtin:clock\"\nposition = { row = 0, col = 0, row_span = 2, col_span = 2 }\n",
+        )
+        .unwrap();
+        assert!(config.warnings().is_empty());
+    }
+
+    #[test]
+    fn test_warnings_reports_index_of_each_offending_widget() {
+        let config = SlateConfig::parse(
+            "[layout]\nrows = 2\ncols = 2\n\n[[widget]]\ntype = \"builtin:clock\"\nposition = { row = 0, col = 0 }\n\n[[widget]]\ntype = \"builtin:power\"\nposition = { row = 3, col = 0 }\n",
+        )
+        .unwrap();
+        let warnings = config.warnings();
+        assert_eq!(warnings.len(), 1);
+        assert_eq!(warnings[0].widget_index(), 1);
+    }
+
+    #[test]
+    fn test_warnings_span_overflow_saturates_on_huge_span() {
+        let config = SlateConfig::parse(
+            "[layout]\nrows = 2\ncols = 2\n\n[[widget]]\ntype = \"builtin:clock\"\nposition = { row = 1, col = 1, row_span = 65535, col_span = 65535 }\n",
+        )
+        .unwrap();
+        assert_eq!(config.warnings().len(), 1);
     }
 
     #[test]

@@ -12,7 +12,7 @@ use ratatui::{
 };
 use slate_plugin_sdk::{Action, BoxedWidget, Color, WidgetAction, WidgetContent};
 
-use crate::config::SlateConfig;
+use crate::config::{ConfigWarning, SlateConfig};
 use crate::dashboard::{refresh_widget_content, Dashboard, WidgetInstance};
 use crate::keybindings::reserved_keybinding;
 use crate::layout::{compute_grid, compute_widget_area, FocusPosition};
@@ -37,6 +37,8 @@ pub struct App {
     input_mode: Option<InputMode>,
     /// Whether help for the focused widget is displayed.
     help_visible: bool,
+    /// Non-fatal config problems surfaced in the status bar.
+    config_warnings: Vec<ConfigWarning>,
 }
 
 impl App {
@@ -46,6 +48,7 @@ impl App {
 
     pub fn from_dashboard(dashboard: Dashboard) -> Self {
         let notifications = UpdateNotifications::load();
+        let config_warnings = dashboard.config.warnings();
         Self {
             dashboard,
             focus: FocusPosition::new(0, 0),
@@ -54,7 +57,13 @@ impl App {
             notifications,
             input_mode: None,
             help_visible: false,
+            config_warnings,
         }
+    }
+
+    /// Non-fatal config problems detected at startup.
+    pub fn config_warnings(&self) -> &[ConfigWarning] {
+        &self.config_warnings
     }
 
     /// Register a widget into the application.
@@ -180,6 +189,7 @@ impl App {
                         &self.focus,
                         self.dashboard.widget_count(),
                         self.notifications.status_message().as_deref(),
+                        self.config_warnings.len(),
                     );
                 }
 
@@ -900,6 +910,26 @@ mod tests {
         let widget = MockListWidget::new(action);
         app.add_widget(Box::new(widget), 0, 0, 1, 1, Some(300), None);
         app
+    }
+
+    #[test]
+    fn app_collects_config_warnings_from_dashboard_config() {
+        let config = SlateConfig::parse(
+            "[layout]\nrows = 2\ncols = 2\n\n[[widget]]\ntype = \"builtin:clock\"\nposition = { row = 7, col = 0 }\n",
+        )
+        .unwrap();
+        let app = App::new(config);
+        assert_eq!(app.config_warnings().len(), 1);
+        assert!(matches!(
+            app.config_warnings()[0],
+            ConfigWarning::OutOfBounds { .. }
+        ));
+    }
+
+    #[test]
+    fn app_has_no_config_warnings_for_default_config() {
+        let app = App::new(SlateConfig::default());
+        assert!(app.config_warnings().is_empty());
     }
 
     #[test]

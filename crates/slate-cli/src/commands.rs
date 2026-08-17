@@ -854,6 +854,16 @@ pub async fn check(config_path: Option<&str>) -> Result<()> {
         }
     }
 
+    let config_warnings = config.warnings();
+    if !config_warnings.is_empty() {
+        println!();
+        println!("Layout warnings:");
+        for warning in &config_warnings {
+            println!("  ⚠ widget #{}: {}", warning.widget_index() + 1, warning);
+        }
+        warnings += config_warnings.len() as u32;
+    }
+
     println!();
     println!(
         "Results: {} ok, {} warnings, {} errors",
