@@ -146,6 +146,30 @@ pub fn render_widget(
     selected: Option<usize>,
     border_color: Option<&Color>,
 ) {
+    render_widget_with_scroll(
+        frame,
+        area,
+        content,
+        metadata,
+        focused,
+        selected,
+        border_color,
+        0,
+    );
+}
+
+/// Render a widget's content with a vertical text scroll offset.
+#[allow(clippy::too_many_arguments)]
+pub fn render_widget_with_scroll(
+    frame: &mut Frame,
+    area: Rect,
+    content: &WidgetContent,
+    metadata: &WidgetMetadata,
+    focused: bool,
+    selected: Option<usize>,
+    border_color: Option<&Color>,
+    text_scroll: u16,
+) {
     let border_style = if focused {
         Style::default().fg(SLATE_BORDER_FOCUSED)
     } else if let Some(color) = border_color {
@@ -182,7 +206,7 @@ pub fn render_widget(
             } else {
                 paragraph
             };
-            frame.render_widget(paragraph, inner);
+            frame.render_widget(paragraph.scroll((text_scroll, 0)), inner);
         }
         WidgetContent::Table {
             headers,

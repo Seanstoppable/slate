@@ -20,6 +20,7 @@ exclude = [
     "plugins/git-recent",
     "plugins/github",
     "plugins/lunarphase",
+    "plugins/mlb",
     "plugins/pihole",
     "plugins/pomodoro",
     "plugins/spacex",

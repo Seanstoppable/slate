@@ -35,6 +35,8 @@ pub struct WidgetInstance {
     pub selected: Option<usize>,
     /// Detail view content (replaces normal rendering, suppresses refresh)
     pub detail_content: Option<String>,
+    /// Vertical scroll offset for detail view content.
+    pub detail_scroll: u16,
     /// Per-widget border color from config
     pub border_color: Option<Color>,
 }
@@ -109,6 +111,7 @@ impl Dashboard {
             refresh_interval: Duration::from_secs(interval),
             selected,
             detail_content: None,
+            detail_scroll: 0,
             border_color,
         });
     }

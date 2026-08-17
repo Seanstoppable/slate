@@ -1,0 +1,15 @@
+[plugin]
+name = "mlb"
+description = "MLB schedule and standings via the MLB Stats API (statsapi.mlb.com)"
+tags = ["mlb", "sports"]
+version = "0.1.0"
+author = "Slate Community"
+language = "rust"
+
+[permissions]
+network = ["statsapi.mlb.com"]
+
+[config]
+matches_from = { type = "integer", required = false, description = "Start of the matches date window (days from today; negative to include past days; default: -1)" }
+matches_to = { type = "integer", required = false, description = "End of the matches date window (days from today), inclusive; default: 1" }
+standing_count = { type = "integer", required = false, description = "Number of top standing rows to include; default: 5" }
